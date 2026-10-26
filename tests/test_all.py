@@ -23,6 +23,8 @@ import dashboard  # noqa: E402
 import portfolio as PF  # noqa: E402
 import advice as A  # noqa: E402
 import funds as FU  # noqa: E402
+import daily  # noqa: E402
+import pkm  # noqa: E402
 
 
 def run(fn, argv):
@@ -602,6 +604,41 @@ class TestBrokersAndFunds(Market):
         _, rv = FU.review(self.h)
         self.assertEqual(rv[0]["action"], "REVIEW")
         self.assertIn("leaders", rv[0]["why"])
+
+
+class TestPortable(Market):
+    def test_android_uses_shared_storage(self):
+        shared = tempfile.mkdtemp()
+        old, env = C.ANDROID_SHARED, dict(os.environ)
+        try:
+            C.ANDROID_SHARED = shared
+            os.environ.pop("PKM_HOME", None)
+            os.environ["ANDROID_ROOT"] = "/system"
+            self.assertEqual(C.default_home(), os.path.join(shared, "pkmarket"))
+            os.environ.pop("ANDROID_ROOT")
+            os.environ.pop("ANDROID_DATA", None)
+            self.assertEqual(C.default_home(), os.path.join("~", "pkmarket"))
+        finally:
+            C.ANDROID_SHARED = old
+            os.environ.clear()
+            os.environ.update(env)
+            shutil.rmtree(shared)
+
+    def test_daily_pipeline_without_downloads(self):
+        run(paper.main, ["--home", self.h, "init"])
+        run(PF.main, ["--home", self.h, "buy", "SYN05", "100", "50", "--broker", "AKD", "--date", "2026-03-01"])
+        rc, out = run(daily.main, ["--home", self.h, "--no-download"])
+        self.assertEqual(rc, 0)
+        for stepname in ("paper: value", "my portfolio: advice", "dashboard (one file)"):
+            self.assertIn("-- " + stepname, out)
+        self.assertTrue(os.path.exists(os.path.join(self.h, "dashboard.html")))
+        self.assertTrue(os.listdir(os.path.join(self.h, "advice")))
+
+    def test_launcher_passes_through(self):
+        rc, out = run(pkm.main, ["rank", "--home", self.h, "stocks", "--top", "2"])
+        self.assertIn("PSX ranking", out)
+        rc, out = run(pkm.main, ["--help"])
+        self.assertIn("numbered menu", out)
 
 
 def argparse_ns(**kw):

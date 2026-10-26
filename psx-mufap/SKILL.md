@@ -20,6 +20,8 @@ code repository.
 | `paper.py` | Pretend PKR account: buy/sell shares, invest/redeem funds, follow signals, credit dividends |
 | `propose.py` | Screen, backtest out-of-sample, propose a paper portfolio; review holdings daily |
 | `portfolio.py` | The user's REAL portfolio: trades, brokers, commissions, lots, P/L, dividends, cash; `advise` |
+| `pkm.py` | Menu launcher (also passes through: `pkm.py rank stocks`); the user may run it on Android in Pydroid 3 or Termux |
+| `daily.py` | The daily pipeline in pure Python; `daily_sync.sh` and the systemd timer call it |
 | `funds.py` | MUFAP fund suggestions by risk profile (`advise`), and HOLD/REVIEW for funds the user holds (`review`) |
 | `brokers.json` | Published PSX broker tariffs and pass-through charges, with sources (used by `portfolio.py broker`) |
 | `advice.py` | Stop-losses, sell/hold/trim suggestions and sized buy ideas (used by `portfolio.py advise`) |

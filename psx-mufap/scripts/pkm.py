@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""One launcher for everything, made for phones (Pydroid 3, Termux) but fine anywhere.
+
+  python3 pkm.py                     a numbered menu: pick a number, answer the prompts
+  python3 pkm.py rank stocks --all   or pass any tool and its arguments straight through
+                                     (tools: pkdata rank backtest propose paper portfolio funds
+                                      advice dashboard daily)
+
+Blank answers take the default shown in [brackets]. Nothing here places a real order.
+"""
+import datetime as dt
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import common as C  # noqa: E402
+
+TOOLS = ["pkdata", "rank", "backtest", "propose", "paper", "portfolio", "funds", "dashboard", "daily"]
+
+
+def call(tool, *args):
+    """Run a tool's main() in this process, printing its output; never exits the menu."""
+    print()
+    try:
+        mod = __import__(tool)
+        mod.main(list(args))
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            print(e.code)
+    except KeyboardInterrupt:
+        print("\n(stopped)")
+    except Exception as e:  # a menu must survive a bad page or a typo
+        print("error: %s: %s" % (type(e).__name__, e))
+
+
+def ask(prompt, default=None, required=False):
+    while True:
+        tip = " [%s]" % default if default not in (None, "") else ""
+        try:
+            v = input("%s%s: " % (prompt, tip)).strip()
+        except EOFError:
+            v = ""
+        if v:
+            return v
+        if default not in (None, "") or not required:
+            return default
+        print("  (needed)")
+
+
+def yes(prompt, default=False):
+    v = ask(prompt + " (y/n)", "y" if default else "n")
+    return str(v).lower().startswith("y")
+
+
+def opt(flag, value):
+    return [flag, str(value)] if value not in (None, "") else []
+
+
+# ------------------------------------------------------------------ actions
+
+def fetch_watchlist():
+    call("pkdata", "psx", "--watchlist")
+    call("pkdata", "company", "--watchlist")
+    call("pkdata", "payouts")
+    call("pkdata", "mufap")
+
+
+def fetch_all():
+    print("The whole market takes 15-20 minutes the first time (one polite request a second).")
+    if yes("Go ahead", True):
+        call("pkdata", "universe")
+        call("pkdata", "company", "--all")
+        call("pkdata", "psx", "--all")
+        call("pkdata", "payouts")
+        call("pkdata", "mufap")
+
+
+def rank_stocks():
+    scope = ask("Watchlist or all shares (w/a)", "w")
+    args = ["stocks", "--top", ask("How many", "15")]
+    if str(scope).lower().startswith("a"):
+        args.append("--all")
+        if yes("Shariah-compliant only"):
+            args.append("--shariah")
+        sector = ask("Sector contains (blank = all)", "")
+        args += opt("--sector", sector)
+    sort = ask("Sort by score / 1m / 3m / 1y / div_yield", "score")
+    call("rank", *(args + ["--sort", sort]))
+
+
+def stock_advice():
+    args = ["advise", "--buy", ask("How many buy ideas", "3")]
+    if yes("Look for buys across all shares (needs the whole-market data)"):
+        args.append("--all")
+    if yes("Shariah-compliant buys only"):
+        args.append("--shariah")
+    call("portfolio", *args)
+
+
+def fund_advice():
+    risk = ask("Risk: low / medium / high", "low")
+    args = ["advise", "--risk", risk, "--top", ask("Funds per category", "3")]
+    if yes("Shariah-compliant only"):
+        args.append("--shariah")
+    call("funds", *args)
+    if yes("Check the funds you hold too"):
+        call("funds", "review")
+
+
+def record_trade(side):
+    sym = ask("Symbol (e.g. OGDC)", required=True).upper()
+    qty = ask("Quantity" + (" or 'all'" if side == "sell" else ""), required=True)
+    price = ask("Price per share", required=True)
+    args = [side, sym, qty, price]
+    args += opt("--broker", ask("Broker (blank = default)", ""))
+    args += opt("--date", ask("Date YYYY-MM-DD", dt.date.today().isoformat()))
+    print("Charges from your contract note (blank = estimate from the broker's schedule):")
+    args += opt("--commission", ask("  Commission", ""))
+    args += opt("--taxes", ask("  Taxes (sales tax, CVT, CGT)", ""))
+    args += opt("--other", ask("  Other (CDC, NCCPL, levies)", ""))
+    if side == "buy":
+        args += opt("--stop", ask("Your stop-loss price (blank = computed daily)", ""))
+    print("\nAbout to record: %s %s %s @ %s %s" % (side.upper(), qty, sym, price, " ".join(args[4:])))
+    if yes("Record it", True):
+        call("portfolio", *args)
+
+
+def record_fund():
+    side = ask("Buy or sell a fund (b/s)", "b")
+    fund = ask("Fund name, or a unique part of it", required=True)
+    amount = ask("Amount in rupees" + (" or 'all'" if side.startswith("s") else ""), required=True)
+    args = ["fund-buy" if side.lower().startswith("b") else "fund-sell", fund, amount]
+    args += opt("--nav", ask("NAV you got (blank = latest MUFAP NAV)", ""))
+    args += opt("--load-pct", ask("Load % (blank = 0)", ""))
+    args += opt("--date", ask("Date YYYY-MM-DD", dt.date.today().isoformat()))
+    if yes("Record it", True):
+        call("portfolio", *args)
+
+
+def my_portfolio():
+    call("portfolio", "holdings")
+    if yes("Show realised profit and loss"):
+        call("portfolio", "pnl")
+    if yes("Show costs by broker"):
+        call("portfolio", "fees")
+
+
+def brokers():
+    call("portfolio", "broker", "presets")
+    call("portfolio", "broker", "list")
+    if yes("Add a broker"):
+        name = ask("Your name for it (e.g. AKD)", required=True)
+        preset = ask("Preset key from the table (blank = type your own rates)", "")
+        args = ["broker", "add", name]
+        if preset:
+            args += ["--preset", preset]
+        else:
+            args += opt("--commission-pct", ask("Commission % of value", "0.15"))
+            args += opt("--per-share", ask("Or rupees per share, whichever is higher", "0.03"))
+            args += opt("--min-commission", ask("Minimum per trade", ""))
+            args += opt("--sales-tax-pct", ask("Sales tax % on commission", "13"))
+        if yes("Make it your default broker", True):
+            args.append("--default")
+        call("portfolio", *args)
+
+
+def dashboard():
+    h = C.home()
+    out = os.path.join(h, "dashboard.html")
+    call("dashboard", "build", "--standalone", out)
+    print("\nOpen this file in your browser: %s" % out)
+    if C.is_android():
+        print("(Files app > Internal storage > pkmarket > dashboard.html > open with Chrome)")
+    try:
+        import webbrowser
+        if yes("Try to open it now"):
+            webbrowser.open("file://" + out)
+    except Exception:
+        pass
+
+
+def settings():
+    h = C.home()
+    p = os.path.join(h, "config.json")
+    if not os.path.exists(p):
+        call("pkdata", "init")
+    cfg = C.load_config(h)
+    print("\nData folder: %s" % h)
+    print("Watchlist:   %s" % ", ".join(cfg["watchlist"]))
+    if yes("Change the watchlist"):
+        new = ask("Symbols, comma-separated", ",".join(cfg["watchlist"]))
+        with open(p) as f:
+            raw = json.load(f)
+        raw["watchlist"] = [x.strip().upper() for x in new.split(",") if x.strip()]
+        with open(p, "w") as f:
+            json.dump(raw, f, indent=2)
+        print("saved")
+    print("Other settings (costs, stops, tax) are in %s; edit it with any text editor." % p)
+
+
+MENU = [
+    ("Fetch data: my watchlist + funds", fetch_watchlist),
+    ("Fetch data: the whole market (slow first time)", fetch_all),
+    ("Rank stocks", rank_stocks),
+    ("Stock advice: what to sell, hold, buy (with stop-losses)", stock_advice),
+    ("Fund advice: which MUFAP funds", fund_advice),
+    ("Record a BUY", lambda: record_trade("buy")),
+    ("Record a SELL", lambda: record_trade("sell")),
+    ("Record a mutual fund buy / sell", record_fund),
+    ("My portfolio: holdings, profit and loss, fees", my_portfolio),
+    ("Brokers: presets and charges", brokers),
+    ("Run the whole daily update now", lambda: call("daily")),
+    ("Dashboard: build the one-file version", dashboard),
+    ("Settings: data folder, watchlist", settings),
+]
+
+
+def menu():
+    print("PSX & MUFAP  |  data folder: %s" % C.home())
+    while True:
+        print()
+        for i, (label, _) in enumerate(MENU, 1):
+            print("%2d. %s" % (i, label))
+        print(" 0. Exit")
+        choice = ask("Choose", "0")
+        if choice in ("0", "q", "exit", None):
+            return 0
+        try:
+            label, fn = MENU[int(choice) - 1]
+        except (ValueError, IndexError):
+            print("pick a number from the list")
+            continue
+        print("\n== %s" % label)
+        fn()
+        try:
+            input("\n(Enter for the menu)")
+        except EOFError:
+            return 0
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] in TOOLS + ["advice"]:
+        tool = "portfolio" if argv[0] == "advice" else argv[0]
+        rest = ["advise"] + argv[1:] if argv[0] == "advice" else argv[1:]
+        mod = __import__(tool)
+        return mod.main(rest)
+    if argv and argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    return menu()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

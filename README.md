@@ -69,6 +69,8 @@ python3 pkdata.py init        # creates ~/pkmarket/config.json: put your watchli
 ```
 
 Every command below runs from `psx-mufap/scripts`. Add `--help` to any of them for all options.
+Prefer a menu? `python3 pkm.py` asks you questions instead (handy on a phone, see
+[Android](#run-it-on-android-pydroid-3-or-termux)).
 
 ## Command cheat sheet
 
@@ -268,6 +270,100 @@ time: `0 4,7 * * 1-5 /path/to/psx-mufap/scripts/daily_sync.sh`.
   three files, accepts GET only, and sends strict security headers. It speaks plain HTTP, so never
   expose it to the open internet.
 
+## Run it on Android (Pydroid 3 or Termux)
+
+Everything is standard-library Python, so the same code runs on an Android phone, with no
+computer needed. Two launchers make it phone-friendly:
+
+- **`pkm.py`**: a numbered menu. Fetch data, rank, stock and fund advice, record buys and sells
+  (with or without a stop-loss), portfolio, brokers, dashboard. No typing of commands.
+- **`daily.py`**: the whole daily update in pure Python (the Linux service uses it too).
+
+On Android the data folder is **Internal storage › pkmarket** (`/storage/emulated/0/pkmarket`),
+so you can see the files, back up `portfolio/ledger.json`, and open `dashboard.html` in Chrome.
+
+### Option A: Pydroid 3 (easiest, no scheduling)
+
+1. Install **Pydroid 3** from the Play Store.
+2. On the phone, open this repo on GitHub › **Code** › **Download ZIP**, and extract it into
+   **Internal storage › Download** (most file managers can extract ZIPs).
+3. Open Pydroid 3 › folder icon › **Open** › `Download/Day-Trader-PSX-main/psx-mufap/scripts/pkm.py`.
+   Allow storage access when Pydroid asks: that's what lets it save to Internal storage › pkmarket.
+4. Tap **▶ Run**. Choose **13** (Settings) to create your config and set your watchlist, then
+   **1** to fetch data. After that:
+   - **4**: stock advice (sell / hold / buy with stop-losses)
+   - **5**: fund advice
+   - **6** / **7**: record a buy or sell
+   - **9**: your portfolio
+   - **12**: build the dashboard, then open **Internal storage › pkmarket › dashboard.html** with Chrome
+5. For typed commands, use Pydroid's menu › **Terminal**:
+
+   ```bash
+   cd /storage/emulated/0/Download/Day-Trader-PSX-main/psx-mufap/scripts
+   python pkm.py rank stocks --all --shariah
+   python pkm.py advice --buy 5
+   python daily.py                 # the full daily update, by hand
+   ```
+
+Pydroid can't run things on a timer: open it and choose **11** (Run the whole daily update) when
+you want fresh data. For automatic runs, use Termux.
+
+### Option B: Termux (scheduled updates, one-tap shortcuts)
+
+Install **Termux** from F-Droid or its GitHub releases (the Play Store build is out of date), then:
+
+```bash
+pkg update && pkg install python git
+termux-setup-storage                       # allow access to Internal storage
+git clone https://github.com/salmankhwaja/Day-Trader-PSX.git
+cd Day-Trader-PSX/psx-mufap/scripts
+python pkm.py                              # the menu, as above
+```
+
+Run the daily update automatically, e.g. 07:00 and 04:00 on weekdays (phone clock on Pakistan time):
+
+```bash
+pkg install cronie termux-services
+sv-enable crond                            # restart Termux once if this says "unable to change"
+crontab -e
+# add this line, then save:
+0 4,7 * * 1-5  python ~/Day-Trader-PSX/psx-mufap/scripts/daily.py --log /storage/emulated/0/pkmarket/daily.log
+```
+
+Android stops background work to save battery. So the timer actually fires:
+- Turn off battery optimisation for Termux (Settings › Apps › Termux › Battery › Unrestricted).
+- Run `termux-wake-lock` once.
+- Keep Termux's notification running.
+
+One-tap home-screen buttons: install **Termux:Widget** from the same source as Termux, then
+
+```bash
+mkdir -p ~/.shortcuts
+printf '#!/bin/sh
+cd ~/Day-Trader-PSX/psx-mufap/scripts && python pkm.py
+' > ~/.shortcuts/PSX-menu
+printf '#!/bin/sh
+python ~/Day-Trader-PSX/psx-mufap/scripts/daily.py
+' > ~/.shortcuts/PSX-update
+chmod +x ~/.shortcuts/*
+```
+
+Add the Termux:Widget widget to your home screen; it lists **PSX-menu** and **PSX-update**.
+
+### Notes for phones
+
+- Downloads come straight from the PSX and MUFAP sites over your phone's connection:
+  - **Daily update, 20-stock watchlist:** about 1–2 MB.
+  - **Company pages:** about 0.3 MB each, refreshed weekly.
+  - **First whole-market run:** roughly 200 MB over 15–20 minutes. Do it on Wi-Fi with the
+    screen on.
+- The live dashboard server works too (`python dashboard.py serve`, then open
+  http://127.0.0.1:8787 in Chrome), but Android may pause it once you leave the app. The one-file
+  `dashboard.html` from menu option 12 always works.
+- Back up `Internal storage › pkmarket › portfolio/ledger.json`: it is your trade record.
+- This is separate from the Claude skill. Claude's app can't run code on your phone; it runs the
+  same scripts in its own sandbox.
+
 ## Use it with Claude
 
 **Claude app (phone, web, desktop):** download `psx-mufap.zip` from the
@@ -358,7 +454,9 @@ psx-mufap/                    the skill and the tools
   scripts/funds.py            MUFAP fund suggestions by risk profile; review of funds you hold
   brokers.json                published PSX broker tariffs and pass-through charges, with sources
   scripts/dashboard.py        build and serve the dashboard
-  scripts/daily_sync.sh       the daily pipeline
+  scripts/pkm.py              a menu launcher for everything (phones, or if you prefer menus)
+  scripts/daily.py            the daily pipeline, pure Python (Linux, macOS, Windows, Android)
+  scripts/daily_sync.sh       shell wrapper around daily.py for cron and systemd
   scripts/install_services.sh systemd timer (your schedule) and dashboard service
   dashboard/                  index.html + app.js (Chart.js 4.4.1 from cdnjs, pinned with SRI)
   references/                 strategy and data-source notes

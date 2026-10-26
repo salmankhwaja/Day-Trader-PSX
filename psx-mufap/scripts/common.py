@@ -8,7 +8,8 @@ Everything the tools write lives under one home folder:
     <home>/mufap/nav_history.csv  date,fund,category,nav (grows a row per fund per run)
     <home>/paper/portfolio.json the paper-trading account
 
-The home is ~/pkmarket unless PKM_HOME or --home says otherwise. It is yours alone:
+The home is ~/pkmarket (on Android: /storage/emulated/0/pkmarket when writable) unless
+PKM_HOME or --home says otherwise. It is yours alone:
 nothing in it belongs in the code repository.
 """
 import csv
@@ -51,8 +52,24 @@ DEFAULT_CONFIG = {
 }
 
 
+ANDROID_SHARED = "/storage/emulated/0"
+
+
+def is_android():
+    return "ANDROID_ROOT" in os.environ or "ANDROID_DATA" in os.environ
+
+
+def default_home():
+    """~/pkmarket, except on Android (Pydroid 3, Termux) where app home folders are hidden from
+    file managers: there, use the phone's shared storage when it is writable, so the data, the
+    ledger and the dashboard file can be opened, backed up and shared like any other file."""
+    if is_android() and os.access(ANDROID_SHARED, os.W_OK):
+        return os.path.join(ANDROID_SHARED, "pkmarket")
+    return os.path.join("~", "pkmarket")
+
+
 def home(arg=None):
-    h = os.path.expanduser(arg or os.environ.get("PKM_HOME") or os.path.join("~", "pkmarket"))
+    h = os.path.expanduser(arg or os.environ.get("PKM_HOME") or default_home())
     os.makedirs(h, exist_ok=True)
     return h
 
