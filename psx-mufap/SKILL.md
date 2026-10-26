@@ -20,6 +20,8 @@ code repository.
 | `paper.py` | Pretend PKR account: buy/sell shares, invest/redeem funds, follow signals, credit dividends |
 | `propose.py` | Screen, backtest out-of-sample, propose a paper portfolio; review holdings daily |
 | `portfolio.py` | The user's REAL portfolio: trades, brokers, commissions, lots, P/L, dividends, cash; `advise` |
+| `funds.py` | MUFAP fund suggestions by risk profile (`advise`), and HOLD/REVIEW for funds the user holds (`review`) |
+| `brokers.json` | Published PSX broker tariffs and pass-through charges, with sources (used by `portfolio.py broker`) |
 | `advice.py` | Stop-losses, sell/hold/trim suggestions and sized buy ideas (used by `portfolio.py advise`) |
 | `dashboard.py` | Build the visual dashboard (compare, screener, portfolio, dividends, funds) and serve it |
 | `daily_sync.sh`, `install_services.sh` | The daily pipeline and its systemd timer, for the user's computer |
@@ -177,11 +179,17 @@ Recording trades the user tells you about ("I bought 500 OGDC at 298 through AKD
   contract note (commission, taxes such as CVT/SST, other fees such as CDC/NCCPL). If they don't
   have the charges, record without `--commission` and say it was estimated from the broker's
   schedule.
+- If they name a stop-loss, record it with `--stop`; if not, say a stop will be computed daily.
 - Read the trade back in one line before recording it, then run the command:
 
 ```
-python3 scripts/portfolio.py broker add AKD --commission-pct 0.15 --min-commission 50 --default
+python3 scripts/portfolio.py broker presets             # published tariffs: akd, js-global, scs, ktrade, ...
+python3 scripts/portfolio.py broker add AKD --preset akd --default
+python3 scripts/portfolio.py broker add MyBroker --commission-pct 0.12 --per-share 0.03 --sales-tax-pct 13
 python3 scripts/portfolio.py buy OGDC 500 298 --broker AKD --date 2026-10-25 --commission 223.5 --taxes 29 --other 10
+python3 scripts/portfolio.py buy OGDC 500 298 --broker AKD --stop 280   # with the user's own stop-loss
+python3 scripts/portfolio.py fund-buy "Alfalah Cash Fund - II" 200000 --nav 106.73   # mutual funds
+python3 scripts/portfolio.py fund-sell "Alfalah Cash Fund - II" all --nav 108.10
 python3 scripts/portfolio.py sell OGDC 200 315 --broker AKD --date 2026-11-10 --commission 94.5
 python3 scripts/portfolio.py import trades.csv        # date,side,symbol,qty,price,broker,commission,taxes,other,note
 python3 scripts/portfolio.py cash deposit 500000      # optional: lets buy ideas respect available cash
@@ -190,6 +198,13 @@ python3 scripts/portfolio.py delete ID                # fix a mistake
 python3 scripts/portfolio.py stop OGDC 280            # the user's own stop-loss; `auto` to go back
 python3 scripts/portfolio.py dividends [--apply]      # dividends due from book closures; confirm amounts first
 ```
+
+Broker presets (`brokers.json`) hold each broker's published commission (per share or percent,
+whichever is higher, with price slabs), plus sales tax on commission (13%, Sindh), CDC
+Rs 0.005/share and exchange/regulator levies, each with a source link and a confidence note.
+When the user's broker isn't listed, or they have a negotiated rate, add it by hand from their
+commission sheet. Charges not given on a trade are estimated from the broker's schedule and
+marked estimated; the contract note always wins.
 
 Sales are matched first-in, first-out against that broker's lots; P/L is after every charge.
 A sale of shares not held at that broker on that date is refused. Capital gains tax is not
@@ -218,6 +233,18 @@ How to present them:
 - Stops and sizing rules live in config.json (`stop_atr_mult`, `min_stop_pct`, `max_stop_pct`,
   `target_r`, `risk_per_trade`, `max_position_pct`); explain them if asked.
 - The ledger is the user's financial record: never publish it or commit it to a public repo.
+
+**Funds.** For "which mutual funds should I hold", ask (or infer from the conversation) their
+risk appetite and whether they want Shariah-compliant funds, then:
+
+```
+python3 scripts/funds.py advise --risk low|medium|high [--shariah]
+python3 scripts/funds.py review        # the funds they hold: HOLD, or REVIEW (bottom third of category)
+```
+
+Explain the category first (what it invests in, how risky it is), then the top funds and their
+30-day, 90-day and 1-year returns. Say that returns exclude sales loads and that annualised
+(money market, income) and absolute (equity, mixed) returns can't be compared.
 
 ## Step 7: the dashboard
 

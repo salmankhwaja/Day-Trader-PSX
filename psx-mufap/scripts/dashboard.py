@@ -190,7 +190,16 @@ def build_data(h, cfg, all_=None, days=500):
             if files:
                 with open(os.path.join(adir, files[-1])) as f:
                     adv = json.load(f)
+        import funds as FU
+        try:
+            _, frev = FU.review(h)
+        except SystemExit:
+            frev = []
+        fr = {r["fund"]: r for r in frev}
+        my_funds = [dict(f, action=fr.get(f["fund"], {}).get("action"), why=fr.get(f["fund"], {}).get("why"),
+                         unrealised_pct=r4(f["unrealised_pct"])) for f in s["funds"]]
         mine = {"summary": {k: s[k] for k in ("value", "cost", "unrealised", "realised", "dividends", "fees", "cash")},
+                "funds": my_funds,
                 "holdings": hold, "sales": s["sales"][-100:],
                 "fees": [dict(v, broker=k) for k, v in sorted(fees.items())],
                 "dividends": [e for e in lg["entries"] if e["type"] == "dividend"][-100:],

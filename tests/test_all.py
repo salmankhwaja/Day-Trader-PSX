@@ -22,6 +22,7 @@ import propose  # noqa: E402
 import dashboard  # noqa: E402
 import portfolio as PF  # noqa: E402
 import advice as A  # noqa: E402
+import funds as FU  # noqa: E402
 
 
 def run(fn, argv):
@@ -410,7 +411,8 @@ class TestLedger(Market):
         self.assertTrue(lg["entries"][1]["commission_estimated"])
         self.assertAlmostEqual(lg["entries"][1]["commission"], 60.0)  # 0.10% of 60,000
         # selling at AKD consumes AKD's lot, not the cheaper-or-older one elsewhere
-        self.pf("sell", "SYN05", "400", "70", "--broker", "AKD", "--date", "2026-03-05", "--commission", "50")
+        self.pf("sell", "SYN05", "400", "70", "--broker", "AKD", "--date", "2026-03-05", "--commission", "50",
+                "--taxes", "0", "--other", "0")
         _, sales = PF.lots(PF.load(self.h))
         s = sales[0]
         unit = (50000 + 75 + 12 + 8) / 1000.0
@@ -522,6 +524,84 @@ class TestAdvice(Market):
         self.assertEqual([x["symbol"] for x in data["mine"]["holdings"]], ["SYN05"])
         self.assertTrue(next(s for s in data["stocks"] if s["symbol"] == "SYN05")["owned"])
         self.assertIn("AKD", [f["broker"] for f in data["mine"]["fees"]])
+
+
+class TestBrokersAndFunds(Market):
+    def setUp(self):
+        super().setUp()
+        run(pkdata.main, ["--home", self.h, "mufap", "--from-file", os.path.join(FIX, "mufap-2026-10-26.md")])
+
+    def pf(self, *args):
+        return run(PF.main, ["--home", self.h] + list(args))
+
+    def test_every_preset_is_usable(self):
+        data = PF.load_presets()
+        self.assertIn("psx-minimum", data["brokers"])
+        for key in data["brokers"]:
+            b = PF.preset_broker(key)
+            self.assertTrue(b["source"].startswith("https://"), key)
+            c, t, o = PF.estimate_charges(b, 1000, 100.0, "buy")
+            self.assertGreaterEqual(c, 150.0 - 1e-9, key)  # never below the PSX minimum (0.15%)
+            self.assertAlmostEqual(t, round(c * 0.13, 2), places=2)
+
+    def test_price_tiers(self):
+        scs, akd, kh = PF.preset_broker("scs"), PF.preset_broker("akd"), PF.preset_broker("khanani")
+        self.assertEqual(PF.estimate_charges(scs, 1000, 3.5)[0], 30.0)       # Rs 0.03/share below Rs 10
+        self.assertEqual(PF.estimate_charges(scs, 1000, 20.0)[0], 50.0)      # Rs 0.05/share beats 0.15% of Rs 20,000
+        self.assertEqual(PF.estimate_charges(scs, 1000, 100.0)[0], 150.0)    # 0.15% beats Rs 0.05/share
+        self.assertEqual(PF.estimate_charges(akd, 1000, 4.0)[0], 30.0)
+        self.assertEqual(PF.estimate_charges(kh, 1000, 300.0)[0], 450.0)
+        self.assertEqual(PF.estimate_charges(akd, 1000, 100.0, "sell")[1], PF.estimate_charges(akd, 1000, 100.0, "buy")[1])
+
+    def test_broker_commands_and_stop_on_buy(self):
+        self.pf("broker", "import", "akd,scs")
+        self.pf("broker", "add", "Mine", "--commission-pct", "0.1", "--per-share", "0.02", "--sales-tax-pct", "16", "--default")
+        lg = PF.load(self.h)
+        self.assertEqual(sorted(lg["brokers"]), ["Mine", "akd", "scs"])
+        self.assertEqual(lg["default_broker"], "Mine")
+        self.pf("buy", "SYN05", "100", "50", "--date", "2026-03-01", "--stop", "45")
+        lg = PF.load(self.h)
+        self.assertEqual(lg["stops"]["SYN05"], 45.0)
+        e = lg["entries"][-1]
+        self.assertEqual(e["broker"], "Mine")
+        self.assertAlmostEqual(e["commission"], 5.0)               # 0.1% of 5,000 beats Rs 0.02 x 100
+        self.assertAlmostEqual(e["taxes"], 0.8)                    # 16% of the commission
+        with self.assertRaises(SystemExit):
+            self.pf("buy", "SYN05", "100", "50", "--stop", "55")    # a stop must be below the price
+        self.pf("buy", "SYN05", "100", "50", "--date", "2026-03-02", "--commission", "10")
+        e = PF.load(self.h)["entries"][-1]
+        self.assertEqual((e["commission"], e["taxes"], e["estimated"]), (10.0, 1.6, ["taxes", "other"]))
+
+    def test_funds_ledger(self):
+        self.pf("cash", "deposit", "500000", "--date", "2026-01-01")
+        self.pf("fund-buy", "ABL Cash", "100000", "--nav", "10", "--load-pct", "1", "--date", "2026-02-01")
+        lg = PF.load(self.h)
+        e = lg["entries"][-1]
+        self.assertEqual(e["fund"], "ABL Cash Fund")
+        self.assertAlmostEqual(e["units"], 9900.0)
+        self.pf("fund-sell", "ABL Cash Fund", "all", "--nav", "11", "--date", "2026-06-01")
+        s = PF.summary(self.h, PF.load(self.h))
+        self.assertEqual(s["funds"], [])
+        self.assertAlmostEqual(s["fund_sales"][0]["pnl"], 9900 * 11 - 100000)
+        self.assertAlmostEqual(s["cash"], 500000 - 100000 + 108900)
+        with self.assertRaises(SystemExit):
+            self.pf("fund-buy", "ABL", "1000")                      # ambiguous name
+
+    def test_fund_advice_and_review(self):
+        date, cats = FU.advise(self.h, "low")
+        self.assertEqual([c["category"] for c in cats], ["Money Market"])
+        top = cats[0]["funds"]
+        self.assertTrue(all(top[i]["score"] >= top[i + 1]["score"] for i in range(len(top) - 1)))
+        _, cats = FU.advise(self.h, "high")
+        self.assertEqual([c["category"] for c in cats], ["Equity"])
+        ranked = [f for f in cats[0]["funds"]]
+        # hold the weakest money market fund: review says REVIEW and names leaders
+        by = FU.ranked_by_category(self.h)[1]["Money Market"]
+        worst = [f for f in by if f.get("score") is not None][-1]["fund"]
+        self.pf("fund-buy", worst, "10000", "--date", "2026-02-01")
+        _, rv = FU.review(self.h)
+        self.assertEqual(rv[0]["action"], "REVIEW")
+        self.assertIn("leaders", rv[0]["why"])
 
 
 def argparse_ns(**kw):

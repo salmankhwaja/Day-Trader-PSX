@@ -437,6 +437,15 @@
           cell(num(hh.qty)) + cell(num(hh.avg_cost, 2)) + cell(hh.target == null ? "–" : num(hh.target, 2)) + cell(pkr(hh.value)) +
           cell(brokers, "l") + cell(esc(hh.first_buy), "l") + "</tr>";
       }).join("");
+    var MF = M.funds || [];
+    $("mi-fundcard").style.display = MF.length ? "" : "none";
+    $("mi-funds").innerHTML = "<tr><th class='l'>Fund</th><th class='l'>Action</th><th>Value</th><th>P/L</th><th class='l'>Why</th><th>Units</th><th>NAV</th><th class='l'>Category</th></tr>" +
+      MF.map(function (f) {
+        return "<tr>" + cell("<b>" + esc(f.fund) + "</b>", "l") + cell(f.action === "REVIEW" ? "<b>REVIEW</b>" : esc(f.action || "–"), "l") +
+          cell(pkr(f.value)) + cell(pct(f.unrealised_pct), sgn(f.unrealised_pct)) +
+          "<td class='l' style='white-space:normal;min-width:200px'>" + esc(f.why || "") + "</td>" + cell(num(f.units, 2)) +
+          cell(f.nav == null ? "–" : num(f.nav, 4) + " <span class='muted small'>" + esc(f.nav_date || "") + "</span>") + cell(esc(f.category || ""), "l") + "</tr>";
+      }).join("");
     var st = M.settings;
     $("mi-note").textContent = "Average cost includes commission, taxes and fees. Stop = " + st.stop_atr_mult + " × the 14-day average daily move, " +
       Math.round(st.min_stop_pct * 100) + "–" + Math.round(st.max_stop_pct * 100) + "% below entry, trailing up; * = a stop you set. Prices are the last close.";
@@ -453,6 +462,7 @@
       "% in one stock. Rule-based suggestions from past prices, not investment advice; nothing is ordered for you.";
     var alloc = {};
     M.holdings.forEach(function (hh) { var key = hh.sector || "Unknown sector"; alloc[key] = (alloc[key] || 0) + (hh.value || hh.cost || 0); });
+    (M.funds || []).forEach(function (f) { alloc["Mutual funds"] = (alloc["Mutual funds"] || 0) + (f.value || f.cost || 0); });
     if (S.cash > 0) alloc.Cash = S.cash;
     var ent = Object.keys(alloc).map(function (k) { return [k, alloc[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
     if (ent.length > 6) { var rest = ent.slice(5).reduce(function (t, e) { return t + e[1]; }, 0); ent = ent.slice(0, 5).concat([["Other", rest]]); }

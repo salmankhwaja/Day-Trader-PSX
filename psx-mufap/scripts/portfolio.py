@@ -3,12 +3,17 @@
 
 This is a record-keeper and adviser. It never talks to a broker and never places an order.
 
-  portfolio.py broker add NAME [--commission-pct 0.15] [--min-commission 0] [--per-share 0]
-                               [--other-pct 0] [--default]       a broker's fee schedule
+  portfolio.py broker presets          published tariffs of PSX brokers (brokers.json, with sources)
+  portfolio.py broker add NAME --preset akd [--default]          a broker from a preset
+  portfolio.py broker add NAME --commission-pct 0.15 --per-share 0.03 [--min-commission X]
+                               [--sales-tax-pct 13] [--default]  or by hand, from your commission sheet
+  portfolio.py broker import [akd,js-global,...]                 load presets as brokers
   portfolio.py broker list
   portfolio.py buy  SYMBOL QTY PRICE --broker NAME [--date YYYY-MM-DD] [--commission X]
-                                     [--taxes X] [--other X] [--note TEXT]
+                                     [--taxes X] [--other X] [--stop X] [--note TEXT]
   portfolio.py sell SYMBOL QTY|all PRICE --broker NAME [same options]
+  portfolio.py fund-buy "FUND" AMOUNT [--nav X] [--load-pct X] [--date]   record a mutual fund investment
+  portfolio.py fund-sell "FUND" AMOUNT|all [--nav X] [--load-pct X]       record a redemption
   portfolio.py dividend SYMBOL NET [--gross X] [--tax X] [--date]  record a dividend you received
   portfolio.py dividends [--apply]      find dividends due on your holdings from PSX book closures
   portfolio.py cash deposit|withdraw AMOUNT [--broker NAME] [--date]   optional cash tracking
@@ -90,42 +95,92 @@ def check_date(s):
 
 # ------------------------------------------------------------------ fees
 
-def estimate_commission(broker, qty, price):
+PRESETS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "brokers.json")
+
+
+def load_presets(path=None):
+    with open(path or PRESETS_FILE) as f:
+        return json.load(f)
+
+
+def preset_broker(key, path=None):
+    """A broker fee schedule from brokers.json, with the file's statutory defaults filled in."""
+    data = load_presets(path)
+    bk = data["brokers"].get(key.lower())
+    if not bk:
+        raise ValueError("no preset %r; choose from: %s" % (key, ", ".join(sorted(data["brokers"]))))
+    b = {k: v for k, v in data.get("_defaults", {}).items() if k in ("sales_tax_pct", "cvt_pct", "cdc_per_share", "levies_pct")}
+    b.update({k: v for k, v in bk.items() if k not in ("name", "confidence", "source")})
+    b.update({"preset": key.lower(), "full_name": bk.get("name"), "source": bk.get("source"),
+              "confidence": bk.get("confidence"), "as_of": data.get("_as_of")})
+    return b
+
+
+def tiers_of(b):
+    """The commission tiers of a broker record (older records stored flat commission_pct/per_share)."""
+    if b.get("tiers"):
+        return b["tiers"]
+    return [{"max_price": None, "per_share": float(b.get("per_share", 0.03 if "commission_pct" not in b else 0.0)),
+             "pct": float(b.get("commission_pct", 0.15))}]
+
+
+def estimate_charges(broker, qty, price, side="buy"):
+    """(commission, taxes, other) for a trade, from a broker's schedule. See brokers.json _model."""
     b = broker or {}
     value = qty * price
-    c = max(value * float(b.get("commission_pct", 0.15)) / 100.0,
-            qty * float(b.get("per_share", 0.0)),
-            float(b.get("min_commission", 0.0)))
-    other = value * float(b.get("other_pct", 0.0)) / 100.0
-    return round(c, 2), round(other, 2)
+    tier = None
+    for t in tiers_of(b):
+        tier = t
+        if t.get("max_price") is not None and price <= float(t["max_price"]):
+            break
+    commission = max(qty * float(tier.get("per_share") or 0), value * float(tier.get("pct") or 0) / 100.0,
+                     float(b.get("min_commission") or 0))
+    taxes = commission * float(b.get("sales_tax_pct") or 0) / 100.0
+    if side == "buy":
+        taxes += value * float(b.get("cvt_pct") or 0) / 100.0
+    other = qty * float(b.get("cdc_per_share") or 0) + value * float(b.get("levies_pct") or 0) / 100.0
+    other += value * float(b.get("other_pct") or 0) / 100.0  # older records
+    return round(commission, 2), round(taxes, 2), round(other, 2)
+
+
+def estimate_commission(broker, qty, price, side="buy"):
+    """(commission, taxes + other) -- kept for callers that want two numbers."""
+    c, t, o = estimate_charges(broker, qty, price, side)
+    return c, round(t + o, 2)
 
 
 def resolve_broker(lg, name):
     name = name or lg.get("default_broker")
     if not name:
-        raise ValueError("which broker? pass --broker NAME (add one first: portfolio.py broker add NAME)")
+        raise ValueError("which broker? pass --broker NAME (add one first: portfolio.py broker add NAME --preset akd)")
     for k in lg["brokers"]:
         if k.lower() == name.lower():
             return k
-    lg["brokers"][name] = {"commission_pct": 0.15, "min_commission": 0.0, "per_share": 0.0,
-                           "other_pct": 0.0, "auto_added": True}
+    b = preset_broker("psx-minimum")
+    b["auto_added"] = True
+    lg["brokers"][name] = b
     return name
 
 
-def record_trade(lg, side, symbol, qty, price, broker, date=None, commission=None, taxes=0.0, other=None, note=""):
+def record_trade(lg, side, symbol, qty, price, broker, date=None, commission=None, taxes=None, other=None, note="",
+                 stop=None):
     symbol = symbol.upper()
     broker = resolve_broker(lg, broker)
     date = check_date(date or today())
     qty, price = int(qty), float(price)
     if qty <= 0 or price <= 0:
         raise ValueError("quantity and price must be positive")
-    est_c, est_o = estimate_commission(lg["brokers"][broker], qty, price)
-    estimated = commission is None
+    b = lg["brokers"][broker]
+    est_c, est_t, est_o = estimate_charges(b, qty, price, side)
+    if commission is not None and taxes is None:  # sales tax follows the commission actually charged
+        est_t = round(float(commission) * float(b.get("sales_tax_pct") or 0) / 100.0 +
+                      (qty * price * float(b.get("cvt_pct") or 0) / 100.0 if side == "buy" else 0), 2)
+    estimated = [k for k, v in (("commission", commission), ("taxes", taxes), ("other", other)) if v is None]
     e = {"type": side, "date": date, "symbol": symbol, "qty": qty, "price": price, "broker": broker,
          "commission": round(float(est_c if commission is None else commission), 2),
-         "taxes": round(float(taxes or 0), 2),
+         "taxes": round(float(est_t if taxes is None else taxes), 2),
          "other": round(float(est_o if other is None else other), 2),
-         "commission_estimated": estimated, "note": note or ""}
+         "commission_estimated": "commission" in estimated, "estimated": estimated, "note": note or ""}
     add_entry(lg, e)
     _, sales = lots(lg)  # replay: no sale, this one or a later one, may sell shares not held then
     bad = next((x for x in sales if x["unmatched"]), None)
@@ -136,6 +191,10 @@ def record_trade(lg, side, symbol, qty, price, broker, date=None, commission=Non
         held = sum(l["qty"] for l in book.get((symbol, broker), []))
         raise ValueError("that would sell %s shares not held at %s on %s (held now: %d; no short selling)" % (
             bad["symbol"], bad["broker"], bad["date"], held))
+    if stop is not None and side == "buy":
+        if float(stop) >= price:
+            raise ValueError("a stop-loss must be below the buy price")
+        lg["stops"][symbol] = float(stop)
     return e
 
 
@@ -210,6 +269,64 @@ def holdings(h, lg):
     return out
 
 
+def latest_navs(h):
+    """{fund name: snapshot row} from the newest MUFAP snapshot, or {}."""
+    try:
+        import rank
+        _, rows = rank.fund_rows(h)
+        return {r["fund"]: r for r in rows}
+    except SystemExit:
+        return {}
+
+
+def find_fund_name(h, name, lg=None):
+    """Exact or unique partial match against MUFAP funds and funds already in the ledger."""
+    names = set(latest_navs(h))
+    if lg:
+        names |= {e["fund"] for e in lg["entries"] if e["type"] in ("fund_buy", "fund_sell")}
+    exact = [n for n in names if n.lower() == name.lower()]
+    hits = exact or [n for n in names if name.lower() in n.lower()]
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        return None
+    raise ValueError("%r matches %d funds; be more specific:\n  %s" % (name, len(hits), "\n  ".join(sorted(hits)[:15])))
+
+
+def fund_holdings(h, lg):
+    """Units, average cost and value per fund (average-cost method), plus realised redemptions."""
+    navs = latest_navs(h)
+    pos, realised = {}, []
+    for e in ordered(lg["entries"]):
+        if e["type"] == "fund_buy":
+            p = pos.setdefault(e["fund"], {"fund": e["fund"], "units": 0.0, "cost": 0.0, "first_buy": e["date"],
+                                           "category": e.get("category")})
+            p["units"] += e["units"]
+            p["cost"] += e["amount"]
+        elif e["type"] == "fund_sell":
+            p = pos.get(e["fund"])
+            if not p or p["units"] <= 1e-9:
+                continue
+            cost = p["cost"] * min(e["units"], p["units"]) / p["units"]
+            p["units"] -= e["units"]
+            p["cost"] -= cost
+            realised.append({"id": e["id"], "date": e["date"], "fund": e["fund"], "proceeds": e["amount"],
+                             "cost": round(cost, 2), "pnl": round(e["amount"] - cost, 2)})
+    out = []
+    for f, p in sorted(pos.items()):
+        if p["units"] <= 1e-6:
+            continue
+        snap = navs.get(f)
+        nav = snap["nav"] if snap else None
+        p.update(avg_nav=p["cost"] / p["units"], nav=nav, nav_date=snap["validity_date"] if snap else None,
+                 category=p.get("category") or (snap or {}).get("category"),
+                 value=round(p["units"] * nav, 2) if nav else None)
+        p["unrealised"] = round(p["value"] - p["cost"], 2) if nav else None
+        p["unrealised_pct"] = (p["value"] / p["cost"] - 1) if nav and p["cost"] else None
+        out.append(p)
+    return out, realised
+
+
 def cash_balance(lg):
     """Deposits - withdrawals - buys + sales + dividends; None when no deposit was ever recorded."""
     if not any(e["type"] == "cash" for e in lg["entries"]):
@@ -225,6 +342,10 @@ def cash_balance(lg):
             bal += e["qty"] * e["price"] - e["commission"] - e["taxes"] - e["other"]
         elif t == "dividend":
             bal += e["net"]
+        elif t == "fund_buy":
+            bal -= e["amount"]
+        elif t == "fund_sell":
+            bal += e["amount"]
     return round(bal, 2)
 
 
@@ -234,47 +355,108 @@ def summary(h, lg):
     fees = sum(e.get("commission", 0) + e.get("taxes", 0) + e.get("other", 0)
                for e in lg["entries"] if e["type"] in ("buy", "sell"))
     divs = sum(e["net"] for e in lg["entries"] if e["type"] == "dividend")
-    value = sum(p["value"] or p["cost"] for p in hs)
-    cost = sum(p["cost"] for p in hs)
-    return {"holdings": hs, "sales": sales, "value": round(value, 2), "cost": round(cost, 2),
-            "unrealised": round(value - cost, 2), "realised": round(sum(s["pnl"] for s in sales), 2),
+    funds, fund_sales = fund_holdings(h, lg)
+    value = sum(p["value"] or p["cost"] for p in hs) + sum(f["value"] or f["cost"] for f in funds)
+    cost = sum(p["cost"] for p in hs) + sum(f["cost"] for f in funds)
+    return {"holdings": hs, "funds": funds, "sales": sales, "fund_sales": fund_sales,
+            "value": round(value, 2), "cost": round(cost, 2), "unrealised": round(value - cost, 2),
+            "realised": round(sum(s["pnl"] for s in sales) + sum(s["pnl"] for s in fund_sales), 2),
             "dividends": round(divs, 2), "fees": round(fees, 2), "cash": cash_balance(lg)}
 
 
 # ------------------------------------------------------------------ commands
 
+def tier_text(b):
+    parts = []
+    for t in tiers_of(b):
+        rate = " or ".join(x for x in ("Rs %g/share" % t["per_share"] if t.get("per_share") else "",
+                                      "%g%%" % t["pct"] if t.get("pct") else "") if x)
+        rate += ", whichever higher" if t.get("per_share") and t.get("pct") else ""
+        parts.append(("up to Rs %g: " % t["max_price"] if t.get("max_price") is not None else
+                      ("above: " if len(tiers_of(b)) > 1 else "")) + rate)
+    if b.get("min_commission"):
+        parts.append("min Rs %g/trade" % b["min_commission"])
+    return "; ".join(parts)
+
+
+def charge_text(b):
+    return "sales tax %g%% of commission, CDC Rs %g/share, levies %g%%%s" % (
+        float(b.get("sales_tax_pct") or 0), float(b.get("cdc_per_share") or 0), float(b.get("levies_pct") or 0),
+        ", CVT %g%% on buys" % b["cvt_pct"] if b.get("cvt_pct") else "")
+
+
 def cmd_broker(a, h, cfg):
     lg = load(h)
+    if a.action == "presets":
+        data = load_presets(a.file)
+        rows = [[k, v["name"], tier_text(v), v.get("confidence", "")[:60]] for k, v in sorted(data["brokers"].items())]
+        print(C.md_table(["Preset", "Broker", "Commission", "Basis"], rows))
+        print("\nPass-through charges applied to every preset: " + charge_text(data.get("_defaults", {})))
+        print("Source notes and links: %s (as of %s). Your signed commission sheet wins: edit the file or "
+              "add a broker by hand." % (a.file or PRESETS_FILE, data.get("_as_of")))
+        return 0
+    if a.action == "import":
+        data = load_presets(a.file)
+        keys = [k.strip().lower() for k in a.name.split(",")] if a.name else sorted(data["brokers"])
+        try:
+            for k in keys:
+                lg["brokers"][k] = preset_broker(k, a.file)
+        except ValueError as e:
+            sys.exit(str(e))
+        if not lg.get("default_broker") and len(keys) == 1:
+            lg["default_broker"] = keys[0]
+        save(h, lg)
+        print("imported %d broker schedules: %s" % (len(keys), ", ".join(keys)))
+        print("Set the one you use as default: portfolio.py broker add KEY --preset KEY --default")
+        return 0
     if a.action == "list" or not a.name:
         if not lg["brokers"]:
-            print("no brokers yet: portfolio.py broker add NAME --commission-pct 0.15")
+            print("no brokers yet. See the presets (portfolio.py broker presets), then e.g.\n"
+                  "  portfolio.py broker add AKD --preset akd --default")
             return 0
-        rows = [[n + (" (default)" if n == lg.get("default_broker") else ""), b.get("commission_pct"),
-                 b.get("min_commission"), b.get("per_share"), b.get("other_pct")] for n, b in sorted(lg["brokers"].items())]
-        print(C.md_table(["Broker", "Commission %", "Minimum PKR", "Per share PKR", "Other %"], rows))
+        rows = [[n + (" (default)" if n == lg.get("default_broker") else ""), tier_text(b), charge_text(b),
+                 b.get("preset") or "custom"] for n, b in sorted(lg["brokers"].items())]
+        print(C.md_table(["Broker", "Commission", "Other charges", "From"], rows))
         return 0
-    b = lg["brokers"].setdefault(a.name, {})
-    for k in ("commission_pct", "min_commission", "per_share", "other_pct"):
+    # add / update
+    try:
+        b = preset_broker(a.preset, a.file) if a.preset else dict(lg["brokers"].get(a.name) or preset_broker("psx-minimum"))
+    except ValueError as e:
+        sys.exit(str(e))
+    if a.commission_pct is not None or a.per_share is not None:
+        b["tiers"] = [{"max_price": None, "per_share": a.per_share if a.per_share is not None else 0.0,
+                       "pct": a.commission_pct if a.commission_pct is not None else 0.0}]
+        b.pop("commission_pct", None)
+        b.pop("per_share", None)
+        b["preset"] = None
+    for k in ("min_commission", "sales_tax_pct", "cdc_per_share", "levies_pct", "cvt_pct"):
         v = getattr(a, k)
         if v is not None:
             b[k] = v
-        b.setdefault(k, {"commission_pct": 0.15}.get(k, 0.0))
     b.pop("auto_added", None)
+    lg["brokers"][a.name] = b
     if a.default or not lg.get("default_broker"):
         lg["default_broker"] = a.name
     save(h, lg)
-    print("broker %s: commission %s%% (min PKR %s, per share %s), other %s%%%s" % (
-        a.name, b["commission_pct"], b["min_commission"], b["per_share"], b["other_pct"],
-        ", default" if lg["default_broker"] == a.name else ""))
+    print("broker %s: %s | %s%s" % (a.name, tier_text(b), charge_text(b),
+                                    " | default" if lg["default_broker"] == a.name else ""))
+    ex = estimate_charges(b, 1000, 100.0, "buy")
+    print("example: buying 1,000 shares at Rs 100 costs about Rs %s in commission, %s in taxes, %s other" % ex)
     return 0
 
 
 def describe(e):
     if e["type"] in ("buy", "sell"):
         fees = e["commission"] + e["taxes"] + e["other"]
-        return "#%d %s %s %s %d @ %.2f via %s, fees PKR %s%s" % (
+        est = e.get("estimated") or (["commission"] if e.get("commission_estimated") else [])
+        return "#%d %s %s %s %d @ %.2f via %s, charges PKR %s (commission %s, taxes %s, other %s)%s" % (
             e["id"], e["date"], e["type"].upper(), e["symbol"], e["qty"], e["price"], e["broker"],
-            "{:,.2f}".format(fees), " (commission estimated)" if e.get("commission_estimated") else "")
+            "{:,.2f}".format(fees), "{:,.2f}".format(e["commission"]), "{:,.2f}".format(e["taxes"]),
+            "{:,.2f}".format(e["other"]), " [estimated: %s]" % ", ".join(est) if est else "")
+    if e["type"] in ("fund_buy", "fund_sell"):
+        return "#%d %s %s %s %.4f units @ NAV %.4f = PKR %s%s" % (
+            e["id"], e["date"], "FUND BUY" if e["type"] == "fund_buy" else "FUND SELL", e["fund"], e["units"], e["nav"],
+            "{:,.2f}".format(e["amount"]), " (load %.2f%%)" % e["load_pct"] if e.get("load_pct") else "")
     if e["type"] == "dividend":
         return "#%d %s DIVIDEND %s net PKR %s" % (e["id"], e["date"], e["symbol"], "{:,.2f}".format(e["net"]))
     return "#%d %s CASH %s PKR %s" % (e["id"], e["date"], e.get("broker") or "", "{:,.2f}".format(e["amount"]))
@@ -290,11 +472,16 @@ def cmd_trade(a, h, cfg):
             qty = sum(l["qty"] for l in book.get((a.symbol.upper(), broker), []))
             if not qty:
                 raise ValueError("no %s held at %s" % (a.symbol.upper(), broker))
-        e = record_trade(lg, a.cmd, a.symbol, qty, a.price, a.broker, a.date, a.commission, a.taxes, a.other, a.note)
+        e = record_trade(lg, a.cmd, a.symbol, qty, a.price, a.broker, a.date, a.commission, a.taxes, a.other, a.note,
+                         getattr(a, "stop", None))
     except ValueError as err:
         sys.exit(str(err))
     save(h, lg)
     print("recorded " + describe(e))
+    if a.cmd == "buy":
+        own = lg["stops"].get(e["symbol"])
+        print("stop-loss: %s" % ("%.2f (yours)" % own if own is not None else
+                                 "computed daily by `portfolio.py advise` (set your own: portfolio.py stop %s PRICE)" % e["symbol"]))
     if a.cmd == "sell":
         _, sales = lots(lg)
         s = next(x for x in sales if x["id"] == e["id"])
@@ -378,6 +565,44 @@ def cmd_dividends(a, h, cfg):
     return 0
 
 
+def cmd_fund(a, h, cfg):
+    lg = load(h)
+    try:
+        name = find_fund_name(h, a.fund, lg)
+    except ValueError as e:
+        sys.exit(str(e))
+    if not name:
+        if a.nav is None:
+            sys.exit("no MUFAP fund matches %r: run pkdata.py mufap, or give --nav to record it anyway" % a.fund)
+        name = a.fund
+    snap = latest_navs(h).get(name)
+    nav = a.nav if a.nav is not None else (snap or {}).get("nav")
+    if not nav:
+        sys.exit("no NAV for %s: pass --nav" % name)
+    date = check_date(a.date or today())
+    load_pct = float(a.load_pct or 0)
+    if a.cmd == "fund-buy":
+        amount = float(a.amount)
+        units = amount * (1 - load_pct / 100.0) / nav
+        e = add_entry(lg, {"type": "fund_buy", "date": date, "fund": name, "amount": round(amount, 2), "nav": nav,
+                           "units": round(units, 4), "load_pct": load_pct, "category": (snap or {}).get("category"),
+                           "nav_estimated": a.nav is None, "note": a.note or ""})
+    else:
+        funds, _ = fund_holdings(h, lg)
+        held = next((f for f in funds if f["fund"] == name), None)
+        if not held:
+            sys.exit("you hold no units of %s" % name)
+        units = held["units"] if str(a.amount).lower() == "all" else min(float(a.amount) / nav, held["units"])
+        amount = units * nav * (1 - load_pct / 100.0)
+        e = add_entry(lg, {"type": "fund_sell", "date": date, "fund": name, "amount": round(amount, 2), "nav": nav,
+                           "units": round(units, 4), "load_pct": load_pct, "nav_estimated": a.nav is None,
+                           "note": a.note or ""})
+    save(h, lg)
+    print("recorded " + describe(e) + (" (NAV of %s from MUFAP; pass --nav for your actual price)" % (snap or {}).get("validity_date")
+                                         if a.nav is None else ""))
+    return 0
+
+
 def cmd_cash(a, h, cfg):
     lg = load(h)
     amt = float(a.amount) * (1 if a.action == "deposit" else -1)
@@ -392,7 +617,7 @@ def cmd_holdings(a, h, cfg):
     import advice as A
     lg = load(h)
     s = summary(h, lg)
-    if not s["holdings"]:
+    if not s["holdings"] and not s["funds"]:
         print("no holdings recorded. Start with: portfolio.py buy SYMBOL QTY PRICE --broker NAME --date YYYY-MM-DD")
         return 0
     stops = {r["symbol"]: r for r in A.review_holdings(h, cfg, lg, s)}
@@ -403,7 +628,14 @@ def cmd_holdings(a, h, cfg):
                      C.fmt_pkr(p["value"]), C.fmt_pkr(p["unrealised"]), C.fmt_pct(p["unrealised_pct"]),
                      "n/a" if st.get("stop") is None else "%.2f%s" % (st["stop"], "*" if st.get("stop_source") == "yours" else ""),
                      ", ".join("%s %d" % kv for kv in sorted(p["brokers"].items())), p["first_buy"]])
-    print(C.md_table(["Stock", "Qty", "Avg cost", "Price", "Value", "Unrealised", "%", "Stop", "Broker", "Since"], rows))
+    if rows:
+        print(C.md_table(["Stock", "Qty", "Avg cost", "Price", "Value", "Unrealised", "%", "Stop", "Broker", "Since"], rows))
+    if s["funds"]:
+        print("\nMUTUAL FUNDS")
+        print(C.md_table(["Fund", "Category", "Units", "Avg NAV", "NAV", "Value", "Unrealised", "%"],
+                         [[f["fund"], f.get("category") or "", "%.4f" % f["units"], "%.4f" % f["avg_nav"],
+                           "n/a" if f["nav"] is None else "%.4f (%s)" % (f["nav"], f["nav_date"]), C.fmt_pkr(f["value"]),
+                           C.fmt_pkr(f["unrealised"]), C.fmt_pct(f["unrealised_pct"])] for f in s["funds"]]))
     print("\nInvested %s | Value %s | Unrealised %s | Realised %s | Dividends %s | Fees paid %s%s" % (
         C.fmt_pkr(s["cost"]), C.fmt_pkr(s["value"]), C.fmt_pkr(s["unrealised"]), C.fmt_pkr(s["realised"]),
         C.fmt_pkr(s["dividends"]), C.fmt_pkr(s["fees"]), "" if s["cash"] is None else " | Cash " + C.fmt_pkr(s["cash"])))
@@ -424,7 +656,15 @@ def cmd_pnl(a, h, cfg):
                            x["avg_days_held"]] for x in sales]))
     else:
         print("no sales%s" % (" in %s" % a.year if a.year else ""))
-    tot = sum(x["pnl"] for x in sales)
+    _, fsales = fund_holdings(h, lg)
+    if a.year:
+        fsales = [x for x in fsales if x["date"].startswith(str(a.year))]
+    if fsales:
+        print("\nFund redemptions:")
+        print(C.md_table(["Date", "Fund", "Proceeds", "Cost", "P/L"],
+                         [[x["date"], x["fund"], C.fmt_pkr(x["proceeds"]), C.fmt_pkr(x["cost"]), C.fmt_pkr(x["pnl"])]
+                          for x in fsales]))
+    tot = sum(x["pnl"] for x in sales) + sum(x["pnl"] for x in fsales)
     dv = sum(e["net"] for e in divs)
     print("\nRealised P/L %s (after commission, taxes and fees) | Dividends %s | Total %s" % (
         C.fmt_pkr(tot), C.fmt_pkr(dv), C.fmt_pkr(tot + dv)))
@@ -506,7 +746,7 @@ def cmd_stop(a, h, cfg):
     return 0
 
 
-FIELDS = ["date", "side", "symbol", "qty", "price", "broker", "commission", "taxes", "other", "note"]
+FIELDS = ["date", "side", "symbol", "qty", "price", "broker", "commission", "taxes", "other", "note", "stop"]
 
 
 def cmd_import(a, h, cfg):
@@ -523,7 +763,8 @@ def cmd_import(a, h, cfg):
                 raise ValueError("side must be buy or sell")
             num = lambda k: float(r[k].replace(",", "")) if r.get(k) else None  # noqa: E731
             record_trade(lg, side, r["symbol"], int(float(r["qty"].replace(",", ""))), num("price"), r.get("broker"),
-                         r.get("date"), num("commission"), num("taxes") or 0.0, num("other"), r.get("note", ""))
+                         r.get("date"), num("commission"), num("taxes"), num("other"), r.get("note", ""),
+                         num("stop") if side == "buy" else None)
             n += 1
         except (KeyError, ValueError) as e:
             errors.append("line %d: %s" % (i, e))
@@ -542,7 +783,7 @@ def cmd_export(a, h, cfg):
         for e in ordered(lg["entries"]):
             if e["type"] in ("buy", "sell"):
                 w.writerow([e["date"], e["type"], e["symbol"], e["qty"], e["price"], e["broker"], e["commission"],
-                            e["taxes"], e["other"], e.get("note", "")])
+                            e["taxes"], e["other"], e.get("note", ""), ""])
     print("wrote " + a.file)
     return 0
 
@@ -556,13 +797,18 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--home")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("broker")
-    p.add_argument("action", choices=["add", "list"])
-    p.add_argument("name", nargs="?")
-    p.add_argument("--commission-pct", type=float)
-    p.add_argument("--min-commission", type=float)
-    p.add_argument("--per-share", type=float)
-    p.add_argument("--other-pct", type=float)
+    p = sub.add_parser("broker", help="add / list brokers and their charges; presets of published tariffs")
+    p.add_argument("action", choices=["add", "list", "presets", "import"])
+    p.add_argument("name", nargs="?", help="add: your name for the broker; import: comma list of preset keys")
+    p.add_argument("--preset", help="start from a published tariff in brokers.json (see: broker presets)")
+    p.add_argument("--file", help="a brokers.json of your own instead of the bundled one")
+    p.add_argument("--commission-pct", type=float, help="percent of trade value")
+    p.add_argument("--per-share", type=float, help="rupees per share (the higher of the two applies)")
+    p.add_argument("--min-commission", type=float, help="minimum rupees per trade")
+    p.add_argument("--sales-tax-pct", type=float, help="sales tax on commission, e.g. 13 (Sindh)")
+    p.add_argument("--cdc-per-share", type=float)
+    p.add_argument("--levies-pct", type=float, help="PSX + regulator levies, percent of value")
+    p.add_argument("--cvt-pct", type=float, help="capital value tax on purchases, percent")
     p.add_argument("--default", action="store_true")
     for side in ("buy", "sell"):
         p = sub.add_parser(side)
@@ -572,8 +818,18 @@ def main(argv=None):
         p.add_argument("--broker")
         p.add_argument("--date")
         p.add_argument("--commission", type=float)
-        p.add_argument("--taxes", type=float, default=0.0)
-        p.add_argument("--other", type=float)
+        p.add_argument("--taxes", type=float, help="taxes on the contract note (sales tax on commission, CVT, CGT)")
+        p.add_argument("--other", type=float, help="other charges (CDC, NCCPL, exchange and regulator levies)")
+        p.add_argument("--note")
+        if side == "buy":
+            p.add_argument("--stop", type=float, help="your own stop-loss for this holding (default: computed)")
+    for n in ("fund-buy", "fund-sell"):
+        p = sub.add_parser(n, help="record a mutual fund investment / redemption")
+        p.add_argument("fund", help="fund name or a unique part of it, as on MUFAP")
+        p.add_argument("amount", help="rupees invested; for fund-sell rupees to redeem, or 'all'")
+        p.add_argument("--nav", type=float, help="the NAV you actually got (default: latest MUFAP NAV)")
+        p.add_argument("--load-pct", type=float, help="front-end (buy) or back-end (sell) load, percent")
+        p.add_argument("--date")
         p.add_argument("--note")
     p = sub.add_parser("dividend")
     p.add_argument("symbol")
@@ -619,7 +875,7 @@ def main(argv=None):
     fn = {"broker": cmd_broker, "buy": cmd_trade, "sell": cmd_trade, "dividend": cmd_dividend,
           "dividends": cmd_dividends, "cash": cmd_cash, "holdings": cmd_holdings, "pnl": cmd_pnl, "fees": cmd_fees,
           "trades": cmd_trades, "delete": cmd_delete, "stop": cmd_stop, "import": cmd_import, "export": cmd_export,
-          "advise": cmd_advise}[a.cmd]
+          "advise": cmd_advise, "fund-buy": cmd_fund, "fund-sell": cmd_fund}[a.cmd]
     return fn(a, h, cfg)
 
 

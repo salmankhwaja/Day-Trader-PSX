@@ -56,6 +56,8 @@ if [ -f "$PKM_HOME/portfolio/ledger.json" ]; then
   py portfolio.py dividends
   step my portfolio: advice            # sell/hold with stops, buy ideas with stops and size
   if [ "$PKM_SCOPE" = "all" ]; then py portfolio.py advise --all; else py portfolio.py advise; fi
+  step my portfolio: funds             # HOLD / REVIEW for the mutual funds you hold
+  py funds.py review
 fi
 step dashboard; py dashboard.py build
 
