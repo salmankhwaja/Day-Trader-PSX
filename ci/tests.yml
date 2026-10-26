@@ -17,5 +17,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Unit tests (offline, standard library only)
         run: python -m unittest discover -v tests
+      - name: The US day-trading pack's own tests (us-day-trader/, unchanged upstream)
+        run: python -m unittest discover -s us-day-trader/tests
       - name: Shell scripts parse
         run: bash -n psx-mufap/scripts/daily_sync.sh && bash -n psx-mufap/scripts/install_services.sh

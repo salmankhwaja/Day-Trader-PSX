@@ -10,8 +10,9 @@ courage, the judgement and the final tap on your broker's app stay with you.
 
 > [!CAUTION]
 > **Research and practice only, not investment advice.** Suggestions are rules applied to past
-> prices. Backtests describe history, not the future. Nothing here can place a real order,
-> and that is deliberate.
+> prices. Backtests describe history, not the future. The PSX tools can't place a real order,
+> and that is deliberate. (The [US day-trading pack](#the-us-day-trading-pack-11-more-skills)
+> included alongside has one skill that can, through a broker connector, only after you type yes.)
 
 ---
 
@@ -41,15 +42,16 @@ courage, the judgement and the final tap on your broker's app stay with you.
 9. [Run it on a schedule](#run-it-on-a-schedule)
 10. [Run it on your Android phone](#run-it-on-your-android-phone)
 11. [Use it with Claude](#use-it-with-claude)
-12. [Settings](#settings)
-13. [Brokers and their charges](#brokers-and-their-charges)
-14. [Your data and privacy](#your-data-and-privacy)
-15. [Troubleshooting](#troubleshooting)
-16. [FAQ](#faq)
-17. [Data terms](#data-terms)
-18. [Honest limits](#honest-limits)
-19. [Repo layout](#repo-layout)
-20. [Contributing](#contributing)
+12. [The US day-trading pack: 11 more skills](#the-us-day-trading-pack-11-more-skills)
+13. [Settings](#settings)
+14. [Brokers and their charges](#brokers-and-their-charges)
+15. [Your data and privacy](#your-data-and-privacy)
+16. [Troubleshooting](#troubleshooting)
+17. [FAQ](#faq)
+18. [Data terms](#data-terms)
+19. [Honest limits](#honest-limits)
+20. [Repo layout](#repo-layout)
+21. [Contributing](#contributing)
 
 ---
 
@@ -68,6 +70,7 @@ courage, the judgement and the final tap on your broker's app stay with you.
 | Match it to your nerves | A **risk quiz** that sets your style (conservative to very aggressive); every buy/sell variable follows it, and you can override any one |
 | Know what's at stake | A **risk calculator**: position sizing, money at risk to your stops, value-at-risk, volatility, beta, concentration, allocation vs target |
 | Plan ahead | A **SIP calculator**: monthly investing with yearly step-ups, inflation, and "how much a month for my goal?" |
+| Day-trade US stocks | [Jake Schincariol's 11 day-trading skills](#the-us-day-trading-pack-11-more-skills), included: scanner, news, entry and exit timing, a 10,000-session time machine, risk, budget, broker, alerts, earnings, Pelosi tracker |
 | See it all | A dashboard (overview, screener, compare up to 6 companies, your portfolio, dividends, funds, risk and SIP) that works on a phone, in light and dark |
 
 Plain Python 3.8+ with the standard library only: nothing to `pip install`, nothing to break.
@@ -895,6 +898,68 @@ cp -r Day-Trader-PSX/psx-mufap ~/.claude/skills/
 Or install it as a plugin: `/plugin marketplace add salmankhwaja/Day-Trader-PSX`, then
 `/plugin install psx-mufap@pk-market-skill`.
 
+Want the 11 US day-trading skills too? See the next section.
+
+---
+
+## The US day-trading pack: 11 more skills
+
+This repo also carries [Jake Schincariol's day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill)
+(MIT, "the Trader skill v2"), unchanged, in [`us-day-trader/`](us-day-trader): eleven Claude
+skills for **day trading US stocks**, built on free public data (Yahoo Finance charts, Nasdaq
+Trader's symbol lists, SEC EDGAR, the House Clerk). Its own README is
+[`us-day-trader/README.md`](us-day-trader/README.md).
+
+| Skill | Job | What it does |
+|---|---|---|
+| `trader-scanner` | Chart scanner | scans thousands of US charts for setups: opening-range breakouts, flags, oversold bounces |
+| `trader-news` | News monitor | breaking headlines and SEC 8-K filings on the stocks you watch |
+| `trader-entry` | Entry timer | watches a setup bar by bar and says when it triggers |
+| `trader-exit` | Exit planner | sets the stop, the target and the flat-by time before you enter |
+| `trader-timemachine` | Time machine | replays the rest of the session 10,000 times from the stock's own bars, plus every past day the setup fired |
+| `trader-risk` | Risk manager | checks each order against your limits: PASS or BLOCK |
+| `trader-budget` | Budget manager | sizes the position to your account and max loss per trade |
+| `trader-broker` | Order executor | shows the ticket; only after your yes, Claude sends it through a broker connector (Alpaca; paper account by default) |
+| `trader-alerts` | Price alerts | rings on the stop, the target and the closing bell |
+| `trader-analyst` | Earnings analyst | reads SEC XBRL filings and sums up what changed |
+| `trader-pelosi` | Pelosi tracker | reads US Congress members' trade disclosures |
+
+**Install them** (alongside `psx-mufap`):
+
+```bash
+# Claude Code: copy the skill folders
+git clone https://github.com/salmankhwaja/Day-Trader-PSX.git
+cp -r Day-Trader-PSX/psx-mufap Day-Trader-PSX/us-day-trader/trader-* ~/.claude/skills/
+
+# or as plugins: both are in this repo's marketplace
+/plugin marketplace add salmankhwaja/Day-Trader-PSX
+/plugin install psx-mufap@pk-market-skill
+/plugin install day-trader-skill@pk-market-skill
+
+# Claude app: one zip per skill, uploaded under Customize › Skills (from the releases page, or:)
+cd Day-Trader-PSX/us-day-trader && for d in trader-*; do zip -r "../$d.zip" "$d"; done
+```
+
+They keep their working files (config, plans, orders) in a `trader/` folder wherever you run
+them (ignored by git here). The SEC tools want your name and email: put
+`"sec_user_agent": "Your Name you@example.com"` in `trader/config.json`.
+
+> [!WARNING]
+> **Different market, different rules.** These skills are for **US stocks** (New York times,
+> dollars, FINRA rules). They don't work on PSX shares: Yahoo has no intraday bars for Karachi.
+> And unlike the PSX tools, `trader-broker` can lead to a **real order** at a US broker, only after
+> `trader-risk` passes it and you type yes, with Claude's own "Allow once / Deny" card as a second
+> check. Keep it on paper (`"paper": true`, the default) until you're sure, and set your broker
+> connector to "Needs approval". Most people who day trade lose money.
+
+**Keeping them current.** `us-day-trader/` is a git subtree of the upstream repo, kept unchanged
+so updates come straight in:
+
+```bash
+git subtree pull --prefix us-day-trader https://github.com/Jakeschincariol/day-trader-skill.git main --squash
+python3 -m unittest discover -s us-day-trader/tests     # their 315 offline tests
+```
+
 ---
 
 ## Settings
@@ -1060,10 +1125,17 @@ pkmarket/
 
 **Will it make me rich?** It will make you *informed*, which is cheaper and more reliable.
 
-**Can it place orders for me?** No, by design. Your thumb stays in charge.
+**Can it place orders for me?** The PSX tools: no, by design. `portfolio.py orders` writes the
+tickets and your thumb types them in. Only the US pack's `trader-broker` can lead to an order, at a
+US broker (Alpaca, paper account by default), after `trader-risk` passes it and you type yes.
 
-**Where do the prices come from?** The PSX Data Portal and MUFAP, at end of day. It isn't a
-live ticker; see [Where the data comes from](#where-the-data-comes-from).
+**Where do the prices come from?** The PSX Data Portal and MUFAP: end of day, plus live prices
+from the portal's market watch when you ask (`--live`); see
+[Where the data comes from](#where-the-data-comes-from).
+
+**Can the US day-trading skills trade PSX shares?** Not today. They read Yahoo Finance's 1- and
+5-minute bars, and Yahoo only has daily bars for Karachi (`OGDC.KA`). For PSX, use the PSX tools,
+`--live`, and `portfolio.py orders`.
 
 **Why does "expected next dividend" say *estimate*?** It assumes the company pays at about the
 same time as last year. That's a habit, not a promise, a bit like predicting when your cousin
@@ -1139,6 +1211,10 @@ psx-mufap/                      the skill and the tools
 │   └── android_setup.sh        one-command setup in Termux
 ├── dashboard/                  index.html + app.js (Chart.js 4.4.1 from cdnjs, pinned with SRI)
 └── references/                 strategy and data-source notes
+us-day-trader/                  Jake Schincariol's 11 US day-trading skills (MIT, git subtree, unchanged)
+├── trader-scanner … trader-pelosi   one folder per skill: SKILL.md + its Python tool
+├── tests/                      their own offline tests
+└── LICENSE, README.md          their licence and guide
 tests/                          offline tests on synthetic data and trimmed page samples
 ci/                             GitHub Actions workflows, ready to enable (see ci/README.md)
 ```

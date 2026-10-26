@@ -413,6 +413,13 @@ for filers and non-filers; ask the user).
 `cost_bps_per_side` and `lot_size` are assumptions: ask the user what their broker charges
 if it matters. Sources and data caveats: `references/data-sources.md`.
 
+## US stocks
+
+This skill is for PSX and MUFAP. For day trading US stocks, the same repo carries Jake
+Schincariol's 11 `trader-*` skills (scanner, news, entry, exit, time machine, risk, budget,
+broker, alerts, analyst, Pelosi tracker) in `us-day-trader/`; use those for US tickers. They
+don't work on PSX shares (no intraday bars for Karachi on Yahoo).
+
 ## Boundaries
 
 This is research and education, not investment advice. Say so once per answer that ranks

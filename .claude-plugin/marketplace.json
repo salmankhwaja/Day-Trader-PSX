@@ -1,12 +1,20 @@
 {
   "name": "pk-market-skill",
-  "owner": {"name": "Khwaja Muhammad Salman"},
+  "owner": {
+    "name": "Khwaja Muhammad Salman"
+  },
   "plugins": [
     {
       "name": "psx-mufap",
       "source": "./",
       "description": "Rank PSX stocks and MUFAP mutual funds, backtest strategies, and paper trade in PKR.",
       "version": "1.0.0"
+    },
+    {
+      "name": "day-trader-skill",
+      "source": "./us-day-trader",
+      "description": "Jake Schincariol's 11 US day-trading skills (MIT), included unchanged: scanner, news, entry, exit, time machine, risk, budget, broker (paper by default, never without your yes), alerts, analyst, Pelosi tracker.",
+      "version": "2.0.0"
     }
   ]
 }

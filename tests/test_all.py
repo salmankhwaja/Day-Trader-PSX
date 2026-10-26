@@ -1181,6 +1181,23 @@ class TestFinqalabAndTickets(Market):
         self.assertEqual(dashboard.build_data(self.h, self.cfg)["mine"]["tickets"][0]["symbol"], tk[0]["symbol"])
 
 
+class TestUSPack(unittest.TestCase):
+    """The 11 US day-trading skills ship with this repo, listed in the marketplace and the README."""
+
+    def test_eleven_skills_present_and_documented(self):
+        base = os.path.join(ROOT, "us-day-trader")
+        skills = sorted(d for d in os.listdir(base) if os.path.isfile(os.path.join(base, d, "SKILL.md")))
+        self.assertEqual(len(skills), 11)
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        for d in skills:
+            self.assertIn("`%s`" % d, readme)
+        with open(os.path.join(ROOT, ".claude-plugin", "marketplace.json")) as f:
+            m = json.load(f)
+        self.assertIn("./us-day-trader", [p["source"] for p in m["plugins"]])
+        self.assertTrue(os.path.exists(os.path.join(base, "LICENSE")))
+
+
 class TestDocs(unittest.TestCase):
     """The README must keep up with the code: every tool and every setting is documented."""
 

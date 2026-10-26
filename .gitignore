@@ -6,3 +6,5 @@ pkmarket-data/
 __pycache__/
 *.pyc
 dist/
+# The US day-trading skills keep their working files (config, plans, orders) in trader/
+trader/
