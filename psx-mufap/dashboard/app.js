@@ -483,6 +483,14 @@
           "<td class='l' style='white-space:normal;min-width:200px'>" + esc(f.why || "") + "</td>" + cell(num(f.units, 2)) +
           cell(f.nav == null ? "–" : num(f.nav, 4) + " <span class='muted small'>" + esc(f.nav_date || "") + "</span>") + cell(esc(f.category || ""), "l") + "</tr>";
       }).join("");
+    var TK = M.tickets || [];
+    $("mi-ticketcard").style.display = TK.length ? "" : "none";
+    $("mi-tickets").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Side</th><th class='l'>Order</th><th>Qty</th><th>Trigger</th><th>Limit</th><th class='l'>Broker</th><th class='l'>Valid</th></tr>" +
+      TK.map(function (t) {
+        return "<tr>" + cell("<b>" + esc(t.symbol) + "</b>", "l") + cell("<b class='" + (t.side === "BUY" ? "pos" : "neg") + "'>" + esc(t.side) + "</b>", "l") +
+          cell(esc(t.type), "l") + cell(num(t.qty)) + cell(t.trigger ? num(t.trigger, 2) : "") + cell(t.limit ? num(t.limit, 2) : (t.type === "market" ? "market" : "")) +
+          cell(esc(t.broker || ""), "l") + cell(esc(t.validity), "l") + "</tr>";
+      }).join("");
     var st = M.settings;
     $("mi-note").textContent = "Average cost includes commission, taxes and fees. Stop = " + st.stop_atr_mult + " × the 14-day average daily move, " +
       Math.round(st.min_stop_pct * 100) + "–" + Math.round(st.max_stop_pct * 100) + "% below entry, trailing up; * = a stop you set. Prices are " + (anyLive ? "live where marked (the actions are from the end-of-day run, except a live price at or below the stop)" : "the last close") + ". At stop / at target: rupees, after estimated broker charges, " +

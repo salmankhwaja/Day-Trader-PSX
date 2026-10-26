@@ -1151,6 +1151,36 @@ class TestSecondOpinion(Market):
             C.http_get = get
 
 
+class TestFinqalabAndTickets(Market):
+    def test_finqalab_preset(self):
+        b = PF.preset_broker("finqalab")
+        self.assertEqual(PF.estimate_charges(b, 1000, 300.0, "buy")[0], 750.0)  # 0.25% of 300,000
+        self.assertEqual(PF.estimate_charges(b, 1000, 5.0, "buy")[0], 30.0)     # Rs 0.03/share below Rs 12
+        self.assertEqual(b["stop_validity"], "day")
+        rc, out = run(PF.main, ["--home", self.h, "broker", "presets"])
+        self.assertIn("stop-loss orders: today only", out)
+
+    def test_order_tickets(self):
+        run(PF.main, ["--home", self.h, "broker", "add", "FQ", "--preset", "finqalab", "--default"])
+        run(PF.main, ["--home", self.h, "cash", "deposit", "1000000"])
+        rows = C.read_prices(C.price_path(self.h, "SYN07"))
+        run(PF.main, ["--home", self.h, "buy", "SYN07", "100", str(rows[-30]["close"]), "--date", rows[-30]["date"]])
+        res = A.advise(self.h, self.cfg, argparse_ns(buy=3, all=True, shariah=False, sector=None, candidates=None))
+        tk = res["tickets"]
+        stop = next(t for t in tk if t["symbol"] == "SYN07" and t["type"] == "stop-loss")
+        held = next(r for r in res["holdings"] if r["symbol"] == "SYN07")
+        self.assertEqual(stop["trigger"], round(held["stop"], 2))
+        self.assertLess(stop["limit"], stop["trigger"])
+        self.assertAlmostEqual(stop["limit"], stop["trigger"] * (1 - self.cfg["stop_limit_gap"]), delta=0.011)
+        self.assertIn("each trading morning", stop["validity"])
+        for i in res["buy"]:
+            if i.get("qty"):
+                self.assertTrue(any(t["side"] == "BUY" and t["symbol"] == i["symbol"] and t["qty"] == i["qty"] for t in tk))
+        rc, out = run(PF.main, ["--home", self.h, "orders", "--no-fetch"])
+        self.assertIn("stop-loss", out)
+        self.assertEqual(dashboard.build_data(self.h, self.cfg)["mine"]["tickets"][0]["symbol"], tk[0]["symbol"])
+
+
 class TestDocs(unittest.TestCase):
     """The README must keep up with the code: every tool and every setting is documented."""
 

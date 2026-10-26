@@ -92,7 +92,26 @@
       "name": "Next Capital",
       "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.15}],
       "confidence": "assumed PSX minimum: no published equity rate",
-      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan",
+      "notes": "Finqalab is Next Capital's app: accounts opened through Finqalab pay the finqalab preset's rate."
+    },
+    "finqalab": {
+      "name": "Finqalab (app of Next Capital Ltd, TREC #048)",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.25}],
+      "account_opening_fee": 476,
+      "order_types": ["market", "limit", "stop-loss (trigger + limit; sell or buy)"],
+      "stop_validity": "day",
+      "confidence": "reported: 0.25% of value or Rs 0.03/share, whichever is higher (so Rs 0.03/share below Rs 12); Finqalab's announcement and users' reports, Aug 2025 - Mar 2026. Not on finqalab.com: check your contract note",
+      "source": "https://zkhalid.com/blog/the-curious-case-of-finqalab/",
+      "sources": [
+        "https://zkhalid.com/blog/the-curious-case-of-finqalab/",
+        "https://invest.abid.work/blog/brokerage-platforms-pakistan-retail-investing",
+        "https://x.com/najam_ali/status/1961096207666987486",
+        "https://finqalab.com/faqs/",
+        "https://finqalab.com/terms-and-conditions/",
+        "https://www.youtube.com/watch?v=IV55QTViC-U"
+      ],
+      "notes": "One-time NCCPL account fee PKR 476 on the first deposit (finqalab.com FAQs). Orders: market, limit and stop-loss with a trigger price and a limit price (a sell stop protects a holding, a buy stop enters on a breakout). Stop-loss orders are valid for one day only (Finqalab's stop-loss tutorial, Dec 2024), so they must be placed again every trading day. No public API for placing orders."
     },
     "sherman": {
       "name": "Sherman Securities",

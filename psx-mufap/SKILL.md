@@ -274,6 +274,14 @@ python3 scripts/portfolio.py stop OGDC 280            # the user's own stop-loss
 python3 scripts/portfolio.py dividends [--apply]      # dividends due from book closures; confirm amounts first
 ```
 
+Finqalab users: `broker add Finqalab --preset finqalab` (0.25% or Rs 0.03/share, whichever is
+higher, as reported; one-time PKR 476 NCCPL fee). Its app has market, limit and stop-loss
+(trigger + limit) orders, stop-losses valid for one day only, and no public API.
+
+When the user asks how to set the trades up in their app, run `portfolio.py orders` (after the
+fetch question) and give the tickets: side, order type, qty, trigger, limit, and how long each
+order lasts. Never place, or offer to place, an order yourself.
+
 Broker presets (`brokers.json`) hold each broker's published commission (per share or percent,
 whichever is higher, with price slabs), plus sales tax on commission (13%, Sindh), CDC
 Rs 0.005/share and exchange/regulator levies, each with a source link and a confidence note.

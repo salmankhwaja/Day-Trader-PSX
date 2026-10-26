@@ -251,6 +251,12 @@ python3 portfolio.py check OGDC                     # verdict for your style, ba
 python3 portfolio.py check OGDC --entry 250 --stop 232 --capital 500000   # your own numbers
 ```
 
+```bash
+# Turn the advice into orders for your broker's app (nothing is sent: you type them in)
+python3 portfolio.py orders --live        # stop-loss (trigger + limit) per holding, buys at the entry,
+                                          #   sells and trims, optional take-profits, and how long each lasts
+```
+
 The **price calculator** comes with every holding and every buy idea, so a suggestion is never
 just a word:
 
@@ -292,6 +298,7 @@ python3 rank.py funds --category "Money Market" --top 10
 ```bash
 python3 portfolio.py broker presets                          # published PSX broker tariffs, with sources
 python3 portfolio.py broker add AKD --preset akd --default   # start from a preset
+python3 portfolio.py broker add Finqalab --preset finqalab    # 0.25% or 3 paisa/share; day-only stop-losses
 python3 portfolio.py broker import js-global,scs              # several at once
 python3 portfolio.py broker add MyBroker --commission-pct 0.12 --per-share 0.03 \
         --min-commission 0 --sales-tax-pct 13                 # or your own commission sheet
@@ -790,7 +797,7 @@ Congratulations: you now have a trading terminal that cost less than a samosa.
 | Overview | KSE-100, sectors, top-ranked shares, dividends coming up |
 | Screener | every ranked share; filter by sector, Shariah, yield; tick to compare |
 | Compare | up to 6 companies side by side, dividends included |
-| My portfolio | **bought vs now**: each holding (and each purchase) GREEN or RED, with when you bought and when the price is from; what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; the price calculator (rupees at the stop and at the target, reward-to-risk); your funds; costs by broker; realised P/L |
+| My portfolio | **order tickets** for your broker's app; **bought vs now**: each holding (and each purchase) GREEN or RED, with when you bought and when the price is from; what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; the price calculator (rupees at the stop and at the target, reward-to-risk); your funds; costs by broker; realised P/L |
 | Paper · Dividends · Funds | practice account, dividend calendar, MUFAP rankings |
 | Risk & SIP | your risk style, money at risk, value-at-risk, allocation vs target, and a live SIP calculator |
 
@@ -944,6 +951,7 @@ in `config.json`); `risk.py settings` shows what's in effect and where it came f
 | Stops and targets | `min_stop_pct` | 4% | 5% | 7% | 8% | stop at least this far below entry (so daily noise doesn't trigger it) |
 | Stops and targets | `max_stop_pct` | 10% | 15% | 20% | 25% | stop at most this far below entry |
 | Stops and targets | `target_r` | 2 | 2 | 2.5 | 3 | target = entry + this x (entry - stop) |
+| Stops and targets | `stop_limit_gap` | 1% | 1% | 1.5% | 2% | order tickets: a stop-loss order's limit price sits this far below its trigger, so it still fills when the price drops fast |
 | Sizing and limits | `risk_per_trade` | 0.5% | 1% | 2% | 3% | capital lost if a new buy hits its stop |
 | Sizing and limits | `max_position_pct` | 15% | 25% | 35% | 50% | most of the portfolio in one share (above it: TRIM) |
 | Sizing and limits | `max_holdings` | 12 | 10 | 8 | 6 | most different shares held at once (no buy ideas beyond it) |
@@ -969,11 +977,30 @@ the pass-through charges:
 | Charge | Default | Source |
 |---|---|---|
 | Commission floor (PSX regulation) | Rs 0.03 per share or 0.15% of value, whichever is higher; at most 2.5% | PSX Regulations, Ch. 4, Annexure-III |
-| Broker presets | AKD, MRA, JS Global, Khanani, KTrade, Topline, SCS, Optimus, Arif Habib, Next Capital, Sherman, with price slabs where published | links and confidence notes in the file |
+| Broker presets | AKD, MRA, JS Global, Khanani, KTrade, Topline, SCS, Optimus, Arif Habib, Next Capital, **Finqalab**, Sherman, with price slabs where published | links and confidence notes in the file |
 | Sales tax on commission | 13% (Sindh) | AKD fee page |
 | CDC handling | Rs 0.005 per share | AKD fee page |
 | Exchange and regulator levies | about Rs 4.15 per Rs 100,000 | press, Aug 2026 |
 | Capital value tax on buys | 0 (set `cvt_pct` if your contract note shows it) | press, Aug 2026 |
+
+**Finqalab** (the app of Next Capital Ltd): 0.25% of the trade value, or Rs 0.03 a share if that's
+more (so 3 paisa a share below Rs 12), plus the pass-through charges above, and a one-time PKR
+476 NCCPL fee on your first deposit. Finqalab doesn't publish its commission on its website. The
+0.25% rate comes from its own announcement, as reported by users and reviewers from Aug 2025 to
+Mar 2026, so check it against your first contract note. On a Rs 100,000 buy that's about Rs 250
+commission against Rs 150 at the 0.15% floor, the price of the app's comforts.
+
+What its app lets you set up (Finqalab's terms and stop-loss tutorial):
+
+| Order | In the Finqalab app | What `portfolio.py orders` gives you |
+|---|---|---|
+| Market | yes | for a SELL (the stop has been hit) |
+| Limit | yes | for buys at the entry, trims, and an optional take-profit at the target |
+| Stop-loss (trigger + limit) | yes, sell and buy; **valid for the day only** | a sell stop for every holding and every new buy: trigger = the stop, limit `stop_limit_gap` below |
+| Automatic placement (API) | no public API | nothing is ever sent; you type the tickets in |
+
+Because Finqalab's stop-loss lasts one day, the tickets say "today only: place it again each
+trading morning". The 07:00 daily run refreshes them, ready to copy before the 09:30 open.
 
 > [!TIP]
 > Your signed commission sheet beats any preset. Add your broker by hand

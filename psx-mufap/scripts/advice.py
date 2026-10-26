@@ -207,6 +207,7 @@ def review_holdings(h, cfg, lg, s):
             if px >= st["target"]:
                 r["notes"].append("target %.2f reached: consider taking some profit or keeping the trailing stop" % st["target"])
         bk = max(p["brokers"], key=p["brokers"].get) if p.get("brokers") else lg.get("default_broker")
+        r["broker"] = bk
         r["calc"] = price_calc(lg["brokers"].get(bk) if bk else None, p["qty"], px, r["stop"], st["target"])
         if r["calc"]:
             b = lg["brokers"].get(bk) if bk else None
@@ -327,6 +328,76 @@ def opinion_lines(items, updated):
             C.md_table(["Stock", "This tool", "PakistaniBulls", "Agree?"], rows)]
 
 
+TICK = 0.01  # PSX price step for shares
+
+
+def _down(p):
+    return math.floor(p / TICK + 1e-9) * TICK
+
+
+def order_tickets(res, lg, cfg):
+    """Turn the suggestions into orders to type into a broker's app. Nothing here sends an order.
+
+    SELL                -> sell at market (or a limit at the last price)
+    TRIM                -> sell the excess with a limit at the last price
+    HOLD / REVIEW       -> a stop-loss sell: trigger = the stop, limit = trigger less stop_limit_gap
+                           (a gap so it still fills in a fast fall); plus an optional take-profit
+    buy idea            -> a limit buy at the entry, then the stop-loss once it has filled
+    Brokers whose stop-loss orders last one day (the preset's stop_validity) need them placed again
+    each morning; the tickets say so.
+    """
+    gap = setting(cfg, "stop_limit_gap")
+    out = []
+
+    def validity(broker):
+        b = lg["brokers"].get(broker) or {}
+        v = b.get("stop_validity")
+        return "today only: place it again each trading morning" if v == "day" else (
+            "until cancelled" if v == "gtc" else "check how long your broker's app keeps it")
+
+    for r in res["holdings"]:
+        if r.get("price") is None:
+            continue
+        bk = r.get("broker") or lg.get("default_broker")
+        if r["action"] == "SELL":
+            out.append({"symbol": r["symbol"], "broker": bk, "side": "SELL", "type": "market", "qty": r["qty"],
+                        "why": "at or below its stop", "validity": "today"})
+            continue
+        if r["action"] == "TRIM" and r.get("trim_qty"):
+            out.append({"symbol": r["symbol"], "broker": bk, "side": "SELL", "type": "limit", "qty": r["trim_qty"],
+                        "limit": round(r["price"], 2), "why": "trim to max_position_pct", "validity": "today"})
+        if r.get("stop") and r["stop"] < r["price"]:
+            out.append({"symbol": r["symbol"], "broker": bk, "side": "SELL", "type": "stop-loss", "qty": r["qty"],
+                        "trigger": round(r["stop"], 2), "limit": round(_down(r["stop"] * (1 - gap)), 2),
+                        "why": "protect the holding (%s stop)" % r.get("stop_source", ""), "validity": validity(bk)})
+        if r.get("target") and r["target"] > r["price"]:
+            out.append({"symbol": r["symbol"], "broker": bk, "side": "SELL", "type": "limit (take profit, optional)",
+                        "qty": r["qty"], "limit": round(r["target"], 2), "why": "target", "validity": "your choice"})
+    for i in res["buy"]:
+        if not i.get("qty"):
+            continue
+        bk = i.get("broker") or lg.get("default_broker")
+        out.append({"symbol": i["symbol"], "broker": bk, "side": "BUY", "type": "limit", "qty": i["qty"],
+                    "limit": round(i["entry"], 2), "why": "buy idea (check the live price first)", "validity": "today"})
+        out.append({"symbol": i["symbol"], "broker": bk, "side": "SELL", "type": "stop-loss (after the buy fills)",
+                    "qty": i["qty"], "trigger": round(i["stop"], 2), "limit": round(_down(i["stop"] * (1 - gap)), 2),
+                    "why": "protect the new position", "validity": validity(bk)})
+    return out
+
+
+def ticket_lines(tickets):
+    if not tickets:
+        return []
+    rows = [[t["symbol"], t["side"], t["type"], t["qty"], "%.2f" % t["trigger"] if t.get("trigger") else "",
+             "%.2f" % t["limit"] if t.get("limit") else ("market" if t["type"] == "market" else ""),
+             t.get("broker") or "", t["validity"]] for t in tickets]
+    return ["\nORDER TICKETS (type them into your broker's app yourself; nothing is sent from here)",
+            C.md_table(["Stock", "Side", "Order", "Qty", "Trigger", "Limit", "Broker", "Valid"], rows),
+            "A stop-loss order waits for the trigger price, then becomes a limit order at the limit price "
+            "(set stop_limit_gap below the trigger so it still fills in a fast fall). Your app may not let a "
+            "stop-loss and a take-profit hold the same shares at once: the stop matters more."]
+
+
 def advise(h, cfg, args):
     import portfolio as PF
     lg = PF.load(h)
@@ -346,6 +417,7 @@ def advise(h, cfg, args):
     for i in ideas:
         attach_opinion(i, found.get(i["symbol"]), "BUY")
     res["second_opinion"] = {"source": "PakistaniBulls", "updated": snap.get("updated")} if snap else None
+    res["tickets"] = order_tickets(res, lg, cfg)
     d = os.path.join(h, "advice")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, res["date"] + ".json"), "w") as f:
@@ -403,6 +475,8 @@ def cmd_advise(a, h, cfg):
         print("\nPRICE CALCULATOR (from the %s, after estimated broker charges)" % (
             "live price" if res.get("prices") == "live" else "last close"))
         print("\n".join(calc))
+    for line in ticket_lines(res.get("tickets")):
+        print(line)
     st = res["settings"]
     print("\nStops: %.1f x average daily move, %.0f-%.0f%% below entry, trailing upward. Sizing: %.1f%% of "
           "capital at risk per idea, max %.0f%% per stock, %d holdings, %.0f%% cash reserve. "
@@ -521,4 +595,17 @@ def cmd_check(a, h, cfg):
     for line in opinion_lines([(r["symbol"], r["action"], r.get("theirs"))], r.get("second_opinion_updated")):
         print(line)
     print("\nRule-based, from past prices; not investment advice. Check the live price before any order.")
+    return 0
+
+
+def cmd_orders(a, h, cfg):
+    import freshness as F
+    F.decide(a, h, cfg, F.scope(h, cfg, None, a.all), payouts=True)
+    a.buy, a.shariah, a.sector, a.candidates = a.buy, a.shariah, None, None
+    res = advise(h, cfg, a)
+    if a.json:
+        print(json.dumps(res["tickets"], indent=1))
+        return 0
+    lines = ticket_lines(res["tickets"])
+    print("\n".join(lines[1:]) if lines else "No orders to place: no holdings to protect and no buy ideas today.")
     return 0

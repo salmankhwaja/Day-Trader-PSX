@@ -226,6 +226,7 @@ def build_data(h, cfg, all_=None, days=500):
         my_funds = [dict(f, action=fr.get(f["fund"], {}).get("action"), why=fr.get(f["fund"], {}).get("why"),
                          unrealised_pct=r4(f["unrealised_pct"])) for f in s["funds"]]
         mine = {"second_opinion": sg_snap.get("updated") if sg_snap else None,
+                "tickets": (adv or {}).get("tickets") or [],
                 "summary": {k: s[k] for k in ("value", "cost", "unrealised", "realised", "dividends", "fees", "cash")},
                 "funds": my_funds,
                 "holdings": hold, "sales": s["sales"][-100:],

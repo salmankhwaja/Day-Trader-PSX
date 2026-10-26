@@ -425,6 +425,18 @@ def tier_text(b):
     return "; ".join(parts)
 
 
+def extra_text(b):
+    """Fees outside the per-trade model, and what the broker's app lets you set up, when known."""
+    bits = []
+    if b.get("monthly_fee"):
+        bits.append("Rs %g/month" % b["monthly_fee"])
+    if b.get("account_opening_fee"):
+        bits.append("Rs %g once (account)" % b["account_opening_fee"])
+    if b.get("stop_validity"):
+        bits.append("stop-loss orders: %s" % ("today only" if b["stop_validity"] == "day" else b["stop_validity"]))
+    return ", ".join(bits)
+
+
 def charge_text(b):
     return "sales tax %g%% of commission, CDC Rs %g/share, levies %g%%%s" % (
         float(b.get("sales_tax_pct") or 0), float(b.get("cdc_per_share") or 0), float(b.get("levies_pct") or 0),
@@ -435,8 +447,8 @@ def cmd_broker(a, h, cfg):
     lg = load(h)
     if a.action == "presets":
         data = load_presets(a.file)
-        rows = [[k, v["name"], tier_text(v), v.get("confidence", "")[:60]] for k, v in sorted(data["brokers"].items())]
-        print(C.md_table(["Preset", "Broker", "Commission", "Basis"], rows))
+        rows = [[k, v["name"], tier_text(v), extra_text(v), v.get("confidence", "")[:60]] for k, v in sorted(data["brokers"].items())]
+        print(C.md_table(["Preset", "Broker", "Commission", "Other fees, orders", "Basis"], rows))
         print("\nPass-through charges applied to every preset: " + charge_text(data.get("_defaults", {})))
         print("Source notes and links: %s (as of %s). Your signed commission sheet wins: edit the file or "
               "add a broker by hand." % (a.file or PRESETS_FILE, data.get("_as_of")))
@@ -874,6 +886,11 @@ def cmd_advise(a, h, cfg):
     return A.cmd_advise(a, h, cfg)
 
 
+def cmd_orders(a, h, cfg):
+    import advice as A
+    return A.cmd_orders(a, h, cfg)
+
+
 def cmd_check(a, h, cfg):
     import advice as A
     return A.cmd_check(a, h, cfg)
@@ -959,6 +976,12 @@ def main(argv=None):
     p.add_argument("--candidates", type=int, help="default: your risk profile's 'candidates'")
     p.add_argument("--json", action="store_true")
     F.add_args(p)
+    p = sub.add_parser("orders", help="order tickets for your broker's app: stop-losses, buys, sells")
+    p.add_argument("--all", action="store_true", help="buy ideas from the whole market")
+    p.add_argument("--shariah", action="store_true")
+    p.add_argument("--buy", type=int, default=3)
+    p.add_argument("--json", action="store_true")
+    F.add_args(p)
     p = sub.add_parser("check", help="one share: verdict, stop, target, size and the price calculator")
     p.add_argument("symbol")
     p.add_argument("--entry", type=float, help="the price you'd pay (default: last close)")
@@ -972,7 +995,7 @@ def main(argv=None):
     fn = {"broker": cmd_broker, "buy": cmd_trade, "sell": cmd_trade, "dividend": cmd_dividend,
           "dividends": cmd_dividends, "cash": cmd_cash, "holdings": cmd_holdings, "pnl": cmd_pnl, "fees": cmd_fees,
           "trades": cmd_trades, "delete": cmd_delete, "stop": cmd_stop, "import": cmd_import, "export": cmd_export,
-          "advise": cmd_advise, "check": cmd_check, "fund-buy": cmd_fund, "fund-sell": cmd_fund}[a.cmd]
+          "advise": cmd_advise, "check": cmd_check, "orders": cmd_orders, "fund-buy": cmd_fund, "fund-sell": cmd_fund}[a.cmd]
     return fn(a, h, cfg)
 
 

@@ -178,6 +178,9 @@ tr.lot td { font-size: 12px; color: var(--text-2); border-bottom-style: dashed; 
       <div class="note" id="mi-note"></div></div>
     <div class="card" style="margin-top:12px" id="mi-fundcard"><h2>Your mutual funds</h2><div class="tablewrap"><table id="mi-funds"></table></div>
       <div class="note">Ranked against their own MUFAP category on 30-day, 90-day and 1-year returns. Fund ideas by risk profile: funds.py advise --risk low|medium|high.</div></div>
+    <div class="card" style="margin-top:12px" id="mi-ticketcard"><h2>Order tickets for your broker's app</h2><div class="tablewrap"><table id="mi-tickets"></table></div>
+      <div class="note">Type these into your broker's app yourself: nothing is sent from here. A stop-loss order waits for its trigger, then becomes a limit order at its limit price.
+        Some apps (Finqalab, for one) keep a stop-loss for one day only, so it has to be placed again each morning. From the last <code>portfolio.py advise</code> run.</div></div>
     <div class="card" style="margin-top:12px"><h2>Buy ideas, with stop-loss</h2><div class="tablewrap"><table id="mi-buy"></table></div>
       <div class="note" id="mi-buynote"></div></div>
     <div class="grid" style="margin-top:12px">
