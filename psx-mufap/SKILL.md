@@ -1,6 +1,6 @@
 ---
 name: psx-mufap
-description: Rank Pakistan Stock Exchange (PSX) stocks and MUFAP mutual funds by performance, backtest trading strategies on PSX prices or fund NAVs, and run a PKR paper-trading account. Use when the user asks which PSX shares or Pakistani mutual funds are doing well, wants KSE-100 comparisons, fund category rankings, a strategy backtest, or to paper trade. Never places real orders.
+description: Rank Pakistan Stock Exchange (PSX) stocks (watchlist or every listed share, by sector, Shariah/KMI status and dividend yield) and MUFAP mutual funds, backtest strategies, propose a paper portfolio from backtests, track dividends and book closures, and build a comparison dashboard. Use when the user asks which PSX shares, sectors or Pakistani mutual funds are doing well, about dividends or Shariah compliance of PSX stocks, wants to compare companies, backtest, paper trade or see the dashboard. Never places real orders.
 ---
 
 # PSX & MUFAP: rank, backtest, paper trade
@@ -15,7 +15,10 @@ from this skill's folder. All data and the paper account live in one folder, the
 | `pkdata.py` | Download or import PSX daily prices and the MUFAP fund table |
 | `rank.py` | Rank stocks (returns, risk, trend, vs KSE-100) and funds (within category) |
 | `backtest.py` | Test strategies with next-day fills, costs and out-of-sample checks |
-| `paper.py` | Pretend PKR account: buy/sell shares, invest/redeem funds, follow signals |
+| `paper.py` | Pretend PKR account: buy/sell shares, invest/redeem funds, follow signals, credit dividends |
+| `propose.py` | Screen, backtest out-of-sample, propose a paper portfolio; review holdings daily |
+| `dashboard.py` | Build the visual dashboard (compare, screener, portfolio, dividends, funds) and serve it |
+| `daily_sync.sh`, `install_services.sh` | The daily pipeline and its systemd timer, for the user's computer |
 
 ## Step 1: get fresh data
 
@@ -42,6 +45,22 @@ same page another way, save the body to a file, and import it:
 3. If PSX can't be reached from this session at all, say so plainly and use the data the
    user syncs from their computer (`scripts/daily_sync.sh`, see README), or rank funds only.
 
+**Whole market, sectors, Shariah, dividends.** The watchlist is the default scope. For every
+listed share (about 500), build the universe once, then prices and company pages:
+
+```
+python3 scripts/pkdata.py universe          # all listed shares + KMI All Share (Shariah) flags
+python3 scripts/pkdata.py company --all     # sector, P/E, 52-week range, full dividend history (7-day cache)
+python3 scripts/pkdata.py psx --all         # prices for every share (about 10 minutes, 1 request/second)
+python3 scripts/pkdata.py payouts           # latest dividend announcements and book closures
+```
+
+The first full run takes 15-20 minutes and is meant for the user's computer (`daily_sync.sh`
+with `PKM_SCOPE=all`), not the phone sandbox. On the phone, use the synced data, or a
+watchlist (`company --watchlist`, `psx --watchlist`) fetched page by page via `--from-file`.
+The fallback pages are `https://dps.psx.com.pk/indices/ALLSHR`, `/indices/KMIALLSHR`,
+`/company/<SYMBOL>` and `/payouts`.
+
 Always tell the user the date of the data you used. `pkdata.py status` shows it.
 
 ## Step 2: answer "what is doing well?"
@@ -49,6 +68,10 @@ Always tell the user the date of the data you used. `pkdata.py status` shows it.
 ```
 python3 scripts/rank.py stocks                     # top 10 of the watchlist by score
 python3 scripts/rank.py stocks --sort 3m --top 5
+python3 scripts/rank.py stocks --all --top 20             # every liquid listed share
+python3 scripts/rank.py stocks --all --shariah --sector cement
+python3 scripts/rank.py stocks --all --sort div_yield     # highest trailing dividend yield
+python3 scripts/rank.py sectors                           # sector league table
 python3 scripts/rank.py categories                 # overview of every MUFAP category
 python3 scripts/rank.py funds --category "Equity" --top 5
 python3 scripts/rank.py funds --category "Money Market" --sort d30
@@ -66,6 +89,14 @@ How to read and report the results:
 - Distinguish Shariah-compliant categories; they are separate rows in MUFAP.
 - Lead with the answer (the top names and why), then the table. Keep it to one screen.
 - PSX prices exclude dividends, so high-dividend stocks look weaker than they were.
+- ☪ marks KMI All Share members (PSX's Shariah-compliant list, recomposed periodically).
+- **Dividend yield** = cash dividends announced in the last 12 months / price, with dividend per
+  share = percent x face value. Face value is assumed Rs 10 unless `face_values` in
+  config.json says otherwise; say so when quoting yields. A very high yield is often a one-off.
+- **Next dividend**: a book closure already announced is fact. "Expected around" is only an
+  estimate from last year's announcement date; always label it as an estimate.
+- With `--all`, shares averaging under `min_avg_volume` (default 50,000) a day over 60 sessions
+  are left out as too illiquid to trade; the output says how many.
 
 ## Step 3: backtest
 
@@ -93,7 +124,23 @@ Report backtests honestly:
   than ~60 days the tool refuses.
 - Never present a backtest as a prediction or a recommendation to buy.
 
-## Step 4: paper trade
+## Step 4: propose a portfolio from backtests
+
+```
+python3 scripts/propose.py run                    # watchlist
+python3 scripts/propose.py run --all --shariah    # whole market, Shariah-compliant only
+python3 scripts/propose.py run --all --apply      # after the user says yes
+python3 scripts/propose.py review                 # daily: HOLD or SELL each holding
+```
+
+`run` takes the top 15 by score, tunes sma/breakout/rsi on 70% of each history, and passes a
+stock only if its out-of-sample run beat the cash yield, had a positive Sharpe, kept drawdown
+under 35%, and its signal is long today. Picks: up to 5, at most 2 per sector, equal-sized.
+Show the table, explain why the picks passed and others failed, and **ask before `--apply`**.
+`review` suggests SELL when a holding's strategy turns flat or it falls 15% below cost; again
+confirm before `review --apply`.
+
+## Step 5: paper trade
 
 ```
 python3 scripts/paper.py init --cash 1000000
@@ -101,6 +148,7 @@ python3 scripts/paper.py buy OGDC 500                 # at the latest downloaded
 python3 scripts/paper.py invest "Alfalah Cash Fund - II" 200000
 python3 scripts/paper.py signals --strategy momentum  # shows proposed orders only
 python3 scripts/paper.py status
+python3 scripts/paper.py dividends --apply            # credit dividends/bonus shares whose book closure passed
 ```
 
 Rules:
@@ -115,6 +163,24 @@ Rules:
   them where it went. At the start of a session, restore it from there before running
   `paper.py`.
 
+## Step 6: the dashboard
+
+```
+python3 scripts/dashboard.py build                     # <home>/dashboard/ (index.html, app.js, data.json)
+python3 scripts/dashboard.py build --standalone pkm.html   # one self-contained file
+python3 scripts/dashboard.py serve                     # http://127.0.0.1:8787
+```
+
+Views: Overview (KSE-100, sectors, top ranked, upcoming dividends), Screener (filter by sector,
+Shariah, yield; tick up to 6 to compare), Compare (rebased prices, returns, risk, valuation,
+dividends side by side), Portfolio (value vs KSE-100, allocation, holdings with review action
+and next dividend, latest proposal), Dividends (calendar, top yields), Funds (MUFAP by category).
+
+On the phone: when the user asks to see it, build the standalone file and send it, or publish
+it as a **private** artifact only if they ask (it contains PSX data: never share it publicly).
+The user's own computer runs it continuously via `install_services.sh`; they reach it over a
+private network such as Tailscale.
+
 ## Settings
 
 `pkmarket/config.json` (optional; anything missing uses the default):
@@ -126,9 +192,15 @@ Rules:
   "cost_bps_per_side": 20,
   "lot_size": 1,
   "risk_free_annual": 0.0,
-  "paper_starting_cash": 1000000
+  "paper_starting_cash": 1000000,
+  "min_avg_volume": 50000,
+  "dividend_tax": 0.15,
+  "face_values": {"SYMBOL": 5}
 }
 ```
+
+`dividend_tax` is the withholding rate applied to paper dividends (an assumption: rates differ
+for filers and non-filers; ask the user).
 
 `cost_bps_per_side` and `lot_size` are assumptions: ask the user what their broker charges
 if it matters. Sources and data caveats: `references/data-sources.md`.

@@ -1,25 +1,30 @@
 # PSX & MUFAP skill for Claude
 
-Find out which Pakistan Stock Exchange shares and which Pakistani mutual funds are doing
-well, test trading ideas on real history, and practise with a pretend PKR account. Works in
-Claude on your phone, on the web, in Claude Code, or straight from a terminal.
+Find out which Pakistan Stock Exchange shares, sectors and mutual funds are doing well, compare
+companies side by side, test trading ideas on real history, and run a pretend PKR portfolio that
+is proposed from those tests. Works in Claude on your phone, on the web, in Claude Code, or from a
+terminal, with a dashboard served from your own computer.
 
-- **Rank** PSX stocks by 1W to 1Y returns, volatility, drawdown, Sharpe, trend and their
-  3-month lead or lag on the KSE-100. Rank MUFAP funds inside each category (money market,
-  income, equity, Shariah, ...), never across categories with different return conventions.
-- **Backtest** moving-average, breakout, RSI and momentum-rotation strategies with next-day
-  fills, trading costs, cash yield and a tune-then-test-out-of-sample mode.
-- **Paper trade** shares and funds. Signals from a strategy turn into proposed orders that are
-  only booked after you say yes. Nothing here can place a real order.
+- **Rank** your watchlist or **every listed share**: 1W to 1Y returns, volatility, drawdown,
+  Sharpe, trend, lead/lag vs KSE-100, sector, **Shariah status** (KMI All Share) and **dividend
+  yield**. Sector league table. MUFAP funds ranked inside each category.
+- **Dividends**: full payout history per company, trailing-12-month yield, announced book
+  closures, and an estimate of the next announcement from last year's pattern.
+- **Backtest** moving-average, breakout, RSI and momentum strategies with next-day fills, costs,
+  cash yield and tune-then-test-out-of-sample.
+- **Propose a portfolio**: screen, backtest out of sample, pick the stocks whose strategy passed
+  and is long today (sector-capped), and, after you say yes, buy them in the paper account. A
+  daily review flags exits; dividends and bonus shares are credited automatically.
+- **Dashboard**: overview, screener, compare up to 6 companies, portfolio, dividend calendar,
+  funds. Light and dark, phone-friendly.
 
-Python 3.8+, standard library only. Nothing to install.
+Python 3.8+, standard library only. Nothing to install. Nothing here can place a real order.
 
 ## Install
 
-**Claude app (phone, web, desktop):** zip the `psx-mufap` folder and add it as a custom skill
-in Claude's settings, or download `psx-mufap.zip` from this repo's releases. Then ask, for
-example: *"Which PSX stocks in my watchlist are doing best this quarter?"* or *"Top 5 Shariah
-equity funds by 90-day return"*.
+**Claude app (phone, web, desktop):** zip the `psx-mufap` folder and add it as a custom skill in
+Claude's settings. Then ask, for example: *"Which Shariah-compliant cement stocks are doing best?"*,
+*"Compare LUCK, DGKC and MLCF"*, *"Propose a paper portfolio from the whole market"*.
 
 **Claude Code:**
 
@@ -31,63 +36,90 @@ cp -r Day-Trader-PSX/psx-mufap ~/.claude/skills/
 or as a plugin: `/plugin marketplace add salmankhwaja/Day-Trader-PSX` then
 `/plugin install psx-mufap@pk-market-skill`.
 
-**Terminal:**
+## Your computer: data, daily service and dashboard
 
 ```bash
-cd psx-mufap
-python3 scripts/pkdata.py psx --watchlist && python3 scripts/pkdata.py mufap
-python3 scripts/rank.py stocks
-python3 scripts/rank.py funds --category "Money Market"
-python3 scripts/backtest.py compare OGDC
-python3 scripts/paper.py init && python3 scripts/paper.py status
+git clone https://github.com/salmankhwaja/Day-Trader-PSX.git ~/Day-Trader-PSX
+git clone git@github.com:salmankhwaja/pkmarket-data.git ~/pkmarket-data   # your PRIVATE data repo
+cd ~/Day-Trader-PSX/psx-mufap/scripts
+export PKM_HOME=~/pkmarket-data
+
+# First time, whole market (15-20 minutes: one request a second to PSX):
+python3 pkdata.py universe && python3 pkdata.py company --all && python3 pkdata.py psx --all
+python3 pkdata.py payouts && python3 pkdata.py mufap
+python3 rank.py stocks --all --top 20
+python3 rank.py sectors
+
+# Paper portfolio from backtests (review the proposal, then --apply)
+python3 paper.py init --cash 1000000
+python3 propose.py run --all
+python3 propose.py run --all --apply
+
+# Dashboard
+python3 dashboard.py build && python3 dashboard.py serve    # http://127.0.0.1:8787
 ```
 
-## Using it from your phone
+Then install the services (systemd user units, no root):
 
-The phone app runs the scripts in a sandbox that blocks most websites. The skill handles this:
+```bash
+PKM_HOME=~/pkmarket-data PKM_SCOPE=all ./install_services.sh
+```
 
-1. Claude tries a direct download first.
-2. If that is blocked, it fetches the page with its web tools and imports the saved copy
-   (`--from-file`). This works for the MUFAP table.
-3. PSX prices may stay unreachable from the sandbox. For those, run
-   `psx-mufap/scripts/daily_sync.sh` on your computer every weekday (cron line inside the
-   script). It downloads prices and the MUFAP table into a folder that is its own **private**
-   GitHub repo and pushes it, so Claude on your phone reads fresh data from there. The same
-   daily run builds the fund NAV history that fund backtests need.
+- `pkm-daily.timer`, weekdays 17:15 Pakistan time: universe (Mondays), company pages (weekly
+  cache), prices, payouts, MUFAP, credit paper dividends, review holdings, record the account
+  value, a fresh proposal on Fridays (never booked without you), rebuild the dashboard, commit
+  and push the private data repo.
+- `pkm-dashboard.service`: the dashboard server, read-only, `127.0.0.1:8787`.
 
-The paper account is one file, `paper/portfolio.json`, in that same data folder. Keep it in
-the private data repo so every session, on any device, continues the same account.
+**Seeing the dashboard on your phone.** Install Tailscale on the computer and the phone, then
+reinstall with `PKM_DASH_HOST=<the computer's Tailscale IP> PKM_DASHBOARD_PASSWORD='<long password>'`.
+The server refuses any non-loopback address without a password (HTTP Basic, user `pkm`), serves
+only its three files, accepts GET only, and sends strict security headers. It speaks plain HTTP,
+so keep it on a private network (Tailscale encrypts the link); never expose it to the internet.
+Alternatively, `dashboard.py build --standalone pkm.html` makes one file you can open anywhere.
+
+## Using it from Claude on your phone
+
+The phone app's sandbox blocks most websites. Claude tries a direct download, then fetches pages
+with its web tools and imports them (`--from-file`). The MUFAP table works this way; PSX pages
+may not. That is what the daily service is for: Claude reads the fresh data from your private
+`pkmarket-data` repo, including the paper account (`paper/portfolio.json`).
 
 ## Repo layout
 
 ```
-psx-mufap/              the skill (this is what you install)
-  SKILL.md              instructions Claude follows
-  scripts/pkdata.py     download / import PSX prices and MUFAP data
-  scripts/rank.py       rank stocks and funds
-  scripts/backtest.py   strategies, metrics, out-of-sample checks
-  scripts/paper.py      paper-trading account and strategy signals
-  scripts/daily_sync.sh daily refresh for your computer (cron)
-  references/           strategy and data-source notes
-tests/                  offline tests with synthetic PSX prices and a MUFAP sample
-.claude-plugin/         Claude Code plugin manifest
+psx-mufap/                  the skill (this is what you install)
+  SKILL.md                  instructions Claude follows
+  scripts/pkdata.py         download / import prices, universe, company pages, payouts, MUFAP
+  scripts/psxinfo.py        parsers for PSX company, index and payout pages; dividend maths
+  scripts/rank.py           rank stocks (watchlist or all), sectors, funds
+  scripts/backtest.py       strategies, metrics, out-of-sample checks
+  scripts/propose.py        portfolio proposals from backtests; daily review
+  scripts/paper.py          paper account: trades, funds, dividends, signals, daily marks
+  scripts/dashboard.py      build and serve the dashboard
+  scripts/daily_sync.sh     the daily pipeline
+  scripts/install_services.sh  systemd timer + dashboard service
+  dashboard/                index.html + app.js (Chart.js 4.4.1 from cdnjs, pinned with SRI)
+  references/               strategy and data-source notes
+tests/                      offline tests: synthetic prices, a synthetic 12-share market,
+                            trimmed PSX/MUFAP page samples
 ```
 
 Run the tests with `python3 -m unittest discover tests`.
 
 ## Data and terms
 
-- PSX: end-of-day prices from the PSX Data Portal (`dps.psx.com.pk`). PSX prohibits
-  redistribution or commercial use of its market data without a licence. Use it for your own
-  analysis and keep downloaded prices out of public repos (`.gitignore` here excludes
-  `pkmarket/`). The test fixtures are synthetic, not PSX data.
-- MUFAP: the daily NAV and returns summary from `mufap.com.pk`.
-
-Details: `psx-mufap/references/data-sources.md`.
+- PSX Data Portal (`dps.psx.com.pk`): prices, index constituents, company pages, payouts. PSX
+  prohibits redistribution or commercial use of its market data without a licence. Use it for
+  your own analysis, keep the data repo private, and do not publish the dashboard. The test
+  price fixtures are synthetic.
+- MUFAP (`mufap.com.pk`): daily fund NAVs and returns.
+- Assumptions you can change in `config.json`: trading costs (20 bps a side), dividend
+  withholding tax (15%), face value (Rs 10, with per-symbol exceptions), liquidity floor.
 
 ## Disclaimer
 
-Research and education only, not investment advice. Backtests describe the past, after
-simplifying assumptions (no dividends, estimated costs); they do not predict returns.
+Research and education only, not investment advice. Backtests describe the past after
+simplifying assumptions (no dividends in prices, estimated costs); passing one is not a forecast.
 
 MIT licence.

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Rank PSX stocks and MUFAP funds by recent performance.
 
-  rank.py stocks [--top 10] [--symbols A B ...] [--sort score|1m|3m|6m|1y|ytd|sharpe] [--json]
+  rank.py stocks [--top 10] [--symbols A B ...] [--sort score|1m|3m|6m|1y|ytd|sharpe|div_yield] [--json]
+  rank.py stocks --all [--sector cement] [--shariah]   every listed share, not just the watchlist
+  rank.py sectors [--shariah]                           sector league table (median returns)
   rank.py funds  [--top 5] [--category "Equity"] [--sort score|ytd|d30|d90|d365|y3] [--json]
   rank.py categories        one line per MUFAP category: fund count, median and best returns
 
@@ -33,6 +35,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 from pkdata import latest_mufap, MUFAP_PERIODS  # noqa: E402
+import psxinfo as P  # noqa: E402
 
 PERIODS = [("1w", 5), ("1m", 21), ("3m", 63), ("6m", 126), ("1y", C.TRADING_DAYS)]
 
@@ -70,6 +73,8 @@ def stock_metrics(rows, rf=0.0):
     s50, s200 = C.sma(closes, 50, last), C.sma(closes, 200, last)
     m["above_50"] = closes[-1] > s50 if s50 else None
     m["above_200"] = closes[-1] > s200 if s200 else None
+    vols = [r["volume"] for r in rows[-60:]]
+    m["avg_volume"] = sum(vols) / len(vols) if vols else 0
     return m
 
 
@@ -80,16 +85,51 @@ def trend_label(m):
     return {(True, True): "up", (False, False): "down"}.get((a, b), "mixed")
 
 
-def rank_stocks(h, cfg, symbols=None, sort="score"):
-    symbols = [s.upper() for s in (symbols or cfg["watchlist"])]
+def stock_info(h, cfg, symbol, uni=None, payouts=None, price=None):
+    """Name, sector, Shariah flag and dividend summary for one symbol (whatever is on file)."""
+    uni = uni if uni is not None else P.load_universe(h)
+    u = uni.get(symbol, {})
+    c = P.load_company(h, symbol)
+    info = {"name": (c or {}).get("name") or u.get("name"), "sector": (c or {}).get("sector"),
+            "shariah": u.get("shariah") if u else None, "pe": (c or {}).get("pe"),
+            "mcap_m": (c or {}).get("mcap_m") or u.get("mcap_m"), "tags": u.get("tags") or (c or {}).get("tags") or []}
+    if c or payouts:
+        info["dividends"] = P.dividend_summary(cfg, symbol, c, payouts or [], price=price)
+    else:
+        info["dividends"] = None
+    return info
+
+
+def select_symbols(h, cfg, symbols=None, all_=False):
+    if symbols:
+        return [s.upper() for s in symbols]
+    if all_:
+        uni = P.load_universe(h)
+        if not uni:
+            sys.exit("no universe.json yet: run `pkdata.py universe` (then `pkdata.py psx --all`)")
+        return sorted(uni)
+    return [s.upper() for s in cfg["watchlist"]]
+
+
+def rank_stocks(h, cfg, symbols=None, sort="score", all_=False, sector=None, shariah=False,
+                min_volume=None, info=True):
+    """Rank symbols. With all_, every share in universe.json that has prices, after a liquidity
+    filter (average daily volume over 60 sessions >= min_volume, default config min_avg_volume)."""
+    symbols = select_symbols(h, cfg, symbols, all_)
+    if min_volume is None:
+        min_volume = cfg.get("min_avg_volume", 50000) if all_ else 0
     bench = cfg["benchmark"].upper()
     bm = None
     if os.path.exists(C.price_path(h, bench)):
         brows = C.read_prices(C.price_path(h, bench))
         if len(brows) > 70:
             bm = stock_metrics(brows, cfg["risk_free_annual"])
-    res, missing = [], []
+    uni = P.load_universe(h)
+    payouts = P.load_payouts(h)
+    res, missing, illiquid = [], [], 0
     for s in symbols:
+        if s == bench:
+            continue
         p = C.price_path(h, s)
         if not os.path.exists(p):
             missing.append(s)
@@ -99,8 +139,19 @@ def rank_stocks(h, cfg, symbols=None, sort="score"):
             missing.append(s)
             continue
         m = stock_metrics(rows, cfg["risk_free_annual"])
+        if m["avg_volume"] < min_volume:
+            illiquid += 1
+            continue
         m["symbol"] = s
         m["vs_index_3m"] = (m["3m"] - bm["3m"]) if bm and m["3m"] is not None and bm["3m"] is not None else None
+        if info:
+            m.update(stock_info(h, cfg, s, uni, payouts, m["close"]))
+            d = m.get("dividends") or {}
+            m["div_yield"] = d.get("yield_ttm")
+        if sector and sector.lower() not in (m.get("sector") or "").lower():
+            continue
+        if shariah and not m.get("shariah"):
+            continue
         res.append(m)
     keys = ["1m", "3m", "6m", "1y", "sharpe"]
     pcts = {k: percentiles([m[k] for m in res]) for k in keys}
@@ -108,7 +159,25 @@ def rank_stocks(h, cfg, symbols=None, sort="score"):
         got = [pcts[k][i] for k in keys if pcts[k][i] is not None]
         m["score"] = sum(got) / len(got) if got else None
     res.sort(key=lambda m: (m.get(sort) is None, -(m.get(sort) or 0)))
-    return res, bm, missing
+    return res, bm, {"missing": missing, "illiquid": illiquid, "min_volume": min_volume}
+
+
+def sector_summary(res):
+    """Per-sector median returns from ranked stock metrics."""
+    by = {}
+    for m in res:
+        by.setdefault(m.get("sector") or "UNKNOWN", []).append(m)
+    out = []
+    for sec, ms in by.items():
+        def med(k):
+            v = [x[k] for x in ms if x.get(k) is not None]
+            return statistics.median(v) if v else None
+        best = max(ms, key=lambda x: x.get("score") or -1)
+        out.append({"sector": sec, "count": len(ms), "1m": med("1m"), "3m": med("3m"), "1y": med("1y"),
+                    "div_yield": med("div_yield"), "best": best["symbol"],
+                    "shariah": sum(1 for x in ms if x.get("shariah"))})
+    out.sort(key=lambda r: (r["3m"] is None, -(r["3m"] or 0)))
+    return out
 
 
 def fund_rows(h):
@@ -146,24 +215,47 @@ def p1(x):
 
 
 def cmd_stocks(a, h, cfg):
-    res, bm, missing = rank_stocks(h, cfg, a.symbols, a.sort)
+    res, bm, notes = rank_stocks(h, cfg, a.symbols, a.sort, a.all, a.sector, a.shariah, a.min_volume)
     if a.json:
-        print(json.dumps({"stocks": res, "benchmark": bm, "missing": missing}, indent=1, default=str))
+        print(json.dumps({"stocks": res, "benchmark": bm, "notes": notes}, indent=1, default=str))
         return 0
     if not res:
-        sys.exit("no price data: run pkdata.py psx --watchlist first")
-    print("PSX ranking, prices to %s, sorted by %s" % (max(m["last_date"] for m in res), a.sort))
+        sys.exit("no stocks to rank: download prices first (pkdata.py psx --watchlist, or universe + psx --all)")
+    scope = "all PSX" if a.all else ("chosen symbols" if a.symbols else "watchlist")
+    extra = "".join([", sector ~ %r" % a.sector if a.sector else "", ", Shariah only" if a.shariah else ""])
+    print("PSX ranking (%s%s), %d stocks, prices to %s, sorted by %s" % (
+        scope, extra, len(res), max(m["last_date"] for m in res), a.sort))
     if bm:
         print("%s: 1M %s  3M %s  1Y %s  YTD %s" % (cfg["benchmark"], C.fmt_pct(bm["1m"]), C.fmt_pct(bm["3m"]),
                                                   C.fmt_pct(bm["1y"]), C.fmt_pct(bm["ytd"])))
     rows = []
     for i, m in enumerate(res[:a.top], 1):
-        rows.append([i, m["symbol"], "%.2f" % m["close"], C.fmt_pct(m["1m"]), C.fmt_pct(m["3m"]),
-                     C.fmt_pct(m["1y"]), C.fmt_pct(m["vs_index_3m"]), "n/a" if m["sharpe"] is None else "%.2f" % m["sharpe"],
-                     trend_label(m), p1(m["score"])])
-    print(C.md_table(["#", "Symbol", "Close", "1M", "3M", "1Y", "3M vs idx", "Sharpe", "Trend", "Score"], rows))
-    if missing:
-        print("\nno data for: %s" % " ".join(missing))
+        rows.append([i, m["symbol"] + (" ☪" if m.get("shariah") else ""), (m.get("sector") or "")[:18],
+                     "%.2f" % m["close"], C.fmt_pct(m["1m"]), C.fmt_pct(m["3m"]), C.fmt_pct(m["1y"]),
+                     C.fmt_pct(m["vs_index_3m"]), "n/a" if m["sharpe"] is None else "%.2f" % m["sharpe"],
+                     C.fmt_pct(m.get("div_yield")), trend_label(m), p1(m["score"])])
+    print(C.md_table(["#", "Symbol", "Sector", "Close", "1M", "3M", "1Y", "3M vs idx", "Sharpe", "Div yld",
+                      "Trend", "Score"], rows))
+    print("☪ = in the KMI All Share (Shariah-compliant) index. Div yld = last 12 months' cash "
+          "dividends / price, assuming Rs 10 face value unless config says otherwise.")
+    if notes["illiquid"]:
+        print("left out %d illiquid shares (60-day average volume under %s)" % (notes["illiquid"],
+                                                                                "{:,.0f}".format(notes["min_volume"])))
+    if notes["missing"] and len(notes["missing"]) <= 30:
+        print("no price data for: %s" % " ".join(notes["missing"]))
+    elif notes["missing"]:
+        print("no price data for %d symbols" % len(notes["missing"]))
+    return 0
+
+
+def cmd_sectors(a, h, cfg):
+    res, bm, notes = rank_stocks(h, cfg, None, "score", True, None, a.shariah, a.min_volume)
+    if not res:
+        sys.exit("needs universe + prices + company pages: pkdata.py universe; psx --all; company --all")
+    rows = [[r["sector"][:28], r["count"], r["shariah"], C.fmt_pct(r["1m"]), C.fmt_pct(r["3m"]),
+             C.fmt_pct(r["1y"]), C.fmt_pct(r["div_yield"]), r["best"]] for r in sector_summary(res)]
+    print("PSX sectors, median returns of liquid shares%s" % (" (Shariah only)" if a.shariah else ""))
+    print(C.md_table(["Sector", "Stocks", "☪", "1M", "3M", "1Y", "Div yld", "Top score"], rows))
     return 0
 
 
@@ -216,8 +308,16 @@ def main(argv=None):
     p = sub.add_parser("stocks")
     p.add_argument("--top", type=int, default=10)
     p.add_argument("--symbols", nargs="*")
-    p.add_argument("--sort", default="score", choices=["score", "1w", "1m", "3m", "6m", "1y", "ytd", "sharpe"])
+    p.add_argument("--all", action="store_true", help="every listed share, not just the watchlist")
+    p.add_argument("--sector", help="substring of the PSX sector name, e.g. 'cement'")
+    p.add_argument("--shariah", action="store_true", help="KMI All Share members only")
+    p.add_argument("--min-volume", type=float, help="minimum 60-day average daily volume")
+    p.add_argument("--sort", default="score",
+                   choices=["score", "1w", "1m", "3m", "6m", "1y", "ytd", "sharpe", "div_yield"])
     p.add_argument("--json", action="store_true")
+    p = sub.add_parser("sectors")
+    p.add_argument("--shariah", action="store_true")
+    p.add_argument("--min-volume", type=float)
     p = sub.add_parser("funds")
     p.add_argument("--top", type=int, default=5)
     p.add_argument("--category")
@@ -227,7 +327,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)
-    return {"stocks": cmd_stocks, "funds": cmd_funds, "categories": cmd_categories}[a.cmd](a, h, cfg)
+    return {"stocks": cmd_stocks, "funds": cmd_funds, "categories": cmd_categories,
+            "sectors": cmd_sectors}[a.cmd](a, h, cfg)
 
 
 if __name__ == "__main__":

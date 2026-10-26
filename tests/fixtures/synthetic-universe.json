@@ -1,0 +1,366 @@
+{
+"universe": {
+"SYN00": {
+"name": "Synthetic SYN00 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1000,
+"tags": [],
+"shariah": false
+},
+"SYN01": {
+"name": "Synthetic SYN01 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1001,
+"tags": [],
+"shariah": true
+},
+"SYN02": {
+"name": "Synthetic SYN02 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1002,
+"tags": [],
+"shariah": true
+},
+"SYN03": {
+"name": "Synthetic SYN03 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1003,
+"tags": [],
+"shariah": false
+},
+"SYN04": {
+"name": "Synthetic SYN04 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1004,
+"tags": [],
+"shariah": true
+},
+"SYN05": {
+"name": "Synthetic SYN05 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1005,
+"tags": [],
+"shariah": true
+},
+"SYN06": {
+"name": "Synthetic SYN06 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1006,
+"tags": [],
+"shariah": false
+},
+"SYN07": {
+"name": "Synthetic SYN07 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1007,
+"tags": [],
+"shariah": true
+},
+"SYN08": {
+"name": "Synthetic SYN08 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1008,
+"tags": [],
+"shariah": true
+},
+"SYN09": {
+"name": "Synthetic SYN09 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1009,
+"tags": [],
+"shariah": false
+},
+"SYN10": {
+"name": "Synthetic SYN10 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1010,
+"tags": [],
+"shariah": true
+},
+"SYN11": {
+"name": "Synthetic SYN11 Ltd (not real)",
+"price": null,
+"shares_m": 100,
+"mcap_m": 1011,
+"tags": [],
+"shariah": true
+}
+},
+"companies": {
+"SYN00": {
+"symbol": "SYN00",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN00 Ltd (not real)",
+"tags": [],
+"sector": "CEMENT",
+"price": null,
+"pe": 5.0,
+"payouts": [
+{
+"announced": "2026-01-10",
+"period": "31/12/2025(HYR)",
+"details": "10%(ii) (D)",
+"bc_from": "2026-01-20",
+"bc_to": "2026-01-22",
+"cash_pct": 10.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN01": {
+"symbol": "SYN01",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN01 Ltd (not real)",
+"tags": [],
+"sector": "COMMERCIAL BANKS",
+"price": null,
+"pe": 6.0,
+"payouts": [
+{
+"announced": "2026-02-10",
+"period": "31/12/2025(HYR)",
+"details": "15%(ii) (D)",
+"bc_from": "2026-02-20",
+"bc_to": "2026-02-22",
+"cash_pct": 15.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN02": {
+"symbol": "SYN02",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN02 Ltd (not real)",
+"tags": [],
+"sector": "OIL & GAS EXPLORATION COMPANIES",
+"price": null,
+"pe": 7.0,
+"payouts": [
+{
+"announced": "2026-03-10",
+"period": "31/12/2025(HYR)",
+"details": "20%(ii) (D)",
+"bc_from": "2026-03-20",
+"bc_to": "2026-03-22",
+"cash_pct": 20.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN03": {
+"symbol": "SYN03",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN03 Ltd (not real)",
+"tags": [],
+"sector": "TECHNOLOGY & COMMUNICATION",
+"price": null,
+"pe": 8.0,
+"payouts": [
+{
+"announced": "2026-04-10",
+"period": "31/12/2025(HYR)",
+"details": "25%(ii) (D)",
+"bc_from": "2026-04-20",
+"bc_to": "2026-04-22",
+"cash_pct": 25.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN04": {
+"symbol": "SYN04",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN04 Ltd (not real)",
+"tags": [],
+"sector": "CEMENT",
+"price": null,
+"pe": 9.0,
+"payouts": [
+{
+"announced": "2026-05-10",
+"period": "31/12/2025(HYR)",
+"details": "30%(ii) (D)",
+"bc_from": "2026-05-20",
+"bc_to": "2026-05-22",
+"cash_pct": 30.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN05": {
+"symbol": "SYN05",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN05 Ltd (not real)",
+"tags": [],
+"sector": "COMMERCIAL BANKS",
+"price": null,
+"pe": 10.0,
+"payouts": [
+{
+"announced": "2026-06-10",
+"period": "31/12/2025(HYR)",
+"details": "35%(ii) (D)",
+"bc_from": "2026-06-20",
+"bc_to": "2026-06-22",
+"cash_pct": 35.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN06": {
+"symbol": "SYN06",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN06 Ltd (not real)",
+"tags": [],
+"sector": "OIL & GAS EXPLORATION COMPANIES",
+"price": null,
+"pe": 11.0,
+"payouts": [
+{
+"announced": "2026-01-10",
+"period": "31/12/2025(HYR)",
+"details": "40%(ii) (D)",
+"bc_from": "2026-01-20",
+"bc_to": "2026-01-22",
+"cash_pct": 40.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN07": {
+"symbol": "SYN07",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN07 Ltd (not real)",
+"tags": [],
+"sector": "TECHNOLOGY & COMMUNICATION",
+"price": null,
+"pe": 12.0,
+"payouts": [
+{
+"announced": "2026-02-10",
+"period": "31/12/2025(HYR)",
+"details": "45%(ii) (D)",
+"bc_from": "2026-02-20",
+"bc_to": "2026-02-22",
+"cash_pct": 45.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN08": {
+"symbol": "SYN08",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN08 Ltd (not real)",
+"tags": [],
+"sector": "CEMENT",
+"price": null,
+"pe": 13.0,
+"payouts": [
+{
+"announced": "2026-03-10",
+"period": "31/12/2025(HYR)",
+"details": "50%(ii) (D)",
+"bc_from": "2026-03-20",
+"bc_to": "2026-03-22",
+"cash_pct": 50.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN09": {
+"symbol": "SYN09",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN09 Ltd (not real)",
+"tags": [],
+"sector": "COMMERCIAL BANKS",
+"price": null,
+"pe": 14.0,
+"payouts": [
+{
+"announced": "2026-04-10",
+"period": "31/12/2025(HYR)",
+"details": "55%(ii) (D)",
+"bc_from": "2026-04-20",
+"bc_to": "2026-04-22",
+"cash_pct": 55.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN10": {
+"symbol": "SYN10",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN10 Ltd (not real)",
+"tags": [],
+"sector": "OIL & GAS EXPLORATION COMPANIES",
+"price": null,
+"pe": 15.0,
+"payouts": [
+{
+"announced": "2026-05-10",
+"period": "31/12/2025(HYR)",
+"details": "60%(ii) (D)",
+"bc_from": "2026-05-20",
+"bc_to": "2026-05-22",
+"cash_pct": 60.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+},
+"SYN11": {
+"symbol": "SYN11",
+"fetched": "2026-10-26",
+"name": "Synthetic SYN11 Ltd (not real)",
+"tags": [],
+"sector": "TECHNOLOGY & COMMUNICATION",
+"price": null,
+"pe": 16.0,
+"payouts": [
+{
+"announced": "2026-06-10",
+"period": "31/12/2025(HYR)",
+"details": "65%(ii) (D)",
+"bc_from": "2026-06-20",
+"bc_to": "2026-06-22",
+"cash_pct": 65.0,
+"bonus_pct": 0.0,
+"right_pct": 0.0,
+"kind": "interim ii"
+}
+]
+}
+}
+}

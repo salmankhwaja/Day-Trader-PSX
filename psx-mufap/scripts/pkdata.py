@@ -6,6 +6,10 @@
   pkdata.py psx SYMBOL --from-file raw.json  parse a response you saved yourself (or a CSV)
   pkdata.py mufap                            download today's MUFAP performance summary
   pkdata.py mufap --from-file page.md        parse a saved copy (HTML or Markdown)
+  pkdata.py universe                         every listed share + Shariah (KMI) flags -> universe.json
+  pkdata.py company --all|--watchlist|SYMBOL  sector, P/E, dividend history per company (cached 7 days)
+  pkdata.py payouts                          latest dividend announcements and book closures
+  pkdata.py psx --all                        prices for every share in universe.json (first run ~10 min)
   pkdata.py status                           what data is on disk and how fresh it is
 
 Sources
@@ -33,6 +37,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
+import psxinfo as P  # noqa: E402
 
 PSX_EOD = "https://dps.psx.com.pk/timeseries/eod/%s"
 MUFAP_URL = "https://www.mufap.com.pk/Industry/IndustryStatDaily?tab=1"
@@ -90,6 +95,11 @@ def cmd_psx(a, h, cfg):
     symbols = [s.upper() for s in a.symbols]
     if a.watchlist:
         symbols += [s.upper() for s in cfg["watchlist"]] + [cfg["benchmark"].upper()]
+    if a.all:
+        uni = P.load_universe(h)
+        if not uni:
+            sys.exit("no universe.json yet: run `pkdata.py universe` first")
+        symbols += sorted(uni) + [s.upper() for s in cfg["watchlist"]] + [cfg["benchmark"].upper()]
     symbols = list(dict.fromkeys(symbols))
     if not symbols:
         sys.exit("name at least one symbol, or use --watchlist")
@@ -283,14 +293,109 @@ def cmd_mufap(a, h, cfg):
     return 0
 
 
+# ---------------------------------------------------------------- companies
+
+def _read_or_get(path, url):
+    if path:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    return C.http_get(url)
+
+
+def cmd_universe(a, h, cfg):
+    try:
+        allshr = _read_or_get(a.allshr_file, P.INDEX_URL % "ALLSHR")
+        kmi = _read_or_get(a.kmi_file, P.INDEX_URL % "KMIALLSHR")
+    except Exception as e:
+        sys.exit("download failed (%s). Fetch %s and %s with a web tool (raw HTML), save them, and "
+                 "rerun with --allshr-file and --kmi-file." % (e, P.INDEX_URL % "ALLSHR", P.INDEX_URL % "KMIALLSHR"))
+    uni = P.build_universe(allshr, kmi)
+    if not uni:
+        sys.exit("no shares parsed: the page format may have changed")
+    if len(uni) < 100:
+        print("warning: only %d shares parsed (PSX lists about 500); check the saved pages" % len(uni))
+    with open(os.path.join(h, "universe.json"), "w") as f:
+        json.dump(uni, f, indent=0)
+    print("universe: %d listed shares, %d Shariah-compliant (KMI All Share)" % (
+        len(uni), sum(1 for v in uni.values() if v["shariah"])))
+    return 0
+
+
+def cmd_company(a, h, cfg):
+    symbols = [s.upper() for s in a.symbols]
+    if a.watchlist:
+        symbols += [s.upper() for s in cfg["watchlist"]]
+    if a.all:
+        symbols += sorted(P.load_universe(h))
+    symbols = list(dict.fromkeys(symbols))
+    if a.from_file and len(symbols) != 1:
+        sys.exit("--from-file takes exactly one symbol")
+    if not symbols:
+        sys.exit("name symbols, or use --watchlist / --all (after `pkdata.py universe`)")
+    fresh = (dt.date.today() - dt.timedelta(days=a.max_age)).isoformat()
+    done = skipped = 0
+    failed = []
+    for s in symbols:
+        old = P.load_company(h, s)
+        if old and not a.from_file and not a.refresh and (old.get("fetched") or "") >= fresh:
+            skipped += 1
+            continue
+        try:
+            text = _read_or_get(a.from_file, P.COMPANY_URL % s)
+            c = P.parse_company(text, s)
+            if not c.get("name") and not c.get("sector"):
+                raise ValueError("no company data on the page")
+            P.save_company(h, c)
+            done += 1
+            if len(symbols) <= 20:
+                print("%-8s %s | %s | %d payouts" % (s, c["name"], c["sector"], len(c["payouts"])))
+        except Exception as e:
+            failed.append(s)
+            print("%-8s FAILED: %s" % (s, e))
+    print("companies: %d updated, %d still fresh (< %d days), %d failed" % (done, skipped, a.max_age, len(failed)))
+    return 1 if failed else 0
+
+
+def cmd_payouts(a, h, cfg):
+    try:
+        text = _read_or_get(a.from_file, P.PAYOUTS_URL)
+    except Exception as e:
+        sys.exit("download failed (%s). Fetch %s with a web tool, save it, and use --from-file." % (e, P.PAYOUTS_URL))
+    rows = P.parse_payouts_page(text)
+    old = P.load_payouts(h)
+    keep = {(r["symbol"], r.get("announced"), r["details"]): r for r in old + rows}
+    rows = sorted(keep.values(), key=lambda r: r.get("announced") or "", reverse=True)[:1000]
+    with open(os.path.join(h, "payouts.json"), "w") as f:
+        json.dump(rows, f, indent=0)
+    today = dt.date.today().isoformat()
+    up = [r for r in rows if (r.get("bc_to") or "") >= today]
+    print("payouts: %d announcements on file, %d with book closure still ahead" % (len(rows), len(up)))
+    for r in sorted(up, key=lambda r: r.get("bc_from") or "")[:15]:
+        print("  %-8s %-18s book closure %s .. %s" % (r["symbol"], r["details"], r["bc_from"], r["bc_to"]))
+    return 0
+
+
 def cmd_status(a, h, cfg):
     print("home: %s" % h)
+    uni = P.load_universe(h)
+    print("  universe: %s" % ("%d shares" % len(uni) if uni else "not downloaded"))
     d = os.path.join(h, "psx")
     if os.path.isdir(d):
-        for fn in sorted(os.listdir(d)):
+        files = sorted(os.listdir(d))
+        lasts = {}
+        for fn in files:
             rows = C.read_prices(os.path.join(d, fn))
             if rows:
-                print("  PSX %-8s %5d days, last %s" % (fn[:-4], len(rows), rows[-1]["date"]))
+                lasts[fn[:-4]] = (len(rows), rows[-1]["date"])
+        if len(lasts) > 25:
+            newest = max(v[1] for v in lasts.values())
+            print("  PSX prices: %d symbols, newest %s, %d behind" % (
+                len(lasts), newest, sum(1 for v in lasts.values() if v[1] < newest)))
+        else:
+            for s, (n, last) in lasts.items():
+                print("  PSX %-8s %5d days, last %s" % (s, n, last))
+    cd = os.path.join(h, "companies")
+    print("  company pages: %d" % (len(os.listdir(cd)) if os.path.isdir(cd) else 0))
     snap = latest_mufap(h)
     print("  MUFAP latest snapshot: %s" % (os.path.basename(snap)[:-4] if snap else "none"))
     p = os.path.join(h, "paper", "portfolio.json")
@@ -305,6 +410,19 @@ def main(argv=None):
     p = sub.add_parser("psx")
     p.add_argument("symbols", nargs="*")
     p.add_argument("--watchlist", action="store_true")
+    p.add_argument("--all", action="store_true", help="every share in universe.json")
+    p.add_argument("--from-file")
+    p = sub.add_parser("universe")
+    p.add_argument("--allshr-file")
+    p.add_argument("--kmi-file")
+    p = sub.add_parser("company")
+    p.add_argument("symbols", nargs="*")
+    p.add_argument("--watchlist", action="store_true")
+    p.add_argument("--all", action="store_true")
+    p.add_argument("--refresh", action="store_true", help="ignore the 7-day cache")
+    p.add_argument("--max-age", type=int, default=7)
+    p.add_argument("--from-file")
+    p = sub.add_parser("payouts")
     p.add_argument("--from-file")
     p = sub.add_parser("mufap")
     p.add_argument("--from-file")
@@ -312,7 +430,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)
-    return {"psx": cmd_psx, "mufap": cmd_mufap, "status": cmd_status}[a.cmd](a, h, cfg)
+    return {"psx": cmd_psx, "mufap": cmd_mufap, "status": cmd_status, "universe": cmd_universe,
+            "company": cmd_company, "payouts": cmd_payouts}[a.cmd](a, h, cfg)
 
 
 if __name__ == "__main__":

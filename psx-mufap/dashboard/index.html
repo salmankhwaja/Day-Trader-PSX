@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>PSX Dashboard</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f2; --surface: #fcfcfb; --surface-2: #f0efec; --border: #e2e1dc;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --accent: #2a78d6; --good: #0ca30c; --good-text: #006300; --bad: #d03b3b; --bad-text: #b02a2a;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300;
+  --grid: #e9e8e4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --surface-2: #242422; --border: #33332f;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86;
+    --accent: #3987e5; --good: #0ca30c; --good-text: #4cc24c; --bad: #d03b3b; --bad-text: #ef7a7a;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+    --grid: #2a2a27;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --surface-2: #242422; --border: #33332f;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86;
+  --accent: #3987e5; --good: #0ca30c; --good-text: #4cc24c; --bad: #d03b3b; --bad-text: #ef7a7a;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+  --grid: #2a2a27;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--border); }
+.bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; max-width: 1280px; margin: 0 auto; }
+.bar h1 { font-size: 16px; margin: 0; white-space: nowrap; }
+.bar .meta { color: var(--muted); font-size: 12px; margin-left: auto; text-align: right; }
+
+nav { display: flex; gap: 4px; padding: 0 12px; max-width: 1280px; margin: 0 auto; overflow-x: auto; }
+nav button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text-2);
+  padding: 8px 10px; font: inherit; cursor: pointer; white-space: nowrap; }
+nav button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+main { max-width: 1280px; margin: 0 auto; padding: 16px; }
+section.view { display: none; } section.view.on { display: block; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); margin: 0 0 10px; }
+.kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.kpi .l { color: var(--muted); font-size: 12px; } .kpi .v { font-size: 22px; font-weight: 650; margin-top: 2px; }
+.kpi .s { font-size: 12px; color: var(--text-2); }
+.pos { color: var(--good-text); } .neg { color: var(--bad-text); }
+.tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+th { color: var(--text-2); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--surface); cursor: pointer; user-select: none; }
+th.l, td.l { text-align: left; }
+th[aria-sort="descending"]::after { content: " ▼"; } th[aria-sort="ascending"]::after { content: " ▲"; }
+tr:hover td { background: var(--surface-2); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface-2); margin: 2px; font-size: 13px; }
+.chip .dot { width: 10px; height: 10px; border-radius: 50%; }
+.chip button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 0 0 2px; }
+.tag { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-2); margin-left: 4px; }
+.tag.sh { border-color: var(--good); color: var(--good-text); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+input, select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 8px; min-width: 0; }
+label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--text-2); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { background: var(--surface); border: 0; padding: 5px 10px; font: inherit; color: var(--text-2); cursor: pointer; }
+.seg button.on { background: var(--accent); color: #fff; }
+.btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+.btn.ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.chart { position: relative; height: 300px; } .chart.tall { height: 360px; } .chart.short { height: 220px; }
+.muted { color: var(--muted); } .small { font-size: 12px; }
+.note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.list { margin: 0; padding: 0; list-style: none; }
+.list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+.sel { width: 18px; height: 18px; }
+@media (max-width: 600px) { .bar .btn { margin-left: auto; } .hide-m { display: none; } .bar .meta { display: none; } main { padding: 12px; } .kpi .v { font-size: 19px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>PSX &amp; MUFAP</h1>
+    <div class="meta" id="meta"></div>
+    <button class="btn ghost" id="theme" title="Light / dark" aria-label="Toggle light or dark theme">Theme</button>
+  </div>
+  <nav id="tabs" role="tablist">
+    <button data-v="overview" class="on">Overview</button>
+    <button data-v="screener">Screener</button>
+    <button data-v="compare">Compare</button>
+    <button data-v="portfolio">Portfolio</button>
+    <button data-v="dividends">Dividends</button>
+    <button data-v="funds">Funds</button>
+  </nav>
+</header>
+<main>
+  <section class="view on" id="v-overview">
+    <div class="kpis" id="ov-kpis"></div>
+    <div class="grid">
+      <div class="card"><h2>KSE-100</h2><div class="seg" id="ov-range"></div><div class="chart" style="margin-top:8px"><canvas id="ov-index"></canvas></div></div>
+      <div class="card"><h2>Sectors: median 3-month return</h2><div class="chart tall"><canvas id="ov-sectors"></canvas></div>
+        <div class="note">Liquid shares only. Hover a bar for stock count, 1-year return and dividend yield.</div></div>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <div class="card"><h2>Top ranked</h2><div class="tablewrap"><table id="ov-top"></table></div></div>
+      <div class="card"><h2>Coming up: dividends</h2><ul class="list" id="ov-divs"></ul></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-screener">
+    <div class="filters">
+      <input id="f-q" type="search" placeholder="Symbol or name" aria-label="Search">
+      <select id="f-sector" aria-label="Sector"><option value="">All sectors</option></select>
+      <label class="ck"><input type="checkbox" id="f-sh"> Shariah</label>
+      <label class="ck"><input type="checkbox" id="f-watch"> Watchlist</label>
+      <label class="ck"><input type="checkbox" id="f-held"> Held</label>
+      <label class="ck">Min yield <input id="f-yield" type="number" min="0" step="1" style="width:64px" placeholder="%"></label>
+      <button class="btn" id="f-compare">Compare selected (0)</button>
+    </div>
+    <div class="card"><div class="tablewrap" style="max-height:70vh"><table id="sc-table"></table></div>
+      <div class="note" id="sc-note"></div></div>
+  </section>
+
+  <section class="view" id="v-compare">
+    <div class="filters">
+      <input id="c-add" list="c-symbols" placeholder="Add a symbol" aria-label="Add a symbol" style="width:160px">
+      <datalist id="c-symbols"></datalist>
+      <button class="btn" id="c-addbtn">Add</button>
+      <div id="c-chips"></div>
+      <div class="seg" id="c-range" style="margin-left:auto"></div>
+    </div>
+    <div id="c-body">
+      <div class="card"><h2>Price, rebased to 100</h2><div class="chart tall"><canvas id="c-price"></canvas></div></div>
+      <div class="grid" style="margin-top:12px">
+        <div class="card"><h2>Returns</h2><div class="chart"><canvas id="c-returns"></canvas></div></div>
+        <div class="card"><h2>Risk and income</h2><div class="chart"><canvas id="c-risk"></canvas></div></div>
+      </div>
+      <div class="card" style="margin-top:12px"><h2>Side by side</h2><div class="tablewrap"><table id="c-table"></table></div></div>
+      <div class="card" style="margin-top:12px"><h2>Dividend history</h2><div class="tablewrap"><table id="c-divs"></table></div></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-portfolio">
+    <div class="kpis" id="pf-kpis"></div>
+    <div class="grid">
+      <div class="card"><h2>Account value vs KSE-100</h2><div class="chart"><canvas id="pf-equity"></canvas></div><div class="note" id="pf-eqnote"></div></div>
+      <div class="card"><h2>Allocation by sector</h2><div class="chart"><canvas id="pf-alloc"></canvas></div></div>
+    </div>
+    <div class="card" style="margin-top:12px"><h2>Holdings</h2><div class="tablewrap"><table id="pf-hold"></table></div></div>
+    <div class="grid" style="margin-top:12px">
+      <div class="card"><h2>Latest proposal</h2><div id="pf-prop"></div></div>
+      <div class="card"><h2>Dividends received</h2><ul class="list" id="pf-divs"></ul></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-dividends">
+    <div class="filters">
+      <label class="ck"><input type="checkbox" id="d-held"> Held only</label>
+      <label class="ck"><input type="checkbox" id="d-sh"> Shariah only</label>
+    </div>
+    <div class="grid">
+      <div class="card"><h2>Book closures and expected announcements</h2><div class="tablewrap"><table id="d-cal"></table></div>
+        <div class="note">"Expected" dates are estimates from last year's announcement, not company notices.</div></div>
+      <div class="card"><h2>Highest dividend yield (last 12 months)</h2><div class="chart tall"><canvas id="d-yield"></canvas></div>
+        <div class="note" id="d-note"></div></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-funds">
+    <div class="filters"><select id="fu-cat" aria-label="Fund category"></select><span class="muted small" id="fu-type"></span></div>
+    <div class="grid">
+      <div class="card"><h2>Top funds: returns %</h2><div class="chart tall"><canvas id="fu-chart"></canvas></div>
+        <div class="note">Within one category only. Money market, income and fixed-rate categories quote annualised returns; equity and mixed categories quote absolute returns.</div></div>
+      <div class="card"><h2>Ranking</h2><div class="tablewrap"><table id="fu-table"></table></div></div>
+    </div>
+  </section>
+  <p class="note">Research and practice only, not investment advice. Paper trades are never real orders. Data: PSX Data Portal and MUFAP, for personal use; do not republish.</p>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="sha512-CQBWl4fJHWbryGE+Pc7UAxWMUMNMWzWxF4SQo9CgkJIN1kx6djDQZjh3Y8SZ1d+6I+1zze6Z7kHXO7q3UyZAWw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="app.js"></script>
+</body>
+</html>

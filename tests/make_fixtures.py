@@ -22,9 +22,37 @@ def series(seed, start_px, drift, vol, n=600):
 SPEC = {"UPCO": (1, 100, 0.0012, 0.018), "DOWNCO": (2, 80, -0.0008, 0.02),
         "FLATCO": (3, 50, 0.0, 0.012), "WILDCO": (4, 30, 0.0006, 0.035),
         "KSE100": (5, 70000, 0.0005, 0.01)}
+# A wider synthetic market for --all, sector, Shariah and proposal tests (900 sessions each).
+SECTORS = ["CEMENT", "COMMERCIAL BANKS", "OIL & GAS EXPLORATION COMPANIES", "TECHNOLOGY & COMMUNICATION"]
+MARKET = {}
+for k in range(12):
+    MARKET["SYN%02d" % k] = (100 + k, 20 + 7 * k, (k - 4) * 0.0004, 0.012 + 0.002 * (k % 4))
+
+
+def universe_and_companies():
+    uni, comps = {}, {}
+    for k, sym in enumerate(sorted(MARKET)):
+        sector = SECTORS[k % 4]
+        uni[sym] = {"name": "Synthetic %s Ltd (not real)" % sym, "price": None, "shares_m": 100,
+                    "mcap_m": 1000 + k, "tags": [], "shariah": k % 3 != 0}
+        pays = [{"announced": "2026-%02d-10" % (1 + (k % 6)), "period": "31/12/2025(HYR)",
+                 "details": "%d%%(ii) (D)" % (10 + 5 * k), "bc_from": "2026-%02d-20" % (1 + (k % 6)),
+                 "bc_to": "2026-%02d-22" % (1 + (k % 6)), "cash_pct": 10.0 + 5 * k,
+                 "bonus_pct": 0.0, "right_pct": 0.0, "kind": "interim ii"}]
+        comps[sym] = {"symbol": sym, "fetched": "2026-10-26", "name": uni[sym]["name"], "tags": [],
+                      "sector": sector, "price": None, "pe": 5.0 + k, "payouts": pays}
+    return uni, comps
+
+
 if __name__ == "__main__":
     os.makedirs(HERE, exist_ok=True)
     for sym, args in SPEC.items():
         with open(os.path.join(HERE, "psx-%s.json" % sym), "w") as f:
             json.dump(series(*args), f)
-    print("wrote", len(SPEC), "fixtures")
+    for sym, args in MARKET.items():
+        with open(os.path.join(HERE, "psx-%s.json" % sym), "w") as f:
+            json.dump(series(*args, n=900), f)
+    uni, comps = universe_and_companies()
+    with open(os.path.join(HERE, "synthetic-universe.json"), "w") as f:
+        json.dump({"universe": uni, "companies": comps}, f, indent=0)
+    print("wrote", len(SPEC) + len(MARKET), "price fixtures and the synthetic universe")

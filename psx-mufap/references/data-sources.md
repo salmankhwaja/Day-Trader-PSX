@@ -38,3 +38,25 @@ absolute returns for the period. Returns are net of fees but before any sales lo
 `mufap/nav_history.csv`. MUFAP's own pages do not offer a long NAV history in one request, so
 fund backtests work from the history you collect (run it daily, e.g. with
 `scripts/daily_sync.sh`).
+
+## PSX company data
+
+All from the PSX Data Portal, parsed by `scripts/psxinfo.py`:
+
+| Page | Gives | Used for |
+|---|---|---|
+| `/indices/ALLSHR` | every share in the KSE All Share Index: name, price, shares, market cap | the `--all` universe |
+| `/indices/KMIALLSHR` | the KMI All Share Islamic Index members (about 310) | the Shariah flag (☪) |
+| `/company/<SYMBOL>` | sector, P/E (TTM), 52-week range, market cap, free float, and the payouts table: announcement date, period, details, book closure | sectors, valuation, dividend history |
+| `/payouts` | the latest dividend announcements across the market | new announcements and book closures between weekly company refreshes |
+
+Tags after a symbol on index pages are PSX's own markers (for example `XD`, trading
+ex-dividend, and `NC`); they are kept as-is in `universe.json`.
+
+Payout details read like `60% (F) (D)`: 60% of face value in cash (D), final (F); `(i)`,
+`(ii)`, `(iii)` are interims; `(B)` bonus shares; `(R)` rights. Dividend per share is the percent
+times face value, which the pages don't show: Rs 10 for most shares, otherwise set
+`face_values` in config.json. "Expected next" is the date of last year's equivalent
+announcement plus one year: an estimate, not a company notice.
+
+KMI membership is recomposed periodically by PSX; refreshing the universe weekly picks that up.

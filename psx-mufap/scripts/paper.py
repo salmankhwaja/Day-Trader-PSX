@@ -8,6 +8,10 @@
   paper.py redeem "FUND NAME" AMOUNT|all
   paper.py status                                holdings, value, profit/loss, vs KSE100
   paper.py log [--last 20]                       trade history
+  paper.py mark                                  record today's account value (the daily service
+                                                 does this; the dashboard charts it)
+  paper.py dividends [--apply]                   credit cash dividends and bonus shares whose
+                                                 book closure has passed while you held the shares
   paper.py signals --strategy sma|breakout|rsi|momentum [--apply]
         turn a backtested strategy into orders for the watchlist. Without --apply it only
         PRINTS the orders; with --apply it books them in the paper account.
@@ -28,6 +32,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import backtest as B  # noqa: E402
+import psxinfo as P  # noqa: E402
 from rank import fund_rows  # noqa: E402
 
 
@@ -90,7 +95,7 @@ def book(pf, entry):
     pf["trades"].append(entry)
 
 
-def do_buy(h, cfg, pf, symbol, qty, price=None, note=""):
+def do_buy(h, cfg, pf, symbol, qty, price=None, note="", meta=None):
     symbol = symbol.upper()
     px, asof = (price, "given") if price else stock_price(h, symbol)
     if px is None:
@@ -103,7 +108,10 @@ def do_buy(h, cfg, pf, symbol, qty, price=None, note=""):
     fee = gross * cfg["cost_bps_per_side"] / 10000.0
     if gross + fee > pf["cash"] + 1e-6:
         raise ValueError("not enough cash: need %s, have %s" % (C.fmt_pkr(gross + fee), C.fmt_pkr(pf["cash"])))
-    pos = pf["positions"].setdefault(symbol, {"kind": "stock", "qty": 0, "cost": 0.0})
+    pos = pf["positions"].setdefault(symbol, {"kind": "stock", "qty": 0, "cost": 0.0,
+                                              "opened": dt.date.today().isoformat()})
+    if meta:  # e.g. the strategy that proposed it, so `propose.py review` knows when to exit
+        pos["meta"] = meta
     pos["qty"] += qty
     pos["cost"] += gross + fee
     pf["cash"] -= gross + fee
@@ -257,6 +265,80 @@ def cmd_status(a, h, cfg):
     return 0
 
 
+def due_dividends(h, cfg, pf, today=None):
+    """Entitlements for stock positions: payouts whose book closure started after the position
+    was opened (with 2 days' margin for the ex-date) and on or before today, not yet credited."""
+    today = (today or dt.date.today()).isoformat()
+    credited = set(pf.setdefault("dividends_credited", []))
+    market = P.load_payouts(h)
+    out = []
+    for sym, pos in pf["positions"].items():
+        if pos.get("kind") != "stock":
+            continue
+        opened = pos.get("opened") or "0000-00-00"
+        cutoff = (dt.date.fromisoformat(opened) + dt.timedelta(days=2)).isoformat() if opened[0] != "0" else opened
+        c = P.load_company(h, sym) or {}
+        pays = list(c.get("payouts") or []) + [p for p in market if p["symbol"] == sym]
+        seen = set()
+        for p in pays:
+            key = "%s|%s|%s" % (sym, p.get("announced"), p.get("details"))
+            bc = p.get("bc_from")
+            if key in seen or key in credited or not bc or bc <= cutoff or bc > today:
+                continue
+            seen.add(key)
+            if not (p.get("cash_pct") or p.get("bonus_pct")):
+                continue
+            fv = P.face_value(cfg, sym)
+            gross = pos["qty"] * fv * (p.get("cash_pct") or 0) / 100.0
+            tax = gross * float(cfg.get("dividend_tax", 0.15))
+            bonus = int(pos["qty"] * (p.get("bonus_pct") or 0) / 100.0)
+            out.append({"key": key, "symbol": sym, "details": p.get("details"), "book_closure": bc,
+                        "qty": pos["qty"], "gross": round(gross, 2), "tax": round(tax, 2),
+                        "net": round(gross - tax, 2), "bonus_shares": bonus})
+    return out
+
+
+def cmd_dividends(a, h, cfg):
+    pf = load(h)
+    due = due_dividends(h, cfg, pf)
+    if not due:
+        print("no dividends or bonus shares due on current holdings")
+        return 0
+    for d in due:
+        print("%-8s %-16s book closure %s on %d shares: net %s (tax %s)%s" % (
+            d["symbol"], d["details"], d["book_closure"], d["qty"], C.fmt_pkr(d["net"]), C.fmt_pkr(d["tax"]),
+            ", +%d bonus shares" % d["bonus_shares"] if d["bonus_shares"] else ""))
+    if not a.apply:
+        print("\nNot credited yet. Rerun with --apply (dividend tax %.0f%% from config 'dividend_tax')."
+              % (100 * float(cfg.get("dividend_tax", 0.15))))
+        return 0
+    for d in due:
+        pos = pf["positions"][d["symbol"]]
+        pf["cash"] += d["net"]
+        pos["qty"] += d["bonus_shares"]
+        pf["dividends_credited"].append(d["key"])
+        entry = {"side": "dividend", "symbol": d["symbol"], "details": d["details"],
+                 "book_closure": d["book_closure"], "net": d["net"], "tax": d["tax"],
+                 "bonus_shares": d["bonus_shares"], "realized": d["net"]}
+        book(pf, entry)
+    save(h, pf)
+    print("credited %d entitlements" % len(due))
+    return 0
+
+
+def cmd_mark(a, h, cfg):
+    pf = load(h)
+    _, total = valuation(h, cfg, pf)
+    bpx, bdate = stock_price(h, (pf.get("benchmark") or {}).get("symbol") or cfg["benchmark"])
+    marks = [m for m in pf.setdefault("marks", []) if m["date"] != dt.date.today().isoformat()]
+    marks.append({"date": dt.date.today().isoformat(), "value": round(total, 2), "cash": round(pf["cash"], 2),
+                  "benchmark": bpx})
+    pf["marks"] = marks[-2000:]
+    save(h, pf)
+    print("marked %s at %s" % (marks[-1]["date"], C.fmt_pkr(total)))
+    return 0
+
+
 def cmd_log(a, h, cfg):
     pf = load(h)
     for t in pf["trades"][-a.last:]:
@@ -355,6 +437,9 @@ def main(argv=None):
         p.add_argument("amount")
         p.add_argument("--fee-pct", type=float, default=0.0)
     sub.add_parser("status")
+    sub.add_parser("mark")
+    p = sub.add_parser("dividends")
+    p.add_argument("--apply", action="store_true")
     p = sub.add_parser("log")
     p.add_argument("--last", type=int, default=20)
     p = sub.add_parser("signals")
@@ -368,7 +453,8 @@ def main(argv=None):
     cfg = C.load_config(h)
     return {"init": cmd_init, "buy": cmd_buy, "sell": cmd_sell, "invest": cmd_invest,
             "redeem": cmd_redeem, "status": cmd_status, "log": cmd_log,
-            "signals": cmd_signals}[a.cmd](a, h, cfg)
+            "signals": cmd_signals, "dividends": cmd_dividends,
+            "mark": cmd_mark}[a.cmd](a, h, cfg)
 
 
 if __name__ == "__main__":
