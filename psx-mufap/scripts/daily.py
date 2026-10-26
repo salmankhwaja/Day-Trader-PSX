@@ -91,6 +91,8 @@ def run(home, scope="watchlist", download=True, git=False):
         step("prices", "pkdata", ["psx", "--all" if whole else "--watchlist"], home)
         step("payouts", "pkdata", ["payouts"], home)
         step("mufap", "pkdata", ["mufap"], home)
+        if C.load_config(home).get("pakistanibulls_terms_ok"):
+            step("second opinion: PakistaniBulls", "signals", ["pakistanibulls", "--fetch"], home)
     every = ["--all"] if scope == "all" else []
     if os.path.exists(p("paper", "portfolio.json")):
         step("paper: dividends", "paper", ["dividends", "--apply"], home)

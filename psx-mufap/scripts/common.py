@@ -45,6 +45,10 @@ DEFAULT_CONFIG = {
     # Your risk style. It sets every buy/sell/hold variable (stops, sizing, gates, ranking
     # weights...): see profiles.py, `risk.py settings`, and `risk.py quiz` to choose one.
     "risk_profile": "moderate",
+    # Second opinion (signals.py): third-party signals older than this many days are ignored.
+    "external_signals_max_age_days": 3,
+    # PakistaniBulls direct download: off until you read their terms (signals.py pakistanibulls --terms).
+    "pakistanibulls_terms_ok": False,
 }
 
 

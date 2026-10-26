@@ -29,6 +29,8 @@ import profiles as PRF  # noqa: E402
 import risk as RK  # noqa: E402
 import sip as SP  # noqa: E402
 import freshness as FR  # noqa: E402
+import watchlist as WL  # noqa: E402
+import signals as SG  # noqa: E402
 
 
 def run(fn, argv):
@@ -1067,6 +1069,86 @@ class TestGreenRed(Market):
         run(PF.main, ["--home", self.h, "export", exp])
         with open(exp) as f:
             self.assertIn("10:05", f.read())
+
+
+class TestWatchlist(Market):
+    def test_add_remove_set_top_and_checks(self):
+        run(WL.main, ["--home", self.h, "add", "SYN08", "NOPE"])
+        self.assertEqual(WL.current(self.h), ["SYN01", "SYN05", "SYN08"])  # NOPE isn't listed: refused
+        run(WL.main, ["--home", self.h, "add", "NOPE", "--force"])
+        self.assertIn("NOPE", WL.current(self.h))
+        run(WL.main, ["--home", self.h, "remove", "NOPE", "SYN05"])
+        self.assertEqual(WL.current(self.h), ["SYN01", "SYN08"])
+        rc, out = run(WL.main, ["--home", self.h, "add", "--top", "2", "--sector", "cement"])
+        self.assertIn("ranking score", out)
+        cem = [s for s in WL.current(self.h) if (P.load_company(self.h, s) or {}).get("sector") == "CEMENT"]
+        self.assertGreaterEqual(len(cem), 2)
+        with self.assertRaises(SystemExit):
+            WL.main(["--home", self.h, "set", "SYN02", "BAD1"])
+        run(WL.main, ["--home", self.h, "set", "SYN02", "syn03", "SYN02"])
+        self.assertEqual(WL.current(self.h), ["SYN02", "SYN03"])  # upper-cased, de-duplicated
+        rc, out = run(WL.main, ["--home", self.h])
+        self.assertIn("SYN02", out)
+        f = os.path.join(self.h, "wl.txt")
+        run(WL.main, ["--home", self.h, "export", f])
+        run(WL.main, ["--home", self.h, "reset"])
+        run(WL.main, ["--home", self.h, "import", f, "--replace"])
+        self.assertEqual(WL.current(self.h), ["SYN02", "SYN03"])
+        self.assertEqual(C.read_user_config(self.h)["min_avg_volume"], 1000)  # the rest of config.json kept
+
+
+class TestSecondOpinion(Market):
+    def test_parse_html_and_markdown(self):
+        with open(os.path.join(FIX, "pakistanibulls-signals.html")) as f:
+            rows = SG.parse_signal_list(f.read())
+        self.assertEqual(sorted(rows), ["SYN01", "SYN05", "SYN07", "SYN08"])
+        self.assertEqual(rows["SYN05"]["signal"], "BUY")
+        self.assertEqual(rows["SYN05"]["level"], 86.0)
+        self.assertEqual(rows["SYN07"]["stance"], "long")
+        self.assertEqual(rows["SYN08"]["stance"], "short")
+        self.assertEqual(rows["SYN01"]["signal_price_label"], "Sold at")
+        with open(os.path.join(FIX, "pakistanibulls-signals.md")) as f:
+            md = SG.parse_signal_list(f.read())
+        self.assertEqual(md["SYN03"]["signal"], "SELL")
+        self.assertEqual(md["SYN03"]["pattern"], "Bearish Engulfing")
+
+    def test_agreement_rules(self):
+        self.assertEqual(SG.agreement("HOLD", "long"), "agrees")
+        self.assertEqual(SG.agreement("HOLD", "out"), "disagrees")
+        self.assertEqual(SG.agreement("SELL", "short"), "agrees")
+        self.assertEqual(SG.agreement("BUY", "out"), "disagrees")
+        self.assertEqual(SG.agreement("NOT NOW", "long"), "disagrees")
+
+    def test_download_needs_terms_and_advice_shows_it(self):
+        with self.assertRaises(ValueError):
+            SG.fetch(self.h, self.cfg)  # off until the user has read their terms
+        run(SG.main, ["--home", self.h, "pakistanibulls", "--from-file", os.path.join(FIX, "pakistanibulls-signals.html")])
+        self.assertTrue(os.path.exists(SG.path(self.h)))
+        run(PF.main, ["--home", self.h, "cash", "deposit", "500000"])
+        rows = C.read_prices(C.price_path(self.h, "SYN07"))
+        run(PF.main, ["--home", self.h, "buy", "SYN07", "100", str(rows[-30]["close"]), "--date", rows[-30]["date"],
+                      "--broker", "AKD"])
+        rc, out = run(PF.main, ["--home", self.h, "advise", "--no-fetch", "--all"])
+        self.assertIn("SECOND OPINION: PakistaniBulls", out)
+        self.assertIn("STAY LONG", out)
+        r = A.check(self.h, self.cfg, "SYN05")
+        self.assertEqual(r["theirs"]["signal"], "BUY")
+        data = dashboard.build_data(self.h, self.cfg)
+        self.assertEqual(data["mine"]["holdings"][0]["theirs"]["signal"], "STAY LONG")
+        snap = SG.load(self.h)  # stale signals are ignored
+        for v in snap["signals"].values():
+            v["read_at"] = "2020-01-01 10:00"
+        with open(SG.path(self.h), "w") as f:
+            json.dump(snap, f)
+        self.assertEqual(SG.lookup(self.h, self.cfg, ["SYN05"])[0], {})
+        run(SG.main, ["--home", self.h, "pakistanibulls", "--accept-terms"])
+        self.assertTrue(C.load_config(self.h)["pakistanibulls_terms_ok"])
+        get = C.http_get
+        C.http_get = lambda url, *a, **k: open(os.path.join(FIX, "pakistanibulls-signals.html")).read()
+        try:
+            self.assertIn("SYN05", SG.fetch(self.h, C.load_config(self.h))["signals"])
+        finally:
+            C.http_get = get
 
 
 class TestDocs(unittest.TestCase):

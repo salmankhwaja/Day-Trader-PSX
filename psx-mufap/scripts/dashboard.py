@@ -185,6 +185,10 @@ def build_data(h, cfg, all_=None, days=500):
         lg = PF.load(h)
         s = PF.summary(h, lg)
         review = A.review_holdings(h, cfg, lg, s)
+        import signals as SG
+        found, sg_snap = SG.lookup(h, cfg, [r["symbol"] for r in review])
+        for r in review:
+            A.attach_opinion(r, found.get(r["symbol"]), r.get("action"))
         rv = {r["symbol"]: r for r in review}
         info = {x["symbol"]: x for x in stocks}
         hold = []
@@ -201,7 +205,7 @@ def build_data(h, cfg, all_=None, days=500):
                          "weight": r4(r.get("weight")), "trim_qty": r.get("trim_qty"), "calc": r.get("calc"),
                          "first_buy_time": p.get("first_buy_time"), "price_source": p.get("price_source"),
                          "price_time": p.get("price_time"), "net_pl": p.get("net_pl"), "net_pl_pct": r4(p.get("net_pl_pct")),
-                         "status": p.get("status"),
+                         "status": p.get("status"), "theirs": r.get("theirs"),
                          "lots": [{"date": l["date"], "time": l.get("time"), "qty": l["qty"], "broker": l["broker"],
                                    "unit_cost": round(l["unit_cost"], 4), "cost": l.get("cost"), "net_pl": l.get("net_pl"),
                                    "status": l.get("status")} for l in p["lots"]]})
@@ -221,7 +225,8 @@ def build_data(h, cfg, all_=None, days=500):
         fr = {r["fund"]: r for r in frev}
         my_funds = [dict(f, action=fr.get(f["fund"], {}).get("action"), why=fr.get(f["fund"], {}).get("why"),
                          unrealised_pct=r4(f["unrealised_pct"])) for f in s["funds"]]
-        mine = {"summary": {k: s[k] for k in ("value", "cost", "unrealised", "realised", "dividends", "fees", "cash")},
+        mine = {"second_opinion": sg_snap.get("updated") if sg_snap else None,
+                "summary": {k: s[k] for k in ("value", "cost", "unrealised", "realised", "dividends", "fees", "cash")},
                 "funds": my_funds,
                 "holdings": hold, "sales": s["sales"][-100:],
                 "fees": [dict(v, broker=k) for k, v in sorted(fees.items())],

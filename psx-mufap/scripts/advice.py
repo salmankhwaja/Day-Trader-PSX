@@ -309,6 +309,24 @@ def buy_ideas(h, cfg, lg, s, n=3, all_=False, shariah=False, sector=None, candid
     return ideas, info
 
 
+def attach_opinion(row, theirs, ours):
+    """Put a third party's signal (signals.py) beside our suggestion, with whether they agree."""
+    import signals as SG
+    if theirs:
+        row["theirs"] = {"source": "PakistaniBulls", "signal": theirs["signal"], "stance": theirs.get("stance"),
+                         "text": SG.describe(theirs), "read_at": theirs.get("read_at"),
+                         "agreement": SG.agreement(ours, theirs.get("stance"))}
+
+
+def opinion_lines(items, updated):
+    """items: [(symbol, ours, theirs-dict-or-None)]"""
+    if updated is None:
+        return []
+    rows = [[s, ours, t["text"] if t else "no recent signal on file", (t or {}).get("agreement") or ""] for s, ours, t in items]
+    return ["\nSECOND OPINION: PakistaniBulls candlestick signals (read %s; a different method, for comparison)" % updated,
+            C.md_table(["Stock", "This tool", "PakistaniBulls", "Agree?"], rows)]
+
+
 def advise(h, cfg, args):
     import portfolio as PF
     lg = PF.load(h)
@@ -321,6 +339,13 @@ def advise(h, cfg, args):
            "prices": "live" if C.LIVE["quotes"] else "end of day",
            "settings": {k: setting(cfg, k) for k in SHOWN},
            "summary": {k: s[k] for k in ("value", "cost", "unrealised", "realised", "dividends", "fees", "cash")}}
+    import signals as SG
+    found, snap = SG.lookup(h, cfg, [r["symbol"] for r in hold] + [i["symbol"] for i in ideas])
+    for r in hold:
+        attach_opinion(r, found.get(r["symbol"]), r.get("action"))
+    for i in ideas:
+        attach_opinion(i, found.get(i["symbol"]), "BUY")
+    res["second_opinion"] = {"source": "PakistaniBulls", "updated": snap.get("updated")} if snap else None
     d = os.path.join(h, "advice")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, res["date"] + ".json"), "w") as f:
@@ -368,6 +393,10 @@ def cmd_advise(a, h, cfg):
                   "or set \"capital\" in config.json.")
     elif not info.get("note"):
         print("Nothing passed every check today: no buy ideas. Holding cash is a valid outcome.")
+    so = res.get("second_opinion")
+    for line in opinion_lines([(r["symbol"], r["action"], r.get("theirs")) for r in res["holdings"]] +
+                              [(i["symbol"], "BUY", i.get("theirs")) for i in res["buy"]], so and so["updated"]):
+        print(line)
     calc = [l for r in res["holdings"] for l in calc_lines(r.get("calc"), "%s (%s), you hold" % (r["symbol"], r["action"]))]
     calc += [l for i in res["buy"] for l in calc_lines(i.get("calc"), "%s (BUY idea), buying" % i["symbol"])]
     if calc:
@@ -407,9 +436,13 @@ def check(h, cfg, symbol, entry=None, stop=None, capital=None):
     res = {"symbol": symbol, "price": rows[-1]["close"], "price_date": rows[-1]["date"], "metrics": m, "info": info,
            "prices": "live" if rows[-1].get("live") else "end of day",
            "test": ev, "risk_profile": cfg.get("risk_profile")}
+    import signals as SG
+    found, snap = SG.lookup(h, cfg, [symbol])
+    res["second_opinion_updated"] = snap.get("updated") if snap else None
     if symbol in held:
         r = [x for x in review_holdings(h, cfg, lg, s) if x["symbol"] == symbol][0]
         res.update(held=True, action=r["action"], why=r["why"], notes=r["notes"], review=r, calc=r.get("calc"))
+        attach_opinion(res, found.get(symbol), res["action"])
         return res
     px = entry or rows[-1]["close"]
     st = stop_for(rows, px, rows[-1]["date"], cfg)
@@ -437,6 +470,7 @@ def check(h, cfg, symbol, entry=None, stop=None, capital=None):
         why += "; but your sizing rules leave room for 0 shares (limited by %s)" % binding
     res.update(held=False, action=action, why=why, entry=px, stop=round(stp, 2), stop_source="yours" if stop is not None else "computed",
                target=round(target, 2), qty=qty, limited_by=binding, capital=cap, calc=calc, notes=[])
+    attach_opinion(res, found.get(symbol), action)
     return res
 
 
@@ -484,5 +518,7 @@ def cmd_check(a, h, cfg):
             print("No capital on record: the calculator shows one board lot. Pass --capital, or record cash.")
         print("\nPRICE CALCULATOR (after estimated broker charges)")
         print("\n".join(calc_lines(r["calc"], "Buying")))
+    for line in opinion_lines([(r["symbol"], r["action"], r.get("theirs"))], r.get("second_opinion_updated")):
+        print(line)
     print("\nRule-based, from past prices; not investment advice. Check the live price before any order.")
     return 0

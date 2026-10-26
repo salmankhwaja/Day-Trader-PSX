@@ -463,7 +463,7 @@
       "you bought) with what selling at the price now would bring after selling charges. Now is the live price with its time when Live prices is on, " +
       "otherwise the last close (15:30 Pakistan time). Shares bought more than once show each purchase underneath.";
     var badge = { SELL: "<b class='neg'>SELL</b>", TRIM: "<b class='neg'>TRIM</b>", REVIEW: "<b>REVIEW</b>", HOLD: "HOLD", "NO DATA": "<span class='muted'>no data</span>" };
-    $("mi-hold").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Action</th><th>Price</th><th>Stop</th><th>P/L if sold now</th><th class='l'>Why</th><th>Qty</th><th>Avg cost</th><th>Target</th><th>Value</th><th>At stop</th><th>At target</th><th>Sell today vs cost</th><th class='l'>Broker</th><th class='l'>Since</th></tr>" +
+    $("mi-hold").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Action</th><th>Price</th><th>Stop</th><th>P/L if sold now</th><th class='l'>Why</th><th>Qty</th><th>Avg cost</th><th>Target</th><th>Value</th><th>At stop</th><th>At target</th><th>Sell today vs cost</th><th class='l'>PakistaniBulls says</th><th class='l'>Broker</th><th class='l'>Since</th></tr>" +
       HS.map(function (hh) {
         var s = bySym[hh.symbol] || { symbol: hh.symbol };
         var brokers = Object.keys(hh.brokers || {}).map(function (b) { return esc(b) + " " + num(hh.brokers[b]); }).join(", ");
@@ -472,7 +472,7 @@
           cell(num(hh.price, 2) + (hh.live ? " <span class='tag live' title='Live; end-of-day " + num(hh.eod_price, 2) + "'>live</span>" : "")) + cell(hh.stop == null ? "–" : num(hh.stop, 2) + (hh.stop_source === "yours" ? "*" : "")) +
           cell(stBadge(hh.status) + " <span class='" + sgn(hh.net_pl) + "'>" + pct(hh.net_pl_pct) + "</span>") + "<td class='l' style='white-space:normal;min-width:200px'>" + why + "</td>" +
           cell(num(hh.qty)) + cell(num(hh.avg_cost, 2)) + cell(hh.target == null ? "–" : num(hh.target, 2)) + cell(pkr(hh.value)) +
-          calcCells(hh.calc, true) + cell(brokers, "l") + cell(esc(hh.first_buy), "l") + "</tr>";
+          calcCells(hh.calc, true) + theirsCell(hh.theirs) + cell(brokers, "l") + cell(esc(hh.first_buy), "l") + "</tr>";
       }).join("");
     var MF = M.funds || [];
     $("mi-fundcard").style.display = MF.length ? "" : "none";
@@ -487,7 +487,7 @@
     $("mi-note").textContent = "Average cost includes commission, taxes and fees. Stop = " + st.stop_atr_mult + " × the 14-day average daily move, " +
       Math.round(st.min_stop_pct * 100) + "–" + Math.round(st.max_stop_pct * 100) + "% below entry, trailing up; * = a stop you set. Prices are " + (anyLive ? "live where marked (the actions are from the end-of-day run, except a live price at or below the stop)" : "the last close") + ". At stop / at target: rupees, after estimated broker charges, " +
       "if the price falls to the stop or rises to the target from here; sell today vs cost: what selling at that price would make or lose against what you paid.";
-    $("mi-buy").innerHTML = "<tr><th class='l'>Stock</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Cost incl. fees</th><th>Lose at stop</th><th>Gain at target</th><th>Reward : risk</th><th>Break-even win rate</th><th class='l'>Why it passed</th></tr>" +
+    $("mi-buy").innerHTML = "<tr><th class='l'>Stock</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Cost incl. fees</th><th>Lose at stop</th><th>Gain at target</th><th>Reward : risk</th><th>Break-even win rate</th><th class='l'>PakistaniBulls says</th><th class='l'>Why it passed</th></tr>" +
       (M.buy_ideas.length ? M.buy_ideas.map(function (i) {
         var s = Object.assign({}, bySym[i.symbol] || { symbol: i.symbol, shariah: i.shariah }, { held: false });
         var x = quote(i.symbol), lv = "";
@@ -498,11 +498,13 @@
              x.current > i.entry * 1.03 ? "<span class='muted'>up " + pct(x.current / i.entry - 1) + " since the signal: re-check the size</span>" : "") + "</span>";
         }
         return "<tr>" + cell(symCell(s), "l") + cell(num(i.entry, 2) + lv) + cell(num(i.stop, 2) + " <span class='muted small'>" + pct(i.stop_pct) + "</span>") +
-          cell(num(i.target, 2)) + cell(i.qty ? num(i.qty) : "–") + cell(i.qty ? pkr(i.cost) : "–") + calcCells(i.calc, false) +
+          cell(num(i.target, 2)) + cell(i.qty ? num(i.qty) : "–") + cell(i.qty ? pkr(i.cost) : "–") + calcCells(i.calc, false) + theirsCell(i.theirs) +
           "<td class='l' style='white-space:normal;min-width:220px'>" + esc(i.strategy) + " " + esc(JSON.stringify(i.params || {})) +
           ": out-of-sample " + pct(i.oos_cagr) + " a year vs buy-and-hold " + pct(i.oos_buyhold_cagr) + "</td></tr>";
-      }).join("") : "<tr><td class='l muted' colspan='10'>No buy ideas: nothing passed every check, or portfolio.py advise has not run yet.</td></tr>");
+      }).join("") : "<tr><td class='l muted' colspan='11'>No buy ideas: nothing passed every check, or portfolio.py advise has not run yet.</td></tr>");
     $("mi-buynote").textContent = (M.advice_date ? "From the run of " + M.advice_date + ". " : "") +
+      (M.second_opinion ? "PakistaniBulls: their candlestick-pattern signals (read " + M.second_opinion + "), a different method shown for comparison, for your own use only. " :
+        "Add a second opinion: signals.py pakistanibulls --from-file PAGE.html. ") +
       "Size risks " + (st.risk_per_trade * 100).toFixed(1) + "% of your capital between entry and stop, at most " + Math.round(st.max_position_pct * 100) +
       "% in one stock. Rule-based suggestions from past prices, not investment advice; nothing is ordered for you.";
     var alloc = {};
@@ -858,6 +860,13 @@
     n.breakeven_win_rate = n.loss_at_stop > 0 && n.gain_at_target > 0 ? n.loss_at_stop / (n.loss_at_stop + n.gain_at_target) : null;
     if (held && c.vs_cost_now != null) n.vs_cost_now = c.vs_cost_now + k * (px - c.price);
     return n;
+  }
+  function theirsCell(t) {
+    if (!t) return cell("<span class='muted'>–</span>", "l");
+    var col = t.stance === "long" ? "pos" : t.stance === "short" ? "neg" : "";
+    var ag = t.agreement || "";
+    return cell("<b class='" + col + "'>" + esc(t.signal) + "</b> <span class='muted small'>" + esc(t.text.replace(t.signal, "").replace(/^, /, "")) + "</span>" +
+      (ag ? "<br><span class='small " + (ag.indexOf("disagree") === 0 ? "neg" : ag.indexOf("agree") === 0 ? "pos" : "") + "'>" + esc(ag) + "</span>" : ""), "l");
   }
   function stOf(v) { return v == null ? null : v > 0.005 ? "GREEN" : v < -0.005 ? "RED" : "FLAT"; }
   function stBadge(s) { return s ? "<span class='st " + s + "'>" + (s === "GREEN" ? "▲ GREEN" : s === "RED" ? "▼ RED" : "= FLAT") + "</span>" : "–"; }

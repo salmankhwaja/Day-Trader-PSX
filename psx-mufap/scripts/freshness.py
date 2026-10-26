@@ -318,6 +318,12 @@ def decide(a, h, cfg, symbols=(), funds=False, payouts=True):
         done, failed = fetch(h, cfg, want, funds, payouts and mode == "fetch")
         if failed:
             print("Some downloads failed (%s); using what's on file for those." % ", ".join(failed), file=out)
+    if mode in ("fetch", "live") and symbols and cfg.get("pakistanibulls_terms_ok"):
+        try:  # the second opinion, one request (signals.py)
+            import signals
+            signals.fetch(h, cfg)
+        except Exception as e:  # noqa: BLE001
+            print("PakistaniBulls signals not refreshed (%s)." % str(e)[:120], file=out)
     live = None
     if mode == "live" and funds and not symbols:
         print("Funds have no live prices (NAVs are published once a day), so this is today's MUFAP table.", file=out)

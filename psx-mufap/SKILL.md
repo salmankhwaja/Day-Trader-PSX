@@ -62,6 +62,38 @@ starts with "Based on …" (live time and market open/closed, or the end-of-day 
 your answer. If a fetch or live request fails (sandbox), it falls back to the last fetch and says
 so; tell the user. Funds have no live prices (daily NAVs). Live quotes can lag the exchange.
 
+## The watchlist
+
+The watchlist (config.json "watchlist") is where rankings, buy ideas and daily downloads start.
+When the user names shares to follow, drop or replace, change it rather than editing JSON:
+
+```
+python3 scripts/watchlist.py                          # show it
+python3 scripts/watchlist.py add LUCK DGKC --fetch    # add (checked against listed shares) and download
+python3 scripts/watchlist.py remove TRG
+python3 scripts/watchlist.py set OGDC PPL MARI        # replace
+python3 scripts/watchlist.py add --top 5 --sector cement --shariah
+python3 scripts/watchlist.py add --holdings
+```
+
+Say what changed, and mention any symbol that was refused as not listed.
+
+## A second opinion: PakistaniBulls
+
+If PakistaniBulls signals are on file (`signals.py show`), advice and `check` print a SECOND
+OPINION table (and the dashboard a "PakistaniBulls says" column): their signal (BUY, SELL, STAY
+LONG, STAY IN CASH, SHORT, STAY SHORT), signal price, flip level, pattern, and whether it agrees.
+Present it as a different method for comparison, never as the decider, and point out
+disagreements. To add one:
+
+- The user saved their signal list page (members' or free): `signals.py pakistanibulls --from-file FILE`.
+- Direct download of the free list: their terms allow one copy for personal use only. Quote that
+  to the user and ask; only if they agree run `signals.py pakistanibulls --accept-terms`, then
+  `--fetch`. Never ask for or handle their PakistaniBulls password, and never publish or share the
+  signals (no public artifacts, no commits).
+- If you fetch their page with your own web tool, ask for the full HTML or Markdown, save it, and
+  import it with `--from-file` (personal use only, same rule).
+
 ## Step 1: get fresh data
 
 First check what is already there: `python3 scripts/pkdata.py status`.

@@ -23,17 +23,19 @@ courage, the judgement and the final tap on your broker's app stay with you.
 4. [Pick your path](#pick-your-path)
 5. [Quick start on a computer](#quick-start-on-a-computer)
 6. [Command cheat sheet](#command-cheat-sheet)
-   - [Fetch data](#1-fetch-data)
-   - [Set the schedule](#2-set-the-schedule)
-   - [Which stocks to hold, buy or sell](#3-which-stocks-to-hold-buy-or-sell)
-   - [Which mutual funds to hold](#4-which-mutual-funds-to-hold)
-   - [Set up your brokers](#5-set-up-your-brokers)
-   - [Record a buy or sell](#6-record-a-buy-or-sell)
-   - [See your portfolio](#7-see-your-portfolio)
-   - [Practise with paper money](#8-practise-with-paper-money)
-   - [Know your risk](#9-know-your-risk)
-   - [Plan a SIP](#10-plan-a-sip)
-   - [Last fetch, fresh fetch or live?](#11-last-fetch-fresh-fetch-or-live)
+   - [Your watchlist](#1-your-watchlist)
+   - [Fetch data](#2-fetch-data)
+   - [Set the schedule](#3-set-the-schedule)
+   - [Which stocks to hold, buy or sell](#4-which-stocks-to-hold-buy-or-sell)
+   - [Which mutual funds to hold](#5-which-mutual-funds-to-hold)
+   - [Set up your brokers](#6-set-up-your-brokers)
+   - [Record a buy or sell](#7-record-a-buy-or-sell)
+   - [See your portfolio](#8-see-your-portfolio)
+   - [Practise with paper money](#9-practise-with-paper-money)
+   - [Know your risk](#10-know-your-risk)
+   - [Plan a SIP](#11-plan-a-sip)
+   - [Last fetch, fresh fetch or live?](#12-last-fetch-fresh-fetch-or-live)
+   - [A second opinion: PakistaniBulls](#13-a-second-opinion-pakistanibulls)
 7. [Your risk style](#your-risk-style)
 8. [How the suggestions work](#how-the-suggestions-work)
 9. [Run it on a schedule](#run-it-on-a-schedule)
@@ -84,6 +86,7 @@ Straight from the source, end of day, no middlemen, no paid feed:
 | New dividends and book closures | PSX Data Portal, `/payouts` | dividend calendar, dividends due |
 | Mutual funds: every fund's NAV and returns | MUFAP, `mufap.com.pk` daily performance summary | fund rankings, fund advice, SIP rates |
 | Broker tariffs | Published rate sheets, listed in [`brokers.json`](psx-mufap/brokers.json) | estimating charges |
+| A second opinion (optional) | PakistaniBulls' PSX signal list: a page you save, or their public list after you accept their terms | the "PakistaniBulls says" column beside the advice |
 
 `pkdata.py` downloads these politely: one page a second. The PSX price page is undocumented,
 so every download is checked before it's saved.
@@ -135,7 +138,8 @@ folder (see [Your data and privacy](#your-data-and-privacy)).
 ```bash
 git clone https://github.com/salmankhwaja/Day-Trader-PSX.git
 cd Day-Trader-PSX/psx-mufap/scripts
-python3 pkdata.py init             # creates ~/pkmarket/config.json: put your watchlist in it
+python3 pkdata.py init             # creates ~/pkmarket/config.json with a starter watchlist
+python3 watchlist.py set OGDC PPL MARI HUBC LUCK MEBL ENGRO SYS   # make it yours
 python3 pkdata.py psx --watchlist  # your first prices
 python3 rank.py stocks             # your first ranking
 ```
@@ -148,7 +152,32 @@ python3 rank.py stocks             # your first ranking
 
 ## Command cheat sheet
 
-### 1. Fetch data
+### 1. Your watchlist
+
+Your watchlist is the list of shares you follow. Rankings, buy ideas, the daily download and the
+dashboard start from it (unless you ask for the whole market with `--all`). Shares you *hold* are
+always tracked, watchlisted or not.
+
+```bash
+python3 watchlist.py                                  # the list: name, sector, ☪, last price, 1-month move, held?
+python3 watchlist.py add LUCK DGKC MLCF --fetch       # add shares and download their prices right away
+python3 watchlist.py remove TRG                       # take one off (its price file stays, harmlessly)
+python3 watchlist.py set OGDC PPL MARI HUBC MEBL      # replace the whole list
+python3 watchlist.py add --top 5 --sector cement      # the 5 best-ranked cement shares
+python3 watchlist.py add --top 10 --shariah           # the 10 best-ranked Shariah-compliant shares
+python3 watchlist.py add --holdings                   # everything you own
+python3 watchlist.py reset                            # back to the starter list of 20 big names
+python3 watchlist.py export my-list.txt               # one symbol per line...
+python3 watchlist.py import my-list.txt --replace     # ...and back again (or without --replace to add)
+```
+
+> [!TIP]
+> Symbols are checked against the list of shares actually listed on PSX once you've run
+> `pkdata.py universe` (it catches `OGCD` before it costs you a morning). `--top` ranks by score
+> when prices are on file, otherwise by market cap. Prefer menus? `pkm.py` › **13 Watchlist and
+> settings**. Prefer a text editor? It's the `watchlist` line in `config.json`.
+
+### 2. Fetch data
 
 ```bash
 # Your watchlist: a minute or two
@@ -177,7 +206,7 @@ python3 pkdata.py live                            # live prices: your watchlist 
 > is why the first whole-market download takes a while; after that, company pages are cached
 > for a week.
 
-### 2. Set the schedule
+### 3. Set the schedule
 
 ```bash
 ./install_services.sh                                     # 07:00, Monday to Friday
@@ -195,7 +224,7 @@ journalctl --user -u pkm-daily -n 100          # what did the last run say?
 Full details are in [Run it on a schedule](#run-it-on-a-schedule). On a phone, see
 [Run it on your Android phone](#run-it-on-your-android-phone).
 
-### 3. Which stocks to hold, buy or sell
+### 4. Which stocks to hold, buy or sell
 
 ```bash
 # Rankings
@@ -242,7 +271,7 @@ python3 backtest.py compare OGDC                        # how each strategy did 
 python3 backtest.py run LUCK --strategy breakout --optimize
 ```
 
-### 4. Which mutual funds to hold
+### 5. Which mutual funds to hold
 
 ```bash
 python3 funds.py advise --risk low             # money market: steady and liquid
@@ -258,7 +287,7 @@ python3 rank.py funds --category "Money Market" --top 10
 > *annualised* returns, while equity and mixed funds quote *absolute* returns. Comparing the
 > two is like comparing a cricket score with a hockey score: both numbers, different games.
 
-### 5. Set up your brokers
+### 6. Set up your brokers
 
 ```bash
 python3 portfolio.py broker presets                          # published PSX broker tariffs, with sources
@@ -271,7 +300,7 @@ python3 portfolio.py broker list
 
 What the presets contain is explained in [Brokers and their charges](#brokers-and-their-charges).
 
-### 6. Record a buy or sell
+### 7. Record a buy or sell
 
 ```bash
 # Without a stop-loss: one is computed and trailed for you every day
@@ -322,7 +351,7 @@ python3 portfolio.py delete 7               # remove entry #7 (typos happen; mar
 > sell shares you didn't hold there on that date. Back-dating a sale to before the purchase is
 > politely refused: time travel is out of scope.
 
-### 7. See your portfolio
+### 8. See your portfolio
 
 ```bash
 python3 portfolio.py holdings          # each share: bought (price, date, time) vs now (live or close): GREEN or RED
@@ -354,7 +383,7 @@ when that price is from:
   own date, time, broker and colour. Your second buy can be red while the first is green.
 - On a terminal the words are coloured; set `NO_COLOR=1` if you'd rather not.
 
-### 8. Practise with paper money
+### 9. Practise with paper money
 
 ```bash
 python3 paper.py init --cash 1000000   # a pretend million rupees; spend it wisely, or not
@@ -364,7 +393,7 @@ python3 propose.py review              # HOLD or SELL each paper holding
 python3 paper.py status
 ```
 
-### 9. Know your risk
+### 10. Know your risk
 
 ```bash
 python3 risk.py quiz                     # 8 questions -> conservative / moderate / aggressive / very aggressive
@@ -382,7 +411,7 @@ python3 risk.py portfolio                # money at risk to your stops, value-at
                                          #   diversification, allocation vs target, and warnings
 ```
 
-### 10. Plan a SIP
+### 11. Plan a SIP
 
 ```bash
 python3 sip.py plan --monthly 25000 --years 10                  # at your risk profile's mix
@@ -405,7 +434,7 @@ The yearly return comes from, in order:
 Every plan also shows the result 3 points lower and 3 points higher, because the future rarely
 reads the plan.
 
-### 11. Last fetch, fresh fetch or live?
+### 12. Last fetch, fresh fetch or live?
 
 Every piece of advice (`portfolio.py advise` and `check`, `rank.py stocks` and `funds`,
 `funds.py advise` and `review`, `propose.py run` and `review`, `risk.py portfolio`) starts by
@@ -463,6 +492,49 @@ fetch and says so. The `pkm.py` menu always asks. Each download is noted in `fet
 Both need the server to allow them: `dashboard.py serve --allow-refresh --allow-live`, which the
 installers switch on when the dashboard is only reachable from the same machine. The one-file
 `dashboard.html` can do neither; it tells you which command to run.
+
+
+### 13. A second opinion: PakistaniBulls
+
+[PakistaniBulls](https://www.pakistanibulls.com/SignalList.aspx?lang=en&MarketSymbol=KSE) publishes
+candlestick-pattern signals for PSX shares: **BUY, SELL, STAY LONG, STAY IN CASH, SHORT, STAY
+SHORT**, with the price each signal fired at, the level that would flip it, and the pattern behind
+it. Put them on file and every piece of advice shows theirs beside this tool's, and whether the two
+agree:
+
+```text
+SECOND OPINION: PakistaniBulls candlestick signals (read 2026-10-27 09:05; a different method, for comparison)
+| Stock | This tool | PakistaniBulls                                                 | Agree?    |
+|-------|-----------|----------------------------------------------------------------|-----------|
+| OGDC  | HOLD      | STAY LONG, bought at 290.10, sell level 284.00, bullish harami | agrees    |
+| MCB   | SELL      | BUY, bought at 288.00, sell level 280.50, hammer                | disagrees |
+```
+
+```bash
+# The members' list (the full one): sign in with your browser, save the page (Ctrl+S), then
+python3 signals.py pakistanibulls --from-file ~/Downloads/SignalList.html
+
+# Or let the tools download the free public list (a shorter list), after reading their terms
+python3 signals.py pakistanibulls --terms     # shows their terms, asks, remembers your answer
+python3 signals.py pakistanibulls --fetch     # then: by hand, with any --fetch/--live advice, and daily
+
+python3 signals.py show                       # their signals for your watchlist and holdings
+python3 signals.py show MCB OGDC              # or any shares
+```
+
+> [!IMPORTANT]
+> **Their terms** allow one copy for your own personal use and nothing more. So the tools keep it
+> in your data folder (`signals/`), never in the repo or anything you publish, and direct download
+> stays off until you've read the terms and said yes. The tools never ask for your PakistaniBulls
+> password: for the members' list, you save the page while signed in, the same as printing it.
+
+- Their signals and this tool's use **different methods** (candlestick patterns vs backtested trend
+  rules sized to your risk style). Agreement is reassuring; disagreement is a cue to look closer,
+  not a tie-breaker.
+- Signals older than `external_signals_max_age_days` (3) are ignored, so a stale opinion never
+  sneaks into today's advice.
+- The dashboard's My portfolio tab shows a **PakistaniBulls says** column for holdings and buy
+  ideas when signals are on file.
 
 ---
 
@@ -685,7 +757,7 @@ told otherwise:
 cd ~/Day-Trader-PSX/psx-mufap/scripts && python pkm.py
 ```
 
-1. **13 Settings** › change the watchlist, e.g. `OGDC,PPL,MARI,HUBC,LUCK,MCB,MEBL,ENGRO,FFC,SYS`.
+1. **13 Watchlist and settings** › **c** (replace the list), e.g. `OGDC PPL MARI HUBC LUCK MCB MEBL ENGRO FFC SYS`.
 2. **10 Brokers** › answer **y** to add yours: e.g. name `AKD`, preset `akd`, make it the default.
    If your rate differs, leave the preset blank and type in your commission sheet.
 
@@ -728,7 +800,7 @@ Termux once, which wakes the dashboard service.
 When the data is older than today, the strip under the tabs offers **Fetch now** or **Use stored
 data**; tick *remember my choice* and it won't ask again. Tick **Live prices** during market hours
 to see your holdings, buy ideas and the price calculator at today's prices (see
-[Last fetch, fresh fetch or live?](#11-last-fetch-fresh-fetch-or-live)).
+[Last fetch, fresh fetch or live?](#12-last-fetch-fresh-fetch-or-live)).
 
 ### Step 8: everyday use
 
@@ -738,6 +810,8 @@ to see your holdings, buy ideas and the price calculator at today's prices (see
 | You bought or sold something | Home-screen **PSX-menu** › **6** or **7** |
 | You want advice now | **PSX-menu** › **4** for stocks with stop-losses, **5** for funds (each asks: last fetch, fresh fetch or live prices) |
 | You're eyeing one share | **PSX-menu** › **16**: verdict, stop, target, size and the price calculator |
+| You want to change your watchlist | **PSX-menu** › **13**: add, remove, replace, top of a sector |
+| You want a second opinion | **PSX-menu** › **17**: import a PakistaniBulls page you saved, or download their public list |
 | You want to set your risk style | **PSX-menu** › **14** › take the quiz |
 | You're planning monthly investing | **PSX-menu** › **15** SIP calculator, or the dashboard's Risk & SIP tab |
 | You want fresh data now | Home-screen **PSX-update** |
@@ -787,6 +861,8 @@ Then add it as a custom skill in Claude's settings, and just ask:
 - *"I bought 500 OGDC at 298 through AKD today, commission 223.50, stop-loss at 280"*
 - *"What should I sell, and what could I buy, with stop-losses?"* (Claude asks whether to fetch fresh data first, then says which date the advice is based on)
 - *"Should I buy MEBL at 250? What do I lose if it hits the stop?"*
+- *"Add LUCK and DGKC to my watchlist and drop TRG"*, *"Put the top 5 Shariah cement shares on my watchlist"*
+- *"Here's the PakistaniBulls signal page I saved: does it agree with your advice?"*
 - *"Which Shariah money market funds should I consider, and how do mine compare?"*
 - *"How much have I paid each broker this year, and what's my realised profit?"*
 - *"Add my broker: 0.12% or 3 paisa a share, whichever is higher, Sindh sales tax"*
@@ -837,7 +913,9 @@ your risk style, then from the built-in defaults. A minimal file is enough:
 
 | Setting | Meaning |
 |---|---|
-| `watchlist`, `benchmark` | the shares you follow, and what they're measured against |
+| `watchlist`, `benchmark` | the shares you follow (manage with `watchlist.py`), and what they're measured against |
+| `external_signals_max_age_days` | a second opinion older than this many days is ignored (default 3) |
+| `pakistanibulls_terms_ok` | whether you've read PakistaniBulls' terms and switched on direct download (`signals.py pakistanibulls --terms`) |
 | `risk_profile` | your risk style: `conservative`, `moderate`, `aggressive` or `very_aggressive` (see [Your risk style](#your-risk-style)) |
 | `cost_bps_per_side` | trading cost in **backtests**, in basis points per buy or sell (20 = 0.2%) |
 | `lot_size` | shares per board lot (1 on PSX's ready market) |
@@ -987,6 +1065,9 @@ What's downloaded, from where, is in [Where the data comes from](#where-the-data
   data without a licence (marketdatarequest@psx.com.pk). These tools are for personal analysis:
   keep downloaded data private and don't publish dashboards built from it.
 - **MUFAP** (`mufap.com.pk`): daily fund NAVs and returns.
+- **PakistaniBulls** (`pakistanibulls.com`, Americanbulls.com LLC): their terms allow one copy for your
+  own personal use only. The tools keep their signals in your data folder for your eyes only, and
+  download them only after you've read the terms and agreed. Don't share or publish them.
 - The PSX endpoints are undocumented and can change; the parsers fail loudly when they do.
   Details are in [`psx-mufap/references/data-sources.md`](psx-mufap/references/data-sources.md).
 
@@ -1017,6 +1098,8 @@ psx-mufap/                      the skill and the tools
 │   ├── paper.py                paper account
 │   ├── portfolio.py            your real portfolio: trades, brokers, charges, lots, funds, P/L
 │   ├── advice.py               stop-losses, sell/hold/trim rules, sized buy ideas, price calculator, one-share check
+│   ├── watchlist.py            add, remove, set, top-of-sector, import/export your watchlist
+│   ├── signals.py              second opinion: PakistaniBulls signals, imported or (opt-in) downloaded
 │   ├── freshness.py            last fetch / fresh fetch / live before every piece of advice; live prices
 │   ├── funds.py                fund suggestions by risk profile; review of funds you hold
 │   ├── profiles.py             the four risk styles and every buy/sell variable, described

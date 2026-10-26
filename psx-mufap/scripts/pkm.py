@@ -4,7 +4,7 @@
   python3 pkm.py                     a numbered menu: pick a number, answer the prompts
   python3 pkm.py rank stocks --all   or pass any tool and its arguments straight through
                                      (tools: pkdata rank backtest propose paper portfolio funds
-                                      advice dashboard daily risk sip)
+                                      advice dashboard daily risk sip watchlist signals)
 
 Blank answers take the default shown in [brackets]. Nothing here places a real order.
 """
@@ -17,7 +17,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import common as C  # noqa: E402
 
-TOOLS = ["pkdata", "rank", "backtest", "propose", "paper", "portfolio", "funds", "dashboard", "daily", "risk", "sip"]
+TOOLS = ["pkdata", "rank", "backtest", "propose", "paper", "portfolio", "funds", "dashboard", "daily", "risk", "sip",
+         "watchlist", "signals"]
 
 
 def call(tool, *args):
@@ -199,21 +200,42 @@ def dashboard():
 
 def settings():
     h = C.home()
-    p = os.path.join(h, "config.json")
-    if not os.path.exists(p):
+    if not os.path.exists(os.path.join(h, "config.json")):
         call("pkdata", "init")
-    cfg = C.load_config(h)
     print("\nData folder: %s" % h)
-    print("Watchlist:   %s" % ", ".join(cfg["watchlist"]))
-    if yes("Change the watchlist"):
-        new = ask("Symbols, comma-separated", ",".join(cfg["watchlist"]))
-        with open(p) as f:
-            raw = json.load(f)
-        raw["watchlist"] = [x.strip().upper() for x in new.split(",") if x.strip()]
-        with open(p, "w") as f:
-            json.dump(raw, f, indent=2)
-        print("saved")
-    print("Other settings (costs, stops, tax) are in %s; edit it with any text editor." % p)
+    call("watchlist", "list")
+    print("\na) add shares   b) remove shares   c) replace the list   d) add the top N of a sector   e) add my holdings   f) leave it")
+    c = (ask("Choose", "f") or "f").lower()
+    if c == "a":
+        call("watchlist", "add", *ask("Symbols to add (spaces or commas)", required=True).replace(",", " ").split())
+    elif c == "b":
+        call("watchlist", "remove", *ask("Symbols to remove", required=True).replace(",", " ").split())
+    elif c == "c":
+        call("watchlist", "set", *ask("The new list", required=True).replace(",", " ").split())
+    elif c == "d":
+        args = ["add", "--top", ask("How many", "5")] + opt("--sector", ask("Sector contains (blank = any)", ""))
+        if yes("Shariah-compliant only"):
+            args.append("--shariah")
+        call("watchlist", *args)
+    elif c == "e":
+        call("watchlist", "add", "--holdings")
+    if c in "abcde" and yes("Download prices for the new list now"):
+        call("pkdata", "psx", "--watchlist")
+    print("Other settings (costs, stops, tax) are in %s; edit it with any text editor." % os.path.join(h, "config.json"))
+
+
+def second_opinion():
+    print("PakistaniBulls publishes candlestick-pattern buy/sell signals. Their terms allow one copy for your own use.")
+    print("a) import a signal list page I saved   b) download their public list   c) show what's on file")
+    c = (ask("Choose", "c") or "c").lower()
+    if c == "a":
+        call("signals", "pakistanibulls", "--from-file", ask("Path of the saved page", required=True))
+    elif c == "b":
+        if not C.load_config(C.home()).get("pakistanibulls_terms_ok"):
+            call("signals", "pakistanibulls", "--terms")
+        call("signals", "pakistanibulls", "--fetch")
+    else:
+        call("signals", "show")
 
 
 def risk_menu():
@@ -273,10 +295,11 @@ MENU = [
     ("Brokers: presets and charges", brokers),
     ("Run the whole daily update now", lambda: call("daily")),
     ("Dashboard: build the one-file version", dashboard),
-    ("Settings: data folder, watchlist", settings),
+    ("Watchlist and settings", settings),
     ("Risk: quiz, profiles, settings, my portfolio's risk", risk_menu),
     ("SIP calculator: plan or goal", sip_menu),
     ("Check one share: verdict + price calculator", check_share),
+    ("Second opinion: PakistaniBulls buy/sell signals", second_opinion),
 ]
 
 
