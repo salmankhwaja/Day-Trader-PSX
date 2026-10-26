@@ -54,26 +54,33 @@ def current_signal(closes, strategy, params):
     return state
 
 
-def evaluate(h, cfg, symbol, strategies, max_dd):
+def evaluate(h, cfg, symbol, strategies, max_dd=None):
+    """Tune each strategy on the first train_split of history, keep the best in-sample, then judge
+    it only on the untouched rest against the gates in your risk profile."""
+    max_dd = float(cfg.get("gate_max_drawdown", 0.35)) if max_dd is None else max_dd
+    split = float(cfg.get("train_split", 0.7))
+    min_sharpe = float(cfg.get("gate_min_sharpe", 0.0))
+    min_excess = float(cfg.get("gate_min_excess_return", 0.0))
     rows = C.read_prices(C.price_path(h, symbol))
     if len(rows) < 300:
         return {"symbol": symbol, "pass": False, "why": "under 300 days of history"}
     cost, rf = cfg["cost_bps_per_side"], cfg["risk_free_annual"]
     best = None
     for strat in strategies:
-        p, s_in, s_out = B.optimize(rows, strat, cost, rf)
+        p, s_in, s_out = B.optimize(rows, strat, cost, rf, split)
         key = s_in["sharpe"] if s_in["sharpe"] is not None else -9
         if best is None or key > best[0]:
             best = (key, strat, p, s_in, s_out)
     _, strat, p, s_in, s_out = best
-    cut = int(len(rows) * 0.7)
+    cut = int(len(rows) * split)
     closes = [r["close"] for r in rows]
     bh_out = B.simulate(rows[cut:], B.sig_buyhold(closes[cut:]), cost, rf)
     signal = current_signal(closes, strat, p)
     checks = [
-        (s_out["cagr"] > rf, "out-of-sample CAGR %s vs cash %s" % (C.fmt_pct(s_out["cagr"]), C.fmt_pct(rf))),
-        ((s_out["sharpe"] or -1) > 0, "out-of-sample Sharpe %s" % (
-            "n/a" if s_out["sharpe"] is None else "%.2f" % s_out["sharpe"])),
+        (s_out["cagr"] > rf + min_excess, "out-of-sample CAGR %s vs cash %s%s" % (
+            C.fmt_pct(s_out["cagr"]), C.fmt_pct(rf), " + %s" % C.fmt_pct(min_excess) if min_excess else "")),
+        ((s_out["sharpe"] if s_out["sharpe"] is not None else -9) > min_sharpe, "out-of-sample Sharpe %s (need over %.2f)" % (
+            "n/a" if s_out["sharpe"] is None else "%.2f" % s_out["sharpe"], min_sharpe)),
         (s_out["mdd"] >= -max_dd, "out-of-sample max drawdown %s" % C.fmt_pct(s_out["mdd"])),
         (signal == 1, "signal today: %s" % ("LONG" if signal == 1 else "flat")),
     ]
@@ -91,11 +98,14 @@ def build_proposal(h, cfg, a, exclude=None):
     ranked, _, notes = rank_stocks(h, cfg, a.symbols, "score", a.all, a.sector, a.shariah, a.min_volume)
     if not ranked:
         sys.exit("nothing to screen: download prices first")
-    cands = ranked[:a.candidates]
-    strategies = a.strategies.split(",") if a.strategies else DEFAULT_STRATEGIES
+    n_cand = a.candidates or int(cfg.get("candidates", 15))
+    cands = ranked[:n_cand]
+    strategies = a.strategies.split(",") if a.strategies else (cfg.get("strategies") or DEFAULT_STRATEGIES)
+    max_dd = a.max_dd / 100.0 if a.max_dd is not None else None
+    per_sector_cap = a.max_per_sector if a.max_per_sector is not None else int(cfg.get("max_per_sector", 2))
     evals = []
     for m in cands:
-        e = evaluate(h, cfg, m["symbol"], strategies, a.max_dd / 100.0)
+        e = evaluate(h, cfg, m["symbol"], strategies, max_dd)
         e.update({"score": m["score"], "sector": m.get("sector"), "shariah": m.get("shariah"),
                   "name": m.get("name"), "div_yield": m.get("div_yield")})
         evals.append(e)
@@ -106,8 +116,8 @@ def build_proposal(h, cfg, a, exclude=None):
         if not e["pass"] or e["symbol"] in held:
             continue
         sec = e.get("sector") or "UNKNOWN"
-        if per_sector.get(sec, 0) >= a.max_per_sector:
-            e["why"] += "; sector already has %d picks" % a.max_per_sector
+        if per_sector.get(sec, 0) >= per_sector_cap:
+            e["why"] += "; sector already has %d picks" % per_sector_cap
             continue
         per_sector[sec] = per_sector.get(sec, 0) + 1
         picks.append(e)
@@ -225,13 +235,13 @@ def main(argv=None):
     p.add_argument("--shariah", action="store_true")
     p.add_argument("--sector")
     p.add_argument("--min-volume", type=float)
-    p.add_argument("--candidates", type=int, default=15)
+    p.add_argument("--candidates", type=int, help="default: your risk profile's 'candidates'")
     p.add_argument("--pick", type=int, default=5)
-    p.add_argument("--max-per-sector", type=int, default=2)
-    p.add_argument("--max-dd", type=float, default=35.0, help="largest acceptable out-of-sample drawdown, %%")
+    p.add_argument("--max-per-sector", type=int, help="default: your risk profile's 'max_per_sector'")
+    p.add_argument("--max-dd", type=float, help="largest acceptable out-of-sample drawdown, %% (default: profile)")
     p.add_argument("--invest-pct", type=float, default=90.0)
     p.add_argument("--max-position", type=float, default=20.0, help="%% of account per name")
-    p.add_argument("--strategies", help="comma list, default sma,breakout,rsi")
+    p.add_argument("--strategies", help="comma list (default: your risk profile's 'strategies')")
     p.add_argument("--apply", action="store_true")
     p = sub.add_parser("review")
     p.add_argument("--stop-loss", type=float, default=15.0)

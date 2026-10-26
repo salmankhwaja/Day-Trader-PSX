@@ -93,7 +93,7 @@
 
   // ---------------------------------------------------------------- tabs
   var views = { overview: renderOverview, screener: renderScreener, compare: renderCompare,
-                mine: renderMine, portfolio: renderPortfolio, dividends: renderDividends, funds: renderFunds };
+                mine: renderMine, portfolio: renderPortfolio, dividends: renderDividends, funds: renderFunds, risk: renderRisk };
   function show(v) {
     if (!views[v]) v = "overview";
     Array.prototype.forEach.call($("tabs").children, function (b) { b.classList.toggle("on", b.getAttribute("data-v") === v); });
@@ -522,6 +522,79 @@
         scales: { x: { ticks: { color: css("--text-2"), callback: function (v) { return v + "%"; } }, grid: { color: css("--grid") }, border: { display: false } },
                   y: { ticks: { color: css("--text-2"), autoSkip: false }, grid: { display: false }, border: { display: false } } } }) });
     $("d-note").textContent = "Very high yields often mean a one-off payout or a falling price; check the history in Compare. " + D.notes.face_value_note;
+  }
+
+  // ---------------------------------------------------------------- risk & SIP
+  function sipProject(m, years, rate, step, lump) {
+    var rm = Math.pow(1 + rate, 1 / 12) - 1, v = lump, inv = lump, rows = [];
+    for (var y = 1; y <= years; y++) {
+      for (var k = 0; k < 12; k++) { v = (v + m) * (1 + rm); inv += m; }
+      rows.push({ year: y, invested: inv, value: v });
+      m *= 1 + step;
+    }
+    return rows;
+  }
+  function sipNeed(target, years, rate, step, lump) {
+    var lo = 0, hi = Math.max(target, 1);
+    if (sipProject(0, years, rate, step, lump).slice(-1)[0].value >= target) return 0;
+    for (var i = 0; i < 80; i++) { var mid = (lo + hi) / 2; if (sipProject(mid, years, rate, step, lump).slice(-1)[0].value >= target) hi = mid; else lo = mid; }
+    return hi;
+  }
+  function drawSip() {
+    var m = +$("sp-m").value || 0, y = Math.max(1, Math.min(60, +$("sp-y").value || 1)), r = (+$("sp-r").value || 0) / 100,
+        s = (+$("sp-s").value || 0) / 100, l = +$("sp-l").value || 0, inf = (+$("sp-i").value || 0) / 100, g = +$("sp-g").value || 0;
+    var rows = sipProject(m, y, r, s, l), last = rows[rows.length - 1];
+    var lo = sipProject(m, y, r - 0.03, s, l).slice(-1)[0].value, hi = sipProject(m, y, r + 0.03, s, l).slice(-1)[0].value;
+    var k = [["Invested", pkr(last.invested), y + " years", ""], ["Could grow to", pkr(last.value), "gain " + pkr(last.value - last.invested), "pos"],
+             ["Range (±3 points)", pkr(lo) + " – " + pkr(hi), "returns rarely follow the plan", ""]];
+    if (inf) k.push(["In today's rupees", pkr(last.value / Math.pow(1 + inf, y)), "after " + (inf * 100).toFixed(1) + "% inflation", ""]);
+    if (g) k.push(["Monthly for your goal", pkr(sipNeed(g, y, r, s, l)), "to reach " + pkr(g), ""]);
+    $("sp-kpis").innerHTML = k.map(function (x) {
+      return '<div class="kpi"><div class="l">' + esc(x[0]) + '</div><div class="v ' + x[3] + '">' + esc(x[1]) + '</div><div class="s">' + esc(x[2]) + "</div></div>";
+    }).join("");
+    chart("sp-chart", { type: "line", data: { labels: rows.map(function (x) { return "Year " + x.year; }),
+      datasets: [{ label: "Value", data: rows.map(function (x) { return Math.round(x.value); }), borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2, pointRadius: 2 },
+                 { label: "Invested", data: rows.map(function (x) { return Math.round(x.invested); }), borderColor: css("--muted"), backgroundColor: css("--muted"), borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0 }] },
+      options: baseOpts({ interaction: { mode: "index", intersect: false },
+        plugins: Object.assign(baseOpts().plugins, { tooltip: Object.assign(baseOpts().plugins.tooltip, { callbacks: { label: function (c) { return c.dataset.label + ": " + pkr(c.raw); } } }) }),
+        scales: { x: { ticks: { color: css("--text-2") }, grid: { display: false }, border: { display: false } },
+                  y: { ticks: { color: css("--text-2"), callback: function (v) { return v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "k" : v; } }, grid: { color: css("--grid") }, border: { display: false } } } }) });
+  }
+  function renderRisk() {
+    var R = D.risk;
+    if (!R) { $("v-risk").innerHTML = '<div class="empty">Rebuild the dashboard to see risk and SIP.</div>'; return; }
+    var P = R.portfolio;
+    var k = [["Risk profile", (R.profile || "").replace("_", " "), "risk.py quiz to change", ""]];
+    if (P && P.total) {
+      k.push(["If every stop hit", pkr(P.open_risk), pctAbs(P.open_risk_pct) + " of portfolio; budget " + pkr(P.risk_budget), P.open_risk > P.risk_budget ? "neg" : ""]);
+      if (P.var_1m_95 != null) k.push(["A bad month (95%)", pkr(P.var_1m_95), "value-at-risk on your shares", ""]);
+      if (P.volatility != null) k.push(["Volatility", pctAbs(P.volatility), "beta " + (P.beta == null ? "n/a" : P.beta.toFixed(2)), ""]);
+      if (P.effective_holdings) k.push(["Diversification", P.effective_holdings.toFixed(1), "effective positions", ""]);
+    }
+    $("rk-kpis").innerHTML = k.map(function (x) {
+      return '<div class="kpi"><div class="l">' + esc(x[0]) + '</div><div class="v ' + x[3] + '" style="text-transform:capitalize">' + esc(x[1]) + '</div><div class="s">' + esc(x[2]) + "</div></div>";
+    }).join("");
+    var buckets = ["equity", "fixed_income", "money_market"], tgt = R.allocation_target || {};
+    var now = (P && P.allocation_pct) || {};
+    chart("rk-alloc", { type: "bar", data: { labels: buckets.map(function (b) { return b.replace("_", " "); }),
+      datasets: [{ label: "Now", data: buckets.map(function (b) { return +((now[b] || 0) * 100).toFixed(1); }), backgroundColor: css("--s1"), borderRadius: 4, borderSkipped: false },
+                 { label: "Target", data: buckets.map(function (b) { return +((tgt[b] || 0) * 100).toFixed(1); }), backgroundColor: css("--s2"), borderRadius: 4, borderSkipped: false }] },
+      options: baseOpts({ scales: { x: { ticks: { color: css("--text-2") }, grid: { display: false }, border: { display: false } },
+        y: { beginAtZero: true, max: 100, ticks: { color: css("--text-2"), callback: function (v) { return v + "%"; } }, grid: { color: css("--grid") }, border: { display: false } } } }) });
+    var flags = (P && P.flags) || [];
+    $("rk-flags").innerHTML = P && P.total ? (flags.length ? flags.map(function (f) { return "<li><span>" + esc(f) + "</span></li>"; }).join("") :
+      "<li class='muted'>Nothing flagged: within your profile's limits.</li>") : "<li class='muted'>Record your holdings to see your own allocation.</li>";
+    $("rk-settings").innerHTML = "<tr><th class='l'>Setting</th><th>Value</th><th class='l'>What it does</th></tr>" +
+      (R.settings || []).map(function (s) {
+        return "<tr>" + cell("<code>" + esc(s.key) + "</code>", "l") + cell(esc(s.value)) + "<td class='l' style='white-space:normal'>" + esc(s.about) + "</td></tr>";
+      }).join("");
+    if (!rendered.risk) {
+      $("sp-r").value = ((R.sip && R.sip.rate) * 100 || 12).toFixed(1);
+      ["sp-m", "sp-y", "sp-r", "sp-s", "sp-l", "sp-i", "sp-g"].forEach(function (id) { $(id).oninput = drawSip; });
+    }
+    $("sp-note").textContent = "Starting return: " + (R.sip ? R.sip.basis : "your choice") +
+      ". Invested at the start of each month, compounded monthly; before taxes, loads and charges. A projection, not a promise.";
+    drawSip();
   }
 
   // ---------------------------------------------------------------- funds

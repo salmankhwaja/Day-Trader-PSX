@@ -13,7 +13,9 @@ Stocks use the price files from `pkdata.py psx`. For each symbol:
   Sharpe = (1Y return - risk-free) / 1Y volatility,
   trend: last close vs its 50- and 200-day averages,
   vs index: 3M return minus the benchmark's (KSE100 by default).
-  score = average percentile (0-100) of 1M, 3M, 6M, 1Y returns and Sharpe across the list.
+  score = weighted average percentile (0-100) of 1M, 3M, 6M, 1Y returns and Sharpe across the
+  list; the weights are "score_weights" in your risk profile (momentum-heavy when aggressive,
+  Sharpe-heavy when conservative).
 
 Funds use the newest MUFAP snapshot from `pkdata.py mufap`. Funds are only compared
 inside their own category. Money market, income and fixed-rate categories report
@@ -153,11 +155,13 @@ def rank_stocks(h, cfg, symbols=None, sort="score", all_=False, sector=None, sha
         if shariah and not m.get("shariah"):
             continue
         res.append(m)
-    keys = ["1m", "3m", "6m", "1y", "sharpe"]
+    weights = cfg.get("score_weights") or {"1m": 1, "3m": 1, "6m": 1, "1y": 1, "sharpe": 1}
+    keys = [k for k in ("1m", "3m", "6m", "1y", "sharpe") if float(weights.get(k, 0)) > 0]
     pcts = {k: percentiles([m[k] for m in res]) for k in keys}
     for i, m in enumerate(res):
-        got = [pcts[k][i] for k in keys if pcts[k][i] is not None]
-        m["score"] = sum(got) / len(got) if got else None
+        got = [(pcts[k][i], float(weights[k])) for k in keys if pcts[k][i] is not None]
+        tw = sum(w for _, w in got)
+        m["score"] = sum(p * w for p, w in got) / tw if tw else None
     res.sort(key=lambda m: (m.get(sort) is None, -(m.get(sort) or 0)))
     return res, bm, {"missing": missing, "illiquid": illiquid, "min_volume": min_volume}
 

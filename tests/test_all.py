@@ -25,6 +25,9 @@ import advice as A  # noqa: E402
 import funds as FU  # noqa: E402
 import daily  # noqa: E402
 import pkm  # noqa: E402
+import profiles as PRF  # noqa: E402
+import risk as RK  # noqa: E402
+import sip as SP  # noqa: E402
 
 
 def run(fn, argv):
@@ -639,6 +642,148 @@ class TestPortable(Market):
         self.assertIn("PSX ranking", out)
         rc, out = run(pkm.main, ["--help"])
         self.assertIn("numbered menu", out)
+
+
+class TestProfiles(Market):
+    def test_every_profile_sets_every_variable(self):
+        for name, vals in PRF.PROFILES.items():
+            missing = [k for k in PRF.VARIABLES if k not in vals and k != "expected_returns"]
+            self.assertEqual(missing, [], name)
+
+    def test_layering_profile_then_yours(self):
+        cfg, src = C.load_config(self.h, with_sources=True)
+        self.assertEqual((cfg["risk_profile"], cfg["risk_per_trade"], src["risk_per_trade"]), ("moderate", 0.01, "profile"))
+        self.assertEqual(src["min_avg_volume"], "yours")            # the test config sets it
+        C.write_user_config(self.h, {"risk_profile": "aggressive", "max_holdings": 3})
+        cfg, src = C.load_config(self.h, with_sources=True)
+        self.assertEqual(cfg["risk_per_trade"], 0.02)
+        self.assertEqual((cfg["max_holdings"], src["max_holdings"]), (3, "yours"))
+        C.write_user_config(self.h, {"risk_profile": "reckless"})
+        with self.assertRaises(SystemExit):
+            C.load_config(self.h)
+
+    def test_score_weights_drive_the_ranking(self):
+        C.write_user_config(self.h, {"score_weights": {"1m": 1}})
+        res, _, _ = rank.rank_stocks(self.h, C.load_config(self.h), all_=True)
+        one_m = [m["1m"] for m in res]
+        self.assertEqual(one_m, sorted(one_m, reverse=True))
+
+    def test_conservative_gates_are_stricter(self):
+        picks = {}
+        for name in ("conservative", "very_aggressive"):
+            C.write_user_config(self.h, {"risk_profile": name})
+            cfg = C.load_config(self.h)
+            ev = [propose.evaluate(self.h, cfg, s, cfg["strategies"]) for s in ("SYN05", "SYN07", "SYN08", "SYN10", "SYN11")]
+            picks[name] = sum(1 for e in ev if e["pass"])
+        self.assertLessEqual(picks["conservative"], picks["very_aggressive"])
+
+
+class TestRiskCalculator(Market):
+    def test_quiz_takes_the_lower_of_capacity_and_willingness(self):
+        r = RK.score_quiz([4, 4, 4, 4, 1, 1, 1, 1])
+        self.assertEqual((r["capacity"], r["willingness"], r["profile"]), (4, 1, "conservative"))
+        r = RK.score_quiz([1, 4, 4, 4, 4, 4, 4, 4])                 # money needed within 2 years
+        self.assertEqual(r["profile"], "conservative")
+        r = RK.score_quiz([4, 4, 4, 4, 4, 4, 4, 4])
+        self.assertEqual((r["profile"], r["max_annual_loss_pct"]), ("very_aggressive", 0.35))
+        self.assertEqual(RK.score_quiz([3, 3, 3, 3, 2, 2, 2, 2])["profile"], "moderate")
+        with self.assertRaises(ValueError):
+            RK.score_quiz([5, 1, 1])
+
+    def test_quiz_save_profile_set_unset(self):
+        run(RK.main, ["--home", self.h, "quiz", "--answers", "4,4,4,4,3,3,3,3", "--save"])
+        self.assertEqual(C.load_config(self.h)["risk_profile"], "aggressive")
+        run(RK.main, ["--home", self.h, "profile", "conservative"])
+        run(RK.main, ["--home", self.h, "set", "max_holdings", "4"])
+        self.assertEqual(C.load_config(self.h)["max_holdings"], 4)
+        run(RK.main, ["--home", self.h, "unset", "max_holdings"])
+        self.assertEqual(C.load_config(self.h)["max_holdings"], 12)
+        with self.assertRaises(SystemExit):
+            run(RK.main, ["--home", self.h, "set", "no_such_thing", "1"])
+
+    def test_position_size(self):
+        r = RK.position_size(1000000, 300, 280, 0.01)
+        self.assertEqual((r["qty"], r["risk_pkr"]), (500, 10000.0))
+        r = RK.position_size(1000000, 300, 299, 0.01, max_position_pct=0.25)
+        self.assertEqual((r["qty"], r["limited_by"]), (833, "max position"))
+        with self.assertRaises(ValueError):
+            RK.position_size(1000, 300, 310, 0.01)
+
+    def test_portfolio_risk_and_budget_flag(self):
+        run(PF.main, ["--home", self.h, "cash", "deposit", "1000000", "--date", "2025-01-01"])
+        rows = C.read_prices(C.price_path(self.h, "SYN11"))
+        run(PF.main, ["--home", self.h, "buy", "SYN11", "200", str(rows[-60]["close"]), "--broker", "AKD",
+                      "--date", rows[-60]["date"]])
+        r = RK.portfolio_risk(self.h, C.load_config(self.h))
+        h0 = r["holdings"][0]
+        px = rows[-1]["close"]
+        self.assertAlmostEqual(r["open_risk"], round(200 * (px - h0["stop"]), 2), places=1)
+        self.assertAlmostEqual(sum(r["allocation_pct"].values()), 1.0, places=6)
+        self.assertIsNotNone(r["var_1m_95"])
+        C.write_user_config(self.h, {"max_open_risk_pct": 0.0001})
+        r = RK.portfolio_risk(self.h, C.load_config(self.h))
+        self.assertTrue(any("over your budget" in f for f in r["flags"]))
+
+    def test_advice_respects_holdings_cap_and_reserve(self):
+        run(PF.main, ["--home", self.h, "broker", "add", "AKD", "--default"])
+        run(PF.main, ["--home", self.h, "cash", "deposit", "300000", "--date", "2025-01-01"])
+        run(PF.main, ["--home", self.h, "buy", "SYN05", "100", "50", "--date", "2026-03-01"])
+        C.write_user_config(self.h, {"max_holdings": 1})
+        lg = PF.load(self.h)
+        s = PF.summary(self.h, lg)
+        ideas, info = A.buy_ideas(self.h, C.load_config(self.h), lg, s, n=3, all_=True)
+        self.assertEqual(ideas, [])
+        self.assertIn("max_holdings", info["note"])
+        C.write_user_config(self.h, {"max_holdings": 10, "cash_reserve_pct": 0.5, "risk_per_trade": 0.5,
+                                     "max_position_pct": 1.0, "max_open_risk_pct": 1.0})
+        cfg = C.load_config(self.h)
+        ideas, info = A.buy_ideas(self.h, cfg, lg, s, n=3, all_=True)
+        capital = s["value"] + s["cash"]
+        spent = sum(i.get("cost") or 0 for i in ideas)
+        self.assertLessEqual(spent, s["cash"] - 0.5 * capital + 1)  # the reserve is never spent
+        self.assertTrue(all(i.get("limited_by") for i in ideas if i.get("qty")))
+
+
+class TestSIP(Market):
+    def test_projection_and_goal(self):
+        self.assertEqual(SP.project(1000, 1, 0.0)[-1]["value"], 12000)
+        v = SP.project(1000, 10, 0.12)[-1]["value"]
+        self.assertAlmostEqual(v, 224036, delta=5)
+        self.assertAlmostEqual(SP.required_monthly(v, 10, 0.12), 1000, delta=1)
+        stepped = SP.project(1000, 2, 0.0, step_up=0.10)
+        self.assertEqual((stepped[1]["monthly"], stepped[-1]["invested"]), (1100.0, 25200.0))
+        self.assertEqual(SP.required_monthly(100, 5, 0.1, lump=1000), 0.0)
+
+    def test_rate_sources(self):
+        run(pkdata.main, ["--home", self.h, "mufap", "--from-file", os.path.join(FIX, "mufap-2026-10-26.md")])
+        rate, why = SP.fund_rate(self.h, "ABL Cash Fund")
+        self.assertAlmostEqual(rate, 0.1678)                        # annualised 3-year, as MUFAP reports it
+        rates, src = SP.market_rates(self.h, C.load_config(self.h))
+        self.assertIn("MUFAP", src["money_market"])
+        self.assertIn("KSE100", src["equity"])
+        rc, out = run(SP.main, ["--home", self.h, "plan", "--monthly", "10000", "--years", "5"])
+        self.assertIn("moderate profile mix", out)
+        rc, out = run(SP.main, ["--home", self.h, "goal", "--target", "1000000", "--years", "5", "--rate", "12"])
+        self.assertIn("a month", out)
+
+
+class TestDocs(unittest.TestCase):
+    """The README must keep up with the code: every tool and every setting is documented."""
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "README.md")) as f:
+            self.readme = f.read()
+
+    def test_every_script_is_in_the_readme(self):
+        scripts = sorted(f for f in os.listdir(os.path.join(ROOT, "psx-mufap", "scripts"))
+                         if f.endswith((".py", ".sh")) and f not in ("common.py",))
+        missing = [f for f in scripts if f not in self.readme]
+        self.assertEqual(missing, [], "add these to README.md")
+
+    def test_every_setting_is_in_the_readme(self):
+        keys = set(PRF.VARIABLES) | set(C.DEFAULT_CONFIG)
+        missing = sorted(k for k in keys if "`%s`" % k not in self.readme and '"%s"' % k not in self.readme)
+        self.assertEqual(missing, [], "document these settings in README.md")
 
 
 def argparse_ns(**kw):

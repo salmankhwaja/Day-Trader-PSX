@@ -210,8 +210,9 @@ def cmd_run(a, h, cfg):
     if a.optimize:
         if a.strategy not in GRIDS:
             sys.exit("--optimize works with: " + ", ".join(GRIDS))
-        p, s_in, s_out = optimize(rows, a.strategy, cost, rf)
-        cut = int(len(rows) * 0.7)
+        split = float(cfg.get("train_split", 0.7))
+        p, s_in, s_out = optimize(rows, a.strategy, cost, rf, split)
+        cut = int(len(rows) * split)
         bh_out = simulate(rows[cut:], sig_buyhold(closes[cut:]), cost, rf)
         print("%s %s, best parameters on the first 70%%: %s" % (name, a.strategy, p))
         print(C.md_table(HEAD, [line("in-sample (tuned)", s_in), line("OUT-OF-SAMPLE", s_out),

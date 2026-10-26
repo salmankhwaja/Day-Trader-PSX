@@ -867,7 +867,7 @@ def main(argv=None):
     p.add_argument("--shariah", action="store_true", help="Shariah-compliant (KMI) buy ideas only")
     p.add_argument("--sector")
     p.add_argument("--buy", type=int, default=3, help="how many buy ideas (default 3)")
-    p.add_argument("--candidates", type=int, default=15)
+    p.add_argument("--candidates", type=int, help="default: your risk profile's 'candidates'")
     p.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     h = C.home(a.home)

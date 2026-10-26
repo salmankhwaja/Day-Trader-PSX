@@ -4,7 +4,7 @@
   python3 pkm.py                     a numbered menu: pick a number, answer the prompts
   python3 pkm.py rank stocks --all   or pass any tool and its arguments straight through
                                      (tools: pkdata rank backtest propose paper portfolio funds
-                                      advice dashboard daily)
+                                      advice dashboard daily risk sip)
 
 Blank answers take the default shown in [brackets]. Nothing here places a real order.
 """
@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import common as C  # noqa: E402
 
-TOOLS = ["pkdata", "rank", "backtest", "propose", "paper", "portfolio", "funds", "dashboard", "daily"]
+TOOLS = ["pkdata", "rank", "backtest", "propose", "paper", "portfolio", "funds", "dashboard", "daily", "risk", "sip"]
 
 
 def call(tool, *args):
@@ -200,6 +200,50 @@ def settings():
     print("Other settings (costs, stops, tax) are in %s; edit it with any text editor." % p)
 
 
+def risk_menu():
+    print("a) take the risk quiz   b) compare the profiles   c) every setting   d) my portfolio's risk")
+    print("e) size a position      f) change one setting")
+    c = (ask("Choose", "d") or "d").lower()
+    if c == "a":
+        call("risk", "quiz")
+    elif c == "b":
+        call("risk", "profile")
+        name = ask("Switch to (blank = keep)", "")
+        if name:
+            call("risk", "profile", name)
+    elif c == "c":
+        call("risk", "settings")
+    elif c == "e":
+        args = ["position", "--entry", ask("Entry price", required=True), "--stop", ask("Stop-loss price", required=True)]
+        args += opt("--capital", ask("Capital (blank = your portfolio)", ""))
+        args += opt("--risk-pct", ask("Risk % of capital (blank = your profile's)", ""))
+        call("risk", *args)
+    elif c == "f":
+        call("risk", "set", ask("Setting name (see c)", required=True), ask("New value", required=True))
+    else:
+        call("risk", "portfolio")
+
+
+def sip_menu():
+    mode = (ask("Plan a monthly SIP, or find the SIP for a goal (p/g)", "p") or "p").lower()
+    years = ask("Years", "10")
+    if mode.startswith("g"):
+        args = ["goal", "--target", ask("Target amount", required=True), "--years", years]
+    else:
+        args = ["plan", "--monthly", ask("Monthly amount", "25000"), "--years", years]
+    src = (ask("Return from: profile mix / my rate / a fund / a share (p/r/f/s)", "p") or "p").lower()
+    if src.startswith("r"):
+        args += ["--rate", ask("Yearly return %", "14")]
+    elif src.startswith("f"):
+        args += ["--fund", ask("Fund name", required=True)]
+    elif src.startswith("s"):
+        args += ["--symbol", ask("Symbol", required=True)]
+    args += opt("--step-up", ask("Raise it by % each year (blank = no)", ""))
+    args += opt("--lump", ask("Starting amount (blank = none)", ""))
+    args += opt("--inflation", ask("Inflation % to show today's rupees (blank = skip)", ""))
+    call("sip", *args)
+
+
 MENU = [
     ("Fetch data: my watchlist + funds", fetch_watchlist),
     ("Fetch data: the whole market (slow first time)", fetch_all),
@@ -214,6 +258,8 @@ MENU = [
     ("Run the whole daily update now", lambda: call("daily")),
     ("Dashboard: build the one-file version", dashboard),
     ("Settings: data folder, watchlist", settings),
+    ("Risk: quiz, profiles, settings, my portfolio's risk", risk_menu),
+    ("SIP calculator: plan or goal", sip_menu),
 ]
 
 

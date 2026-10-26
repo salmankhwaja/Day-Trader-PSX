@@ -241,7 +241,32 @@ def build_data(h, cfg, all_=None, days=500):
                                                    "score": s["score"]}) for s in stocks]),
         "dividend_calendar": calendar, "portfolio": portfolio, "proposal": proposal, "funds": funds,
         "mine": mine,
+        "risk": risk_block(h, cfg),
     }
+
+
+def risk_block(h, cfg):
+    """Profile, its key settings, portfolio risk and SIP starting values, for the Risk & SIP tab."""
+    import profiles as PRF
+    import risk as RK
+    import sip as SP
+    keys = ["risk_per_trade", "max_position_pct", "max_holdings", "cash_reserve_pct", "max_open_risk_pct",
+            "stop_atr_mult", "min_stop_pct", "max_stop_pct", "target_r", "gate_max_drawdown", "gate_min_sharpe",
+            "max_annual_loss_pct"]
+    out = {"profile": cfg.get("risk_profile"),
+           "settings": [{"key": k, "value": RK.fmt(cfg.get(k), k), "about": PRF.VARIABLES[k][1]} for k in keys],
+           "allocation_target": cfg.get("allocation")}
+    rates, src = SP.market_rates(h, cfg)
+    alloc = cfg.get("allocation") or {}
+    out["sip"] = {"rate": round(SP.blended(alloc, rates), 4) if alloc else 0.12,
+                  "basis": "%s mix at %s" % (cfg.get("risk_profile"), ", ".join(
+                      "%s %.1f%%" % (k.replace("_", " "), 100 * rates[k]) for k in alloc if k in rates))}
+    try:
+        import portfolio as PF
+        out["portfolio"] = RK.portfolio_risk(h, cfg) if os.path.exists(PF.lpath(h)) else None
+    except Exception:  # risk numbers are a bonus; never break the dashboard over them
+        out["portfolio"] = None
+    return out
 
 
 def cmd_build(a, h, cfg):

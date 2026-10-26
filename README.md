@@ -18,10 +18,11 @@ courage, the judgement and the final tap on your broker's app stay with you.
 ## Table of contents
 
 1. [The 30-second tour](#the-30-second-tour)
-2. [How it fits together](#how-it-fits-together)
-3. [Pick your path](#pick-your-path)
-4. [Quick start on a computer](#quick-start-on-a-computer)
-5. [Command cheat sheet](#command-cheat-sheet)
+2. [Where the data comes from](#where-the-data-comes-from)
+3. [How it fits together](#how-it-fits-together)
+4. [Pick your path](#pick-your-path)
+5. [Quick start on a computer](#quick-start-on-a-computer)
+6. [Command cheat sheet](#command-cheat-sheet)
    - [Fetch data](#1-fetch-data)
    - [Set the schedule](#2-set-the-schedule)
    - [Which stocks to hold, buy or sell](#3-which-stocks-to-hold-buy-or-sell)
@@ -30,19 +31,22 @@ courage, the judgement and the final tap on your broker's app stay with you.
    - [Record a buy or sell](#6-record-a-buy-or-sell)
    - [See your portfolio](#7-see-your-portfolio)
    - [Practise with paper money](#8-practise-with-paper-money)
-6. [How the suggestions work](#how-the-suggestions-work)
-7. [Run it on a schedule](#run-it-on-a-schedule)
-8. [Run it on your Android phone](#run-it-on-your-android-phone)
-9. [Use it with Claude](#use-it-with-claude)
-10. [Settings](#settings)
-11. [Brokers and their charges](#brokers-and-their-charges)
-12. [Your data and privacy](#your-data-and-privacy)
-13. [Troubleshooting](#troubleshooting)
-14. [FAQ](#faq)
-15. [Data sources and terms](#data-sources-and-terms)
-16. [Honest limits](#honest-limits)
-17. [Repo layout](#repo-layout)
-18. [Contributing](#contributing)
+   - [Know your risk](#9-know-your-risk)
+   - [Plan a SIP](#10-plan-a-sip)
+7. [Your risk style](#your-risk-style)
+8. [How the suggestions work](#how-the-suggestions-work)
+9. [Run it on a schedule](#run-it-on-a-schedule)
+10. [Run it on your Android phone](#run-it-on-your-android-phone)
+11. [Use it with Claude](#use-it-with-claude)
+12. [Settings](#settings)
+13. [Brokers and their charges](#brokers-and-their-charges)
+14. [Your data and privacy](#your-data-and-privacy)
+15. [Troubleshooting](#troubleshooting)
+16. [FAQ](#faq)
+17. [Data terms](#data-terms)
+18. [Honest limits](#honest-limits)
+19. [Repo layout](#repo-layout)
+20. [Contributing](#contributing)
 
 ---
 
@@ -56,9 +60,32 @@ courage, the judgement and the final tap on your broker's app stay with you.
 | Know what to do next | **SELL / TRIM / REVIEW / HOLD** for each holding, with a trailing **stop-loss** and target. **Buy ideas**, each with entry, stop-loss, target and a sensible quantity |
 | Test an idea first | Backtests of moving-average, breakout, RSI and momentum strategies, with costs, next-day fills and an honest out-of-sample test |
 | Practise | A paper account in pretend PKR: all of the drama, none of the margin calls |
-| See it all | A dashboard (overview, screener, compare up to 6 companies, your portfolio, dividends, funds) that works on a phone, in light and dark |
+| Match it to your nerves | A **risk quiz** that sets your style (conservative to very aggressive); every buy/sell variable follows it, and you can override any one |
+| Know what's at stake | A **risk calculator**: position sizing, money at risk to your stops, value-at-risk, volatility, beta, concentration, allocation vs target |
+| Plan ahead | A **SIP calculator**: monthly investing with yearly step-ups, inflation, and "how much a month for my goal?" |
+| See it all | A dashboard (overview, screener, compare up to 6 companies, your portfolio, dividends, funds, risk and SIP) that works on a phone, in light and dark |
 
 Plain Python 3.8+ with the standard library only: nothing to `pip install`, nothing to break.
+
+## Where the data comes from
+
+Straight from the source, end of day, no middlemen, no paid feed:
+
+| What | Where it's downloaded from | Used for |
+|---|---|---|
+| Daily prices (about 5 years of close, volume, open) | PSX Data Portal, `dps.psx.com.pk/timeseries/eod/<SYMBOL>` | rankings, backtests, stop-losses, risk, the dashboard |
+| Every listed share | PSX Data Portal, `/indices/ALLSHR` (KSE All Share Index) | whole-market mode (`--all`) |
+| Shariah-compliant shares | PSX Data Portal, `/indices/KMIALLSHR` (KMI All Share Islamic Index) | the ☪ flag and Shariah filters |
+| Sector, P/E, 52-week range, dividend history | PSX Data Portal, `/company/<SYMBOL>` | sectors, valuation, dividend yield |
+| New dividends and book closures | PSX Data Portal, `/payouts` | dividend calendar, dividends due |
+| Mutual funds: every fund's NAV and returns | MUFAP, `mufap.com.pk` daily performance summary | fund rankings, fund advice, SIP rates |
+| Broker tariffs | Published rate sheets, listed in [`brokers.json`](psx-mufap/brokers.json) | estimating charges |
+
+`pkdata.py` downloads these politely: one page a second. The PSX price page is undocumented,
+so every download is checked before it's saved. Prices are **end of day**, not live: this is a
+planning tool, not a ticker. Format details are in
+[`references/data-sources.md`](psx-mufap/references/data-sources.md); terms of use are under
+[Data terms](#data-terms).
 
 ## How it fits together
 
@@ -276,40 +303,129 @@ python3 propose.py review              # HOLD or SELL each paper holding
 python3 paper.py status
 ```
 
+### 9. Know your risk
+
+```bash
+python3 risk.py quiz                     # 8 questions -> conservative / moderate / aggressive / very aggressive
+python3 risk.py profile                  # the four styles side by side
+python3 risk.py profile aggressive       # switch style directly
+python3 risk.py settings                 # every buy/sell variable, its value, and where it came from
+python3 risk.py set max_holdings 6       # override one value (your values beat the profile)
+python3 risk.py unset max_holdings       # back to the profile's value
+```
+
+```bash
+python3 risk.py position --entry 300 --stop 282                    # how many shares, and what's at stake
+python3 risk.py position --entry 300 --stop 282 --capital 1000000 --risk-pct 1
+python3 risk.py portfolio                # money at risk to your stops, value-at-risk, volatility, beta,
+                                         #   diversification, allocation vs target, and warnings
+```
+
+### 10. Plan a SIP
+
+```bash
+python3 sip.py plan --monthly 25000 --years 10                  # at your risk profile's mix
+python3 sip.py plan --monthly 25000 --years 10 --step-up 10 --inflation 10
+python3 sip.py plan --monthly 25000 --years 5 --fund "Alfalah Cash Fund - II"
+python3 sip.py plan --monthly 10000 --years 5 --symbol OGDC
+python3 sip.py plan --monthly 20000 --years 10 --portfolio      # start from what you own today
+python3 sip.py goal --target 5000000 --years 8 --step-up 10     # "how much a month do I need?"
+python3 sip.py goal --target 5000000 --years 8 --rate 14 --inflation 10 --today-rupees
+```
+
+The yearly return comes from, in order:
+- your `--rate`;
+- a fund's MUFAP return;
+- a share's own history;
+- or your profile's allocation, at returns taken from your data: KSE-100 growth for shares and
+  median MUFAP returns for income and money market funds. Without data, the `expected_returns`
+  assumptions are used.
+
+Every plan also shows the result 3 points lower and 3 points higher, because the future rarely
+reads the plan.
+
+---
+
+## Your risk style
+
+**Wanting maximum profit is natural. Wanting it without risk is a different hobby.** Every
+setting that raises expected return also raises the chance of a bad year, so the honest way to
+"maximise profit" is to take as much risk as you can genuinely live with, and no more. That's
+what the risk style does.
+
+**1. Find your style.** `risk.py quiz` asks eight questions and scores two things separately:
+
+| | Asks about | Why |
+|---|---|---|
+| **Capacity** | when you need the money, income stability, emergency savings, share of your savings | how much loss your situation can absorb |
+| **Willingness** | experience, what you'd do after a 20% fall, your goal, the worst year you'd accept | how much loss you can stomach |
+
+Your style is the **lower** of the two. Liking risk doesn't help if you need the money next
+year, and having spare money doesn't help if a crash would keep you up at night. Needing the
+money within two years, or having under a month's savings, caps the style at conservative.
+
+**2. The style sets every buy/sell variable.** In short:
+
+| | Conservative | Moderate | Aggressive | Very aggressive |
+|---|---|---|---|---|
+| Risk per new buy | 0.5% of capital | 1% | 2% | 3% |
+| Biggest single share | 15% | 25% | 35% | 50% |
+| Shares held at most | 12 | 10 | 8 | 6 |
+| Cash kept aside | 30% | 10% | 5% | 0% |
+| All stops hit at once, at most | 3% | 6% | 10% | 15% |
+| Stop-loss distance | 4–10% | 5–15% | 7–20% | 8–25% |
+| Target | 2× the risk | 2× | 2.5× | 3× |
+| Backtest drawdown allowed | 20% | 35% | 45% | 55% |
+| Ranking favours | steady, risk-adjusted returns | balanced | momentum | strong recent momentum |
+| Target mix (shares / fixed income / money market) | 20 / 40 / 40 | 50 / 30 / 20 | 75 / 15 / 10 | 90 / 5 / 5 |
+
+The full list, all 28 variables, is in [Settings](#settings).
+
+**3. Make it yours.** Keep a style and override single values with `risk.py set KEY VALUE`
+(e.g. moderate, but at most 6 shares). Your values always win over the style. `risk.py settings`
+shows each value and whether it came from the style or from you.
+
+> [!TIP]
+> Not sure? Start one style more careful than the quiz says, and paper-trade with it for a
+> month (`paper.py`). Discovering your real risk appetite with pretend money is much cheaper.
+
 ---
 
 ## How the suggestions work
 
 The past is a great teacher and a terrible fortune teller. Every rule below is plain, written
-down, and adjustable in `config.json`.
+down, and driven by your [risk style](#your-risk-style). The setting names in `code` can each be
+changed with `risk.py set`.
 
 **Stocks** (`portfolio.py advise`)
 
 | Rule | Default |
 |---|---|
-| **Stop-loss** | 2.5 × the 14-day average daily move below your entry, kept 5–15% below it, then trailing up behind the highest close since you bought. Your own stop (`--stop`, or `portfolio.py stop`) always wins. Think of it as the seatbelt nobody likes wearing until they need it. |
-| **Target** | entry + 2 × (entry − stop) |
+| **Ranking** | weighted percentile score of 1M, 3M, 6M, 1Y returns and the 1Y Sharpe ratio (`score_weights`), among shares trading at least `min_avg_volume` a day |
+| **Stop-loss** | `stop_atr_mult` × the average daily move over `vol_window` days below your entry, kept between `min_stop_pct` and `max_stop_pct` below it, then trailing up behind the highest close since you bought. Your own stop (`--stop`, or `portfolio.py stop`) always wins. Think of it as the seatbelt nobody likes wearing until they need it. |
+| **Target** | entry + `target_r` × (entry − stop) |
 | **SELL** | the last close is at or below the stop |
-| **TRIM** | one stock is over 25% of the portfolio, and it says how many to sell |
-| **REVIEW** | below its 50- and 200-day averages and more than 5 points behind the KSE-100 over 3 months |
+| **TRIM** | one share is over `max_position_pct` of the portfolio; it says how many to sell |
+| **REVIEW** | below its `trend_fast`- and `trend_slow`-day averages and trailing the KSE-100 by more than `review_lag_pct` over 3 months |
 | **HOLD** | none of the above; shows the distance to the stop and flags an upcoming book closure |
-| **Buy ideas** | stocks whose best strategy was tuned on the first 70% of history, then did well on the untouched last 30% (beat a cash return, positive Sharpe ratio, drawdown under 35%), and that say "buy" today. Quantity risks 1% of your capital between entry and stop, at most 25% in one stock, within your recorded cash. |
+| **Buy ideas: which** | the top `candidates` by score are backtested with `strategies`, tuned on the first `train_split` of history. A share passes only if, on the untouched rest, it beat cash by `gate_min_excess_return`, had a Sharpe above `gate_min_sharpe`, and fell no more than `gate_max_drawdown`; and its signal says buy today. At most `max_per_sector` per sector, and none once you hold `max_holdings` shares. |
+| **Buy ideas: how many shares** | the smallest of: `risk_per_trade` × capital ÷ (entry − stop); `max_position_pct` × capital ÷ entry; cash beyond the `cash_reserve_pct` reserve; and what's left of the `max_open_risk_pct` budget for all stops together. The output says which limit decided. |
 
 **Why the 70/30 split?** Tuning a strategy on the same data you grade it on is like setting your
 own exam paper. So the last 30% stays locked away until the very end, and only that result counts.
 
 **Funds** (`funds.py`)
 
-| Risk | MUFAP categories |
+| Risk (`funds.py advise --risk`) | MUFAP categories |
 |---|---|
 | low | Money Market |
 | medium | Income, Aggressive Fixed Income, Asset Allocation, Balanced, Fund of Funds |
 | high | Equity, Index Tracker, Dedicated Equity |
 
 Within a category, funds rank on the average percentile of their 30-day, 90-day and 1-year
-returns. One lucky week is not enough. Funds with a NAV more than 5 days old are left out. A
-fund you hold is marked **REVIEW** when it sits in the bottom third of its category, and the
-category leaders are named.
+returns. One lucky week is not enough. Funds with a NAV more than `fund_stale_days` old are left
+out. A fund you hold is marked **REVIEW** when it sits in the bottom `fund_review_bottom` of its
+category, and the category leaders are named.
 
 > [!WARNING]
 > Suggestions use the **last close or NAV**, not live prices. Check the live price before you
@@ -478,6 +594,7 @@ Congratulations: you now have a trading terminal that cost less than a samosa.
 | Compare | up to 6 companies side by side, dividends included |
 | My portfolio | what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; your funds; costs by broker; realised P/L |
 | Paper · Dividends · Funds | practice account, dividend calendar, MUFAP rankings |
+| Risk & SIP | your risk style, money at risk, value-at-risk, allocation vs target, and a live SIP calculator |
 
 The address only works on this phone: nothing leaves the device. If the page won't load, open
 Termux once, which wakes the dashboard service.
@@ -489,6 +606,8 @@ Termux once, which wakes the dashboard service.
 | Every weekday at 07:00 | Nothing. Prices, dividends, advice and the dashboard refresh themselves |
 | You bought or sold something | Home-screen **PSX-menu** › **6** or **7** |
 | You want advice now | **PSX-menu** › **4** for stocks with stop-losses, **5** for funds |
+| You want to set your risk style | **PSX-menu** › **14** › take the quiz |
+| You're planning monthly investing | **PSX-menu** › **15** SIP calculator, or the dashboard's Risk & SIP tab |
 | You want fresh data now | Home-screen **PSX-update** |
 | You want the dashboard | Home-screen **PSX-dashboard**, or the Chrome icon |
 
@@ -538,6 +657,9 @@ Then add it as a custom skill in Claude's settings, and just ask:
 - *"Which Shariah money market funds should I consider, and how do mine compare?"*
 - *"How much have I paid each broker this year, and what's my realised profit?"*
 - *"Add my broker: 0.12% or 3 paisa a share, whichever is higher, Sindh sales tax"*
+- *"Ask me the risk questions and set my style"*, *"Make me more aggressive, but no more than 6 shares"*
+- *"How much am I risking right now if every stop is hit?"*
+- *"If I invest 25,000 a month for 10 years, raising it 10% a year, what could I have?"*
 
 Claude reads a trade back to you before recording it, and asks for anything important you left
 out.
@@ -561,41 +683,68 @@ Or install it as a plugin: `/plugin marketplace add salmankhwaja/Day-Trader-PSX`
 
 ## Settings
 
-`config.json` in your data folder. `pkdata.py init` creates it, and anything missing uses the
-default.
+`config.json` in your data folder. `pkdata.py init` creates it; anything you leave out comes from
+your risk style, then from the built-in defaults. A minimal file is enough:
 
 ```json
 {
   "watchlist": ["OGDC", "PPL", "MARI", "HUBC", "LUCK", "MCB", "MEBL", "ENGRO", "FFC", "SYS"],
   "benchmark": "KSE100",
+  "risk_profile": "moderate",
   "cost_bps_per_side": 20,
   "lot_size": 1,
   "risk_free_annual": 0.0,
   "paper_starting_cash": 1000000,
-  "min_avg_volume": 50000,
   "dividend_tax": 0.15,
-  "face_values": {},
-  "stop_atr_mult": 2.5,
-  "min_stop_pct": 0.05,
-  "max_stop_pct": 0.15,
-  "target_r": 2.0,
-  "risk_per_trade": 0.01,
-  "max_position_pct": 0.25
+  "face_values": {}
 }
 ```
+
+**General settings**
 
 | Setting | Meaning |
 |---|---|
 | `watchlist`, `benchmark` | the shares you follow, and what they're measured against |
+| `risk_profile` | your risk style: `conservative`, `moderate`, `aggressive` or `very_aggressive` (see [Your risk style](#your-risk-style)) |
 | `cost_bps_per_side` | trading cost in **backtests**, in basis points per buy or sell (20 = 0.2%) |
+| `lot_size` | shares per board lot (1 on PSX's ready market) |
 | `risk_free_annual` | what idle cash earns, e.g. `0.11` for an 11% money-market yield; strategies must beat it |
-| `min_avg_volume` | with `--all`, skip shares trading fewer than this many a day (60-day average) |
+| `paper_starting_cash` | the paper account's opening balance |
 | `dividend_tax` | withholding tax on dividends (rates differ for filers and non-filers) |
 | `face_values` | dividend per share = percent × face value; Rs 10 unless listed, e.g. `{"ABC": 5}` |
-| `stop_atr_mult`, `min_stop_pct`, `max_stop_pct` | how far below entry the stop-loss sits |
-| `target_r` | target = entry + this × (entry − stop) |
-| `risk_per_trade` | share of capital lost if a buy idea hits its stop (0.01 = 1%) |
-| `max_position_pct` | most of the portfolio in one stock before TRIM (0.25 = 25%) |
+| `expected_returns` | yearly returns the SIP calculator assumes when there's no data on file, e.g. `{"equity": 0.14, "fixed_income": 0.11, "money_market": 0.10}` |
+
+**Every buy/sell variable, by risk style.** Override any of them with `risk.py set KEY VALUE` (or
+in `config.json`); `risk.py settings` shows what's in effect and where it came from.
+
+| Group | Setting | Conservative | Moderate | Aggressive | Very aggressive | What it does |
+|---|---|---|---|---|---|---|
+| Screening | `min_avg_volume` | 100,000 | 50,000 | 25,000 | 10,000 | skip shares averaging fewer than this many shares traded a day (60 sessions), with --all |
+| Screening | `score_weights` | 1m 0.5 3m 1 6m 1 1y 1.5 sharpe 2 | 1m 1 3m 1 6m 1 1y 1 sharpe 1 | 1m 1.5 3m 1.5 6m 1 1y 0.5 sharpe 0.5 | 1m 2 3m 1.5 6m 1 1y 0.5 sharpe 0 | how the ranking score weighs 1M, 3M, 6M, 1Y returns and the 1Y Sharpe ratio |
+| Screening | `candidates` | 15 | 15 | 20 | 25 | how many top-ranked shares get backtested for buy ideas |
+| Backtest gates | `train_split` | 70% | 70% | 70% | 70% | share of history used to tune a strategy; the rest is the out-of-sample test |
+| Backtest gates | `strategies` | sma, breakout, rsi | sma, breakout, rsi | sma, breakout, rsi | sma, breakout, rsi | strategies tried for each share |
+| Backtest gates | `gate_max_drawdown` | 20% | 35% | 45% | 55% | largest acceptable out-of-sample fall from peak |
+| Backtest gates | `gate_min_sharpe` | 0.5 | 0 | 0 | 0 | minimum out-of-sample Sharpe ratio |
+| Backtest gates | `gate_min_excess_return` | 2% | 0% | 0% | 0% | out-of-sample yearly return must beat cash (risk_free_annual) by at least this |
+| Backtest gates | `max_per_sector` | 1 | 2 | 3 | 3 | most buy ideas from one sector |
+| Stops and targets | `stop_atr_mult` | 2 | 2.5 | 3 | 3.5 | stop distance = this x the average daily move |
+| Stops and targets | `vol_window` | 14 | 14 | 14 | 14 | days used for the average daily move |
+| Stops and targets | `min_stop_pct` | 4% | 5% | 7% | 8% | stop at least this far below entry (so daily noise doesn't trigger it) |
+| Stops and targets | `max_stop_pct` | 10% | 15% | 20% | 25% | stop at most this far below entry |
+| Stops and targets | `target_r` | 2 | 2 | 2.5 | 3 | target = entry + this x (entry - stop) |
+| Sizing and limits | `risk_per_trade` | 0.5% | 1% | 2% | 3% | capital lost if a new buy hits its stop |
+| Sizing and limits | `max_position_pct` | 15% | 25% | 35% | 50% | most of the portfolio in one share (above it: TRIM) |
+| Sizing and limits | `max_holdings` | 12 | 10 | 8 | 6 | most different shares held at once (no buy ideas beyond it) |
+| Sizing and limits | `cash_reserve_pct` | 30% | 10% | 5% | 0% | cash kept aside, never used for buy ideas |
+| Sizing and limits | `max_open_risk_pct` | 3% | 6% | 10% | 15% | total capital at risk if every holding hit its stop at once |
+| Reviewing holdings | `trend_fast` | 50 | 50 | 50 | 20 | short moving average for the trend test |
+| Reviewing holdings | `trend_slow` | 200 | 200 | 200 | 100 | long moving average for the trend test |
+| Reviewing holdings | `review_lag_pct` | 3% | 5% | 8% | 10% | REVIEW when 3-month return trails KSE-100 by more than this (and the trend is down) |
+| Funds | `fund_review_bottom` | 50% | 33.3% | 25% | 25% | REVIEW a fund you hold in this bottom share of its category |
+| Funds | `fund_stale_days` | 5 | 5 | 5 | 5 | leave out funds whose NAV is older than this |
+| Plan | `allocation` | 20% / 40% / 40% | 50% / 30% / 20% | 75% / 15% / 10% | 90% / 5% / 5% | target split between shares, fixed income and money market |
+| Plan | `max_annual_loss_pct` | 10% | 20% | 30% | 40% | the worst year you said you could live with (from the risk quiz) |
 
 Real brokers' charges don't live here; they live with each broker in your ledger. See
 [Brokers and their charges](#brokers-and-their-charges).
@@ -671,11 +820,16 @@ pkmarket/
 **Can it place orders for me?** No, by design. Your thumb stays in charge.
 
 **Where do the prices come from?** The PSX Data Portal and MUFAP, at end of day. It isn't a
-live ticker; see [Data sources and terms](#data-sources-and-terms).
+live ticker; see [Where the data comes from](#where-the-data-comes-from).
 
 **Why does "expected next dividend" say *estimate*?** It assumes the company pays at about the
 same time as last year. That's a habit, not a promise, a bit like predicting when your cousin
 will next ask for a loan.
+
+**Which risk style makes the most money?** On average over long periods, the riskier ones,
+which is exactly why they also have the worst years. The best style is the one you'll stick to
+when the KSE-100 has a bad month, because selling in a panic is the most expensive strategy of
+all.
 
 **Is a passing backtest a guarantee?** No. It means the rule wasn't fooled by the data it was
 tuned on. Markets remain free to do something new.
@@ -687,10 +841,11 @@ dashboard's charts need the internet.
 dividends, so heavy payers look weaker on price returns. The dividend yield column evens the
 score.
 
-## Data sources and terms
+## Data terms
 
-- **PSX Data Portal** (`dps.psx.com.pk`): daily prices, index members (All Share, KMI All
-  Share), company pages and payouts. PSX prohibits redistribution or commercial use of its market
+What's downloaded, from where, is in [Where the data comes from](#where-the-data-comes-from).
+
+- **PSX Data Portal** (`dps.psx.com.pk`): PSX prohibits redistribution or commercial use of its market
   data without a licence (marketdatarequest@psx.com.pk). These tools are for personal analysis:
   keep downloaded data private and don't publish dashboards built from it.
 - **MUFAP** (`mufap.com.pk`): daily fund NAVs and returns.
@@ -725,6 +880,9 @@ psx-mufap/                      the skill and the tools
 │   ├── portfolio.py            your real portfolio: trades, brokers, charges, lots, funds, P/L
 │   ├── advice.py               stop-losses, sell/hold/trim rules, sized buy ideas
 │   ├── funds.py                fund suggestions by risk profile; review of funds you hold
+│   ├── profiles.py             the four risk styles and every buy/sell variable, described
+│   ├── risk.py                 risk quiz, profiles, settings, position sizing, portfolio risk
+│   ├── sip.py                  SIP calculator: plan, goal, step-up, inflation
 │   ├── dashboard.py            build and serve the dashboard
 │   ├── daily.py                the daily pipeline, pure Python (Linux, macOS, Windows, Android)
 │   ├── daily_sync.sh           shell wrapper for cron and systemd

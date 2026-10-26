@@ -68,10 +68,11 @@ def fresh(f, report_date, days=5):
 
 def advise(h, risk, shariah=False, top=3):
     date, by = ranked_by_category(h)
+    stale = int(C.load_config(h).get("fund_stale_days", 5))
     out = []
     for base in PROFILES[risk]:
         cat = category_name(base, shariah)
-        fs = [f for f in by.get(cat, []) if f.get("score") is not None and fresh(f, date)]
+        fs = [f for f in by.get(cat, []) if f.get("score") is not None and fresh(f, date, stale)]
         if not fs:
             continue
         out.append({"category": cat, "why": WHY.get(base, ""), "return_type": fs[0]["return_type"],
@@ -84,6 +85,7 @@ def review(h):
     lg = PF.load(h)
     held, _ = PF.fund_holdings(h, lg)
     date, by = ranked_by_category(h)
+    bottom = float(C.load_config(h).get("fund_review_bottom", 1 / 3.0))
     out = []
     for f in held:
         cat = f.get("category")
@@ -97,9 +99,9 @@ def review(h):
             pct_rank = 1 - pos / max(len(ranked) - 1, 1)
             r["rank"] = "%d of %d" % (pos + 1, len(ranked))
             leaders = [x["fund"] for x in ranked[:3] if x["fund"] != f["fund"]][:2]
-            if pct_rank < 1 / 3.0:
-                r.update(action="REVIEW", why="bottom third of %s on 30-day, 90-day and 1-year returns; leaders: %s"
-                         % (cat, ", ".join(leaders)))
+            if pct_rank < bottom:
+                r.update(action="REVIEW", why="in the bottom %.0f%% of %s on 30-day, 90-day and 1-year returns; "
+                         "leaders: %s" % (100 * bottom, cat, ", ".join(leaders)))
             else:
                 r.update(action="HOLD", why="ranked %s in %s" % (r["rank"], cat))
         out.append(r)

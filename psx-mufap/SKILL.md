@@ -22,11 +22,18 @@ code repository.
 | `portfolio.py` | The user's REAL portfolio: trades, brokers, commissions, lots, P/L, dividends, cash; `advise` |
 | `pkm.py` | Menu launcher (also passes through: `pkm.py rank stocks`); the user may run it on Android in Pydroid 3 or Termux |
 | `daily.py` | The daily pipeline in pure Python; `daily_sync.sh` and the systemd timer call it |
+| `profiles.py` | The four risk styles and every buy/sell variable, with descriptions |
+| `risk.py` | Risk quiz, switch style, show/override settings, position sizing, portfolio risk |
+| `sip.py` | SIP calculator: plan (step-up, inflation, lump sum) and goal; rates from profile mix, fund or share |
 | `funds.py` | MUFAP fund suggestions by risk profile (`advise`), and HOLD/REVIEW for funds the user holds (`review`) |
 | `brokers.json` | Published PSX broker tariffs and pass-through charges, with sources (used by `portfolio.py broker`) |
 | `advice.py` | Stop-losses, sell/hold/trim suggestions and sized buy ideas (used by `portfolio.py advise`) |
 | `dashboard.py` | Build the visual dashboard (compare, screener, portfolio, dividends, funds) and serve it |
 | `daily_sync.sh`, `install_services.sh` | The daily pipeline and its systemd timer, for the user's computer |
+
+Data comes from the PSX Data Portal (`dps.psx.com.pk`: daily prices, index members, company
+pages, payouts) and MUFAP (fund NAVs and returns), end of day. Say so when asked where the
+numbers come from.
 
 ## Step 1: get fresh data
 
@@ -248,7 +255,29 @@ Explain the category first (what it invests in, how risky it is), then the top f
 30-day, 90-day and 1-year returns. Say that returns exclude sales loads and that annualised
 (money market, income) and absolute (equity, mixed) returns can't be compared.
 
-## Step 7: the dashboard
+## Step 7: risk style, risk calculator, SIP
+
+Every suggestion follows the user's **risk style** (`risk_profile`: conservative, moderate,
+aggressive, very_aggressive). It sets ranking weights, backtest gates, stop distances, position
+sizes, the holdings cap, the cash reserve and the total risk budget (`profiles.py`). Mention the
+style when giving advice ("as a moderate investor, …").
+
+- **No style chosen yet, and they ask for advice?** Offer the quiz first: ask the eight questions
+  in `risk.py` (QUESTIONS) in conversation, then run
+  `risk.py quiz --answers a,b,c,d,e,f,g,h`, show the result, and `--save` only if they agree.
+  The style is the lower of capacity and willingness; explain which one set it.
+- **"Make me more aggressive"** → `risk.py profile aggressive`. **"…but no more than 6 shares"** →
+  `risk.py set max_holdings 6`. Show `risk.py settings` when they ask what drives the advice.
+- **"How much should I buy?"** → `risk.py position --entry E --stop S` (uses their capital and
+  risk_per_trade). **"How much am I risking?"** → `risk.py portfolio`: money lost if every stop
+  hits, value-at-risk, volatility, beta, diversification, allocation vs target, and warnings.
+- **"Maximise my profit"**: be honest. More expected return means more risk; the right style
+  is the riskiest one they can live with. Never promise returns.
+- **SIP**: `sip.py plan --monthly M --years Y [--step-up %] [--inflation %] [--lump X]`, or
+  `sip.py goal --target T --years Y`. Say where the rate came from (the output says), and show
+  the ±3-point range. Rates from `--fund` or `--symbol` are past returns, not forecasts.
+
+## Step 8: the dashboard
 
 ```
 python3 scripts/dashboard.py build                     # <home>/dashboard/ (index.html, app.js, data.json)
@@ -256,7 +285,7 @@ python3 scripts/dashboard.py build --standalone pkm.html   # one self-contained 
 python3 scripts/dashboard.py serve                     # http://127.0.0.1:8787
 ```
 
-Views: Overview (KSE-100, sectors, top ranked, upcoming dividends), My portfolio (real holdings
+Views (also a Risk & SIP tab with the style, portfolio risk and a live SIP calculator): Overview (KSE-100, sectors, top ranked, upcoming dividends), My portfolio (real holdings
 with action, stop and target, buy ideas, allocation, costs by broker, realised P/L, dividends), Screener (filter by sector,
 Shariah, yield; tick up to 6 to compare), Compare (rebased prices, returns, risk, valuation,
 dividends side by side), Paper (value vs KSE-100, allocation, holdings with review action and next

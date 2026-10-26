@@ -35,20 +35,13 @@ DEFAULT_CONFIG = {
     # Annual risk-free rate used in Sharpe ratios (e.g. a money-market yield).
     "risk_free_annual": 0.0,
     "paper_starting_cash": 1000000,
-    # Shares averaging fewer than this many traded a day (60 sessions) are skipped with --all.
-    "min_avg_volume": 50000,
     # Withholding tax on cash dividends in the paper account. An assumption: check your rate.
     "dividend_tax": 0.15,
     # Face value per share is Rs 10 for most PSX shares; list exceptions, e.g. {"ABC": 5}.
     "face_values": {},
-    # Your real portfolio's suggestions (portfolio.py advise). Stop = stop_atr_mult x the 14-day
-    # average daily move, kept 5-15% below entry, trailing up; risk 1% of capital per new idea.
-    "stop_atr_mult": 2.5,
-    "min_stop_pct": 0.05,
-    "max_stop_pct": 0.15,
-    "target_r": 2.0,
-    "risk_per_trade": 0.01,
-    "max_position_pct": 0.25,
+    # Your risk style. It sets every buy/sell/hold variable (stops, sizing, gates, ranking
+    # weights...): see profiles.py, `risk.py settings`, and `risk.py quiz` to choose one.
+    "risk_profile": "moderate",
 }
 
 
@@ -74,13 +67,30 @@ def home(arg=None):
     return h
 
 
-def load_config(h):
-    cfg = dict(DEFAULT_CONFIG)
+def read_user_config(h):
     p = os.path.join(h, "config.json")
     if os.path.exists(p):
         with open(p) as f:
-            cfg.update(json.load(f))
-    return cfg
+            return json.load(f)
+    return {}
+
+
+def load_config(h, with_sources=False):
+    """Defaults, then your risk profile's values, then your own settings (see profiles.py)."""
+    import profiles
+    cfg, src = profiles.resolve(read_user_config(h))
+    return (cfg, src) if with_sources else cfg
+
+
+def write_user_config(h, updates, remove=()):
+    """Change keys in config.json, keeping everything else the user wrote."""
+    raw = read_user_config(h)
+    raw.update(updates)
+    for k in remove:
+        raw.pop(k, None)
+    with open(os.path.join(h, "config.json"), "w") as f:
+        json.dump(raw, f, indent=2)
+    return raw
 
 
 def http_get(url, timeout=30, data=None):
