@@ -413,12 +413,16 @@ for filers and non-filers; ask the user).
 `cost_bps_per_side` and `lot_size` are assumptions: ask the user what their broker charges
 if it matters. Sources and data caveats: `references/data-sources.md`.
 
-## US stocks
+## The day-trading desk
 
-This skill is for PSX and MUFAP. For day trading US stocks, the same repo carries Jake
-Schincariol's 11 `trader-*` skills (scanner, news, entry, exit, time machine, risk, budget,
-broker, alerts, analyst, Pelosi tracker) in `us-day-trader/`; use those for US tickers. They
-don't work on PSX shares (no intraday bars for Karachi on Yahoo).
+For trading PSX shares by the day or the week, the same repo has 11 single-job skills (psx-scanner,
+psx-news, psx-entry, psx-exit, psx-timemachine, psx-budget, psx-risk, psx-broker, psx-alerts,
+psx-analyst, psx-insiders). If they're installed, use them; if only this skill is, the same tools
+are in `scripts/`: `scanner.py`, `news.py`, `entry.py`, `exitplan.py`, `timemachine.py`,
+`budget.py`, `risk.py check`, `broker.py`, `alerts.py`, `analyst.py`, `insiders.py`, `intraday.py`
+(each has `--help`). They share `trader/` in the data folder. Order: scanner -> news -> entry ->
+exit -> timemachine -> budget -> risk -> broker; alerts while open. Say that most people who day
+trade lose money, show reward-to-risk after charges, and never place or offer to place an order.
 
 ## Boundaries
 

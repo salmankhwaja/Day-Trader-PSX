@@ -1,5 +1,5 @@
 name: release
-# Push a tag like v1.1.0 to publish psx-mufap.zip and one zip per US day-trading skill (trader-*.zip),
+# Push a tag like v2.0.0 to publish psx-mufap.zip and one zip per desk skill (psx-scanner.zip, ...),
 # the files people add to Claude as skills.
 on:
   push:
@@ -11,9 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python -m unittest discover tests && python -m unittest discover -s us-day-trader/tests
-      - run: zip -r psx-mufap.zip psx-mufap -x '*__pycache__*'
-      - run: cd us-day-trader && for d in trader-*; do zip -r "../$d.zip" "$d" -x '*__pycache__*'; done
+      - run: python -m unittest discover tests && python tools/sync_skills.py --check
+      - run: for d in psx-*; do zip -r "$d.zip" "$d" -x '*__pycache__*'; done
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" psx-mufap.zip trader-*.zip --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" psx-*.zip --title "$GITHUB_REF_NAME" --generate-notes

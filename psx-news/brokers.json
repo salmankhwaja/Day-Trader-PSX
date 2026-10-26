@@ -1,0 +1,124 @@
+{
+  "_about": "Published PSX equity brokerage tariffs, for estimating charges when you don't enter the figures from your contract note. Commissions are negotiable and change: your signed commission sheet wins. Load with `portfolio.py broker import` (all) or `portfolio.py broker add NAME --preset KEY`. Edit this file or pass your own with --file.",
+  "_model": {
+    "commission": "For a trade at price P: find the first tier whose max_price >= P (or the last tier). Commission = the higher of per_share x qty and pct% x value, then at least min_commission per trade.",
+    "sales_tax_pct": "Provincial sales tax on the commission (goes into taxes).",
+    "cvt_pct": "Capital value tax on purchase value (goes into taxes, buys only).",
+    "cdc_per_share": "CDC handling per share (goes into other fees).",
+    "levies_pct": "PSX exchange fee + regulator levy, % of value (goes into other fees)."
+  },
+  "_regulation": {
+    "minimum": "PSX Regulations, Chapter 4, Annexure-III: ready-market equity commission at least 3 paisa per share or 0.15% of transaction value, whichever is greater, and at most 2.5%. Proprietary and sponsor/director/family trades are exempt from the minimum.",
+    "source": "https://www.psx.com.pk/psx/themes/psx/uploads/176897-1.pdf"
+  },
+  "_defaults": {
+    "sales_tax_pct": 13.0,
+    "cvt_pct": 0.0,
+    "cdc_per_share": 0.005,
+    "levies_pct": 0.00415,
+    "notes": "Sindh sales tax on brokerage 13% and CDC Rs 0.005/share per AKD's fee page; brokers in other provinces charge their province's rate. Exchange fee Rs 3.50 + regulator levy Rs 0.65 per Rs 100,000 traded (Desi Money Talk, Aug 2026). CVT on purchases reported as zero in Aug 2026; AKD's older fee page shows 0.01%: set cvt_pct if your contract note shows it.",
+    "sources": [
+      "https://www.akdtrade.com/FeeCommission.aspx",
+      "https://desimoneytalk.substack.com/p/what-does-it-actually-cost-to-buy"
+    ]
+  },
+  "brokers": {
+    "psx-minimum": {
+      "name": "PSX regulatory minimum",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.15}],
+      "confidence": "regulation",
+      "source": "https://www.psx.com.pk/psx/themes/psx/uploads/176897-1.pdf"
+    },
+    "akd": {
+      "name": "AKD Securities (AKD Trade)",
+      "tiers": [{"max_price": 4.99, "per_share": 0.03, "pct": 0.15},
+                {"max_price": null, "per_share": 0.05, "pct": 0.15}],
+      "confidence": "published (third-party summary, June 2026); AKD's own fee page shows an older per-share slab",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+    },
+    "mra": {
+      "name": "MRA Securities",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.15}],
+      "confidence": "published (third-party summary, June 2026)",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+    },
+    "js-global": {
+      "name": "JS Global Capital (JS InvestPro)",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.15}],
+      "confidence": "published as 'Rs 0.03/share or 0.15% or agreed rate' (third-party summary, June 2026)",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+    },
+    "khanani": {
+      "name": "Muhammad Munir Muhammad Ahmed Khanani Securities (MMK Trade)",
+      "tiers": [{"max_price": 20, "per_share": 0.03, "pct": 0.0},
+                {"max_price": null, "per_share": 0.0, "pct": 0.15}],
+      "confidence": "published (third-party summary, June 2026)",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+    },
+    "ktrade": {
+      "name": "KTrade Securities (KASB)",
+      "tiers": [{"max_price": 20, "per_share": 0.03, "pct": 0.0},
+                {"max_price": null, "per_share": 0.0, "pct": 0.15}],
+      "monthly_fee": 50,
+      "confidence": "published (third-party summary, June 2026); plus PKR 50/month SMS fee",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+    },
+    "topline": {
+      "name": "Topline Securities (Vtrade)",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.15}],
+      "confidence": "published as 'Rs 0.03/share or 0.15% or agreed rate' (third-party summary, June 2026)",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+    },
+    "scs": {
+      "name": "Standard Capital Securities (SCS Trade)",
+      "tiers": [{"max_price": 10, "per_share": 0.03, "pct": 0.0},
+                {"max_price": null, "per_share": 0.05, "pct": 0.15}],
+      "confidence": "published (third-party summary, June 2026)",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+    },
+    "optimus": {
+      "name": "Optimus Capital Management (Optimus Trade)",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.15}],
+      "confidence": "broker's own page, citing PSX notice PSX/N-1258",
+      "source": "https://optimustrade.pk/commission-structure/"
+    },
+    "arif-habib": {
+      "name": "Arif Habib Limited (AHL eTrade)",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.15}],
+      "confidence": "assumed: reported to apply the PSX minimum; rate confirmed after account opening",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+    },
+    "next-capital": {
+      "name": "Next Capital",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.15}],
+      "confidence": "assumed PSX minimum: no published equity rate",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan",
+      "notes": "Finqalab is Next Capital's app: accounts opened through Finqalab pay the finqalab preset's rate."
+    },
+    "finqalab": {
+      "name": "Finqalab (app of Next Capital Ltd, TREC #048)",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.25}],
+      "account_opening_fee": 476,
+      "order_types": ["market", "limit", "stop-loss (trigger + limit; sell or buy)"],
+      "stop_validity": "day",
+      "confidence": "reported: 0.25% of value or Rs 0.03/share, whichever is higher (so Rs 0.03/share below Rs 12); Finqalab's announcement and users' reports, Aug 2025 - Mar 2026. Not on finqalab.com: check your contract note",
+      "source": "https://zkhalid.com/blog/the-curious-case-of-finqalab/",
+      "sources": [
+        "https://zkhalid.com/blog/the-curious-case-of-finqalab/",
+        "https://invest.abid.work/blog/brokerage-platforms-pakistan-retail-investing",
+        "https://x.com/najam_ali/status/1961096207666987486",
+        "https://finqalab.com/faqs/",
+        "https://finqalab.com/terms-and-conditions/",
+        "https://www.youtube.com/watch?v=IV55QTViC-U"
+      ],
+      "notes": "One-time NCCPL account fee PKR 476 on the first deposit (finqalab.com FAQs). Orders: market, limit and stop-loss with a trigger price and a limit price (a sell stop protects a holding, a buy stop enters on a breakout). Stop-loss orders are valid for one day only (Finqalab's stop-loss tutorial, Dec 2024), so they must be placed again every trading day. No public API for placing orders."
+    },
+    "sherman": {
+      "name": "Sherman Securities",
+      "tiers": [{"max_price": null, "per_share": 0.03, "pct": 0.15}],
+      "confidence": "assumed PSX minimum: no published rate",
+      "source": "https://psxstocksanalyzer.com/learn/top-psx-brokers-pakistan"
+    }
+  },
+  "_as_of": "2026-10-26"
+}

@@ -1,7 +1,20 @@
 {
   "name": "psx-mufap",
-  "description": "Rank PSX stocks and MUFAP mutual funds, backtest strategies, and paper trade in PKR.",
-  "version": "1.0.0",
+  "description": "PSX and MUFAP: rank, backtest, paper trade, track your portfolio, plus an 11-skill PSX day-trading desk (scanner, news, entry, exit, time machine, risk, budget, tickets, alerts, analyst, insiders). Never places orders.",
+  "version": "2.0.0",
   "license": "MIT",
-  "skills": ["./psx-mufap"]
+  "skills": [
+    "./psx-mufap",
+    "./psx-scanner",
+    "./psx-news",
+    "./psx-entry",
+    "./psx-exit",
+    "./psx-timemachine",
+    "./psx-risk",
+    "./psx-budget",
+    "./psx-broker",
+    "./psx-alerts",
+    "./psx-analyst",
+    "./psx-insiders"
+  ]
 }

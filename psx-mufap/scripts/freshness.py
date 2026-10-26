@@ -47,10 +47,8 @@ def pk_now():
 
 
 def market_open(now=None):
-    """Roughly whether PSX's regular session is on (Mon-Fri, 09:15-16:45 Pakistan time, which
-    covers Friday's split session). Only used to label quotes and pace the dashboard."""
-    now = now or pk_now()
-    return now.weekday() < 5 and dt.time(9, 15) <= now.time() <= dt.time(16, 45)
+    """Whether PSX's regular market is trading now (common.market_state; Friday has a lunch break)."""
+    return C.market_state(now or pk_now()) == "open"
 
 
 def last_session(now=None):

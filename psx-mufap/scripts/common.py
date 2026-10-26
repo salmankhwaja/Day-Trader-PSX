@@ -13,6 +13,7 @@ PKM_HOME or --home says otherwise. It is yours alone:
 nothing in it belongs in the code repository.
 """
 import csv
+import datetime as dt
 import json
 import math
 import os
@@ -157,6 +158,63 @@ def http_get(url, timeout=30, data=None):
         except urllib.error.HTTPError as e:
             if attempt == 1 or e.code not in (401, 403, 404, 419):
                 raise
+
+
+# ---------- the PSX clock (Pakistan time, UTC+5, no daylight saving) ----------
+# Regular market, from PSX's trading-hours page: Monday-Thursday open 09:32-15:30 (pre-open 09:15);
+# Friday two sessions, 09:17-12:00 and 14:32-16:30 (pre-opens 09:00 and 14:15). Holidays aside.
+PSX_SESSIONS = {d: [("09:32", "15:30")] for d in range(4)}
+PSX_SESSIONS[4] = [("09:17", "12:00"), ("14:32", "16:30")]
+PSX_PRE_OPEN = {d: "09:15" for d in range(4)}
+PSX_PRE_OPEN[4] = "09:00"
+# Scrip-level price limits ("circuit breakers"): a share can't trade more than this far from the
+# previous day's close in a day. Defaults: 10%, or Rs 1 when that is wider; set circuit_limit_pct /
+# circuit_floor_rs in config.json if PSX changes them.
+CIRCUIT_PCT, CIRCUIT_FLOOR = 10.0, 1.0
+
+
+def pk_now():
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(hours=5)
+
+
+def _at(day, hhmm):
+    h, m = map(int, hhmm.split(":"))
+    return dt.datetime.combine(day, dt.time(h, m))
+
+
+def sessions(day):
+    """[(open, close), ...] datetimes for a calendar day (empty at weekends)."""
+    return [(_at(day, a), _at(day, b)) for a, b in PSX_SESSIONS.get(day.weekday(), [])]
+
+
+def market_state(now=None):
+    """'open', 'pre-open', 'break' (Friday lunch), 'closed' (before or after), or 'weekend'."""
+    now = now or pk_now()
+    ss = sessions(now.date())
+    if not ss:
+        return "weekend"
+    for i, (a, b) in enumerate(ss):
+        if a <= now < b:
+            return "open"
+        if i == 0 and _at(now.date(), PSX_PRE_OPEN[now.weekday()]) <= now < a:
+            return "pre-open"
+        if i > 0 and ss[i - 1][1] <= now < a:
+            return "break"
+    return "closed"
+
+
+def close_time(day):
+    """When the day's trading ends (the last session's close), or None at weekends."""
+    ss = sessions(day)
+    return ss[-1][1] if ss else None
+
+
+def circuit_band(ldcp, cfg=None):
+    """(lowest, highest) price a share may trade at today, from the last day's close."""
+    pct = float((cfg or {}).get("circuit_limit_pct", CIRCUIT_PCT))
+    floor = float((cfg or {}).get("circuit_floor_rs", CIRCUIT_FLOOR))
+    w = max(ldcp * pct / 100.0, floor)
+    return round(max(ldcp - w, 0.01), 2), round(ldcp + w, 2)
 
 
 # ---------- price files ----------

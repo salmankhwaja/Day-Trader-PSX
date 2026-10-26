@@ -18,7 +18,8 @@ sys.path.insert(0, HERE)
 import common as C  # noqa: E402
 
 TOOLS = ["pkdata", "rank", "backtest", "propose", "paper", "portfolio", "funds", "dashboard", "daily", "risk", "sip",
-         "watchlist", "signals"]
+         "watchlist", "signals", "scanner", "news", "entry", "exitplan", "timemachine", "budget", "broker", "alerts",
+         "analyst", "insiders", "intraday"]
 
 
 def call(tool, *args):
@@ -224,6 +225,58 @@ def settings():
     print("Other settings (costs, stops, tax) are in %s; edit it with any text editor." % os.path.join(h, "config.json"))
 
 
+def desk_menu():
+    print("The day-trading desk (one trade: a -> h; i-k any time). Most people who day trade lose money.")
+    print("a) scan for setups      b) news on them        c) entry: has it triggered?   d) exit plan: stop, target")
+    print("e) time machine: odds   f) budget: how many    g) risk check: PASS/BLOCK     h) tickets / record a fill")
+    print("i) alerts               j) results (analyst)   k) insiders' dealings")
+    c = (ask("Choose", "a") or "a").lower()
+    if c == "a":
+        when = ask("Before the open (d)aily, during the session (o)pening-range, or (m)overs now", "d")
+        if when.startswith("o"):
+            call("scanner", "orb")
+        elif when.startswith("m"):
+            call("scanner", "movers")
+        else:
+            call("scanner", "daily", fresh())
+    elif c == "b":
+        call("news", *(["--setups"] if yes("The scanner's shares (no = watchlist and holdings)", True) else []))
+    elif c == "c":
+        call("entry", "check", ask("Symbol", required=True).upper())
+    elif c == "d":
+        sym = ask("Symbol", required=True).upper()
+        args = ["plan", sym, "--write"] + opt("--stop", ask("Stop (blank = from the setup; or-mid, vol, 5%, a price)", ""))
+        args += opt("--target", ask("Target (blank = your style's; 2R or a price)", ""))
+        args += opt("--style", ask("day or swing (blank = from the setup)", ""))
+        call("exitplan", *args)
+    elif c == "e":
+        call("timemachine", "run", "--write")
+    elif c == "f":
+        call("budget", "--write", *opt("--max-loss", ask("Max loss on this trade in rupees (blank = your style's)", "")))
+    elif c == "g":
+        call("risk", "check")
+    elif c == "h":
+        call("broker", "show")
+        oid = ask("Order that filled (e.g. E1; blank = none yet)", "")
+        if oid:
+            call("broker", "filled", oid, "--price", ask("Fill price", required=True))
+    elif c == "i":
+        what = ask("(p)lan's stop/target/flat-by, (h)oldings' stops, or a (s)ymbol", "p")
+        if what.startswith("p"):
+            call("alerts", "add", "--from-plan")
+        elif what.startswith("h"):
+            call("alerts", "add", "--from-holdings")
+        else:
+            sym = ask("Symbol", required=True).upper()
+            call("alerts", "add", sym, *opt("--above", ask("Ring at or above (blank = skip)", "")),
+                 *opt("--below", ask("Ring at or below (blank = skip)", "")))
+        call("alerts", "list")
+    elif c == "j":
+        call("analyst", *ask("Symbols", required=True).upper().replace(",", " ").split())
+    elif c == "k":
+        call("insiders")
+
+
 def second_opinion():
     print("PakistaniBulls publishes candlestick-pattern buy/sell signals. Their terms allow one copy for your own use.")
     print("a) import a signal list page I saved   b) download their public list   c) show what's on file")
@@ -300,6 +353,7 @@ MENU = [
     ("SIP calculator: plan or goal", sip_menu),
     ("Check one share: verdict + price calculator", check_share),
     ("Second opinion: PakistaniBulls buy/sell signals", second_opinion),
+    ("Day-trading desk: scan, entry, exit, odds, size, risk, tickets, alerts", desk_menu),
 ]
 
 

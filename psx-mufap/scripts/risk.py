@@ -9,6 +9,8 @@
   risk.py unset KEY                     back to your profile's value
   risk.py position --entry 300 --stop 280 [--capital 1000000] [--risk-pct 1] [--target 340]
                                         how many shares, what you could lose and gain
+  risk.py check                         psx-risk: PASS or BLOCK each order in trader/orders.json
+                                        against your limits, before it can become a ticket
   risk.py portfolio                     your portfolio's risk today: money at risk to the stops,
                                         volatility, value-at-risk, beta, concentration,
                                         allocation vs your target
@@ -391,6 +393,182 @@ def cmd_portfolio(a, h, cfg):
     return 0
 
 
+# ------------------------------------------------------------------ psx-risk: the order gate
+
+def _today_activity(h, today):
+    """(entries confirmed today, rupees lost on sales today) from the broker tickets and the ledger."""
+    import desk
+    t = desk.read(h, "tickets.json", {}) or {}
+    entries = sum(1 for f in t.get("fills", []) if f.get("date") == today and f.get("role") == "entry")
+    lost = 0.0
+    try:
+        import portfolio as PF
+        _, sales = PF.lots(PF.load(h))
+        lost = -sum(x["pnl"] for x in sales if x["date"] == today and x["pnl"] < 0)
+    except Exception:  # noqa: BLE001
+        pass
+    return entries, lost
+
+
+def check_orders(h, cfg, orders, now=None, fresh=None):
+    """[{id, fingerprint, verdict PASS/BLOCK, reasons, warnings}] for each order, in order, as if
+    each passed entry had filled (so a batch can't sneak past a limit together)."""
+    import desk
+    import portfolio as PF
+    now = now or C.pk_now()
+    today = now.date().isoformat()
+    lg = PF.load(h)
+    cap, cash = desk.capital(h, cfg)
+    held = desk.held(h)
+    entries_today, lost_today = _today_activity(h, today)
+    max_trades = int(desk.setting(cfg, "max_trades_per_day"))
+    day_limit = desk.setting(cfg, "daily_loss_limit_pct") * cap if cap else None
+    risk_cap = desk.setting(cfg, "risk_per_trade") * cap if cap else None
+    min_rr = desk.setting(cfg, "min_reward_risk")
+    lot = int(cfg.get("lot_size") or 1)
+    state = C.market_state(now)
+    close = C.close_time(now.date())
+    cutoff = desk.setting(cfg, "entry_cutoff_min")
+    by_id = {o.get("id"): o for o in orders}
+    passed, out, open_risk = set(), [], 0.0
+    pending = dict(held)
+    for o in orders:
+        reasons, warns = [], []
+        sym, side, typ = (o.get("symbol") or "").upper(), (o.get("side") or "").upper(), (o.get("type") or "")
+        qty = o.get("qty")
+        b = lg["brokers"].get(o.get("broker") or lg.get("default_broker") or "") or None
+        # format
+        if not sym or side not in ("BUY", "SELL"):
+            reasons.append("needs a symbol and a side (BUY or SELL)")
+        if not isinstance(qty, int) or qty <= 0 or qty % lot:
+            reasons.append("quantity must be a whole number of shares (lot %d)" % lot)
+        if typ not in ("market", "limit", "stop-loss"):
+            reasons.append("order type must be market, limit or stop-loss")
+        if typ in ("limit", "stop-loss") and not o.get("limit"):
+            reasons.append("a %s order needs a limit price" % typ)
+        if typ == "stop-loss" and not o.get("trigger"):
+            reasons.append("a stop-loss needs a trigger price")
+        for k in ("limit", "trigger"):
+            v = o.get(k)
+            if v is not None and abs(round(v * 100) - v * 100) > 1e-6:
+                reasons.append("%s %.4f isn't on PSX's 1-paisa price steps" % (k, v))
+        if typ == "stop-loss" and o.get("trigger") and o.get("limit"):
+            if side == "SELL" and o["limit"] > o["trigger"]:
+                reasons.append("a sell stop-loss's limit must be at or below its trigger")
+        # price limits for today
+        _, ldcp = desk.last_close(h, sym)
+        if fresh and sym in fresh and fresh[sym].get("ldcp"):
+            ldcp = fresh[sym]["ldcp"]
+        if ldcp:
+            lo, hi = C.circuit_band(ldcp, cfg)
+            for k in ("limit", "trigger"):
+                v = o.get(k)
+                if v is not None and not (lo <= v <= hi):
+                    if o.get("role") in ("target", "stop") and o.get("parent"):
+                        warns.append("%s %.2f is outside today's price limits %.2f-%.2f: it can't fill today" % (k, v, lo, hi))
+                    else:
+                        reasons.append("%s %.2f is outside today's price limits %.2f-%.2f" % (k, v, lo, hi))
+        exit_ = side == "SELL" and (o.get("parent") in passed or pending.get(sym, 0) >= (qty or 0))
+        if side == "SELL" and not exit_:
+            if o.get("parent") and o["parent"] not in passed:
+                reasons.append("its buy (%s) didn't pass, so there would be nothing to sell" % o["parent"])
+            else:
+                reasons.append("selling %s shares of %s you don't hold: no short selling" % (qty, sym))
+        if side == "BUY":
+            style = o.get("style") or "swing"
+            stop = next((x for x in orders if x.get("parent") == o.get("id") and x.get("role") == "stop"), None)
+            tgt = next((x for x in orders if x.get("parent") == o.get("id") and x.get("role") == "target"), None)
+            entry = float(o.get("limit") or (fresh or {}).get(sym, {}).get("current") or ldcp or 0)
+            if fresh and sym in fresh and fresh[sym].get("current", 0) > entry and typ == "market":
+                entry = fresh[sym]["current"]
+            if not stop:
+                reasons.append("no stop-loss attached: every entry needs one (psx-exit, psx-budget)")
+            elif entry and qty:
+                loss = (entry - stop["trigger"]) * qty + sum(PF.estimate_charges(b, qty, entry, "buy")) + \
+                    sum(PF.estimate_charges(b, qty, stop["trigger"], "sell"))
+                if risk_cap is not None and loss > risk_cap * 1.001:
+                    reasons.append("loss at the stop %s is over your max loss per trade %s (risk_per_trade)" % (
+                        C.fmt_pkr(loss), C.fmt_pkr(risk_cap)))
+                if tgt:
+                    gain = (tgt["limit"] - entry) * qty - sum(PF.estimate_charges(b, qty, entry, "buy")) - \
+                        sum(PF.estimate_charges(b, qty, tgt["limit"], "sell"))
+                    rr = gain / loss if loss > 0 else 0
+                    if rr < min_rr:
+                        reasons.append("reward-to-risk after charges %.2f is under your minimum %.1f (min_reward_risk)" % (rr, min_rr))
+                if day_limit is not None and lost_today + open_risk + loss > day_limit * 1.001:
+                    reasons.append("today's losses %s plus open risk %s would pass your daily loss limit %s" % (
+                        C.fmt_pkr(lost_today), C.fmt_pkr(open_risk + loss), C.fmt_pkr(day_limit)))
+                open_risk_add = loss
+            else:
+                open_risk_add = 0
+            value = entry * (qty or 0)
+            if cap and value > desk.setting(cfg, "max_position_pct") * cap * 1.001 + entry:
+                reasons.append("position %s is over max_position_pct of your capital" % C.fmt_pkr(value))
+            if cash is not None and value + sum(PF.estimate_charges(b, qty or 0, entry, "buy")) > cash:
+                reasons.append("costs more than your recorded cash %s (PSX settles T+1: the money must be there)" % C.fmt_pkr(cash))
+            if sym not in held and len([s for s in pending if pending[s] > 0]) >= int(desk.setting(cfg, "max_holdings")):
+                reasons.append("you already hold %d shares, the most your style allows (max_holdings)" % len(held))
+            if style == "day":
+                if entries_today >= max_trades:
+                    reasons.append("%d day-trade entries today already: max_trades_per_day is %d" % (entries_today, max_trades))
+                if state not in ("open", "pre-open"):
+                    reasons.append("the market is %s: no new day-trade entries" % state)
+                elif close and now > close - dt.timedelta(minutes=cutoff):
+                    reasons.append("within %d minutes of the close: no new day-trade entries (entry_cutoff_min)" % cutoff)
+            elif state not in ("open", "pre-open"):
+                warns.append("the market is %s: the order would wait for the next session" % state)
+            if not reasons:
+                passed.add(o.get("id"))
+                entries_today += 1 if style == "day" else 0
+                open_risk += open_risk_add
+                pending[sym] = pending.get(sym, 0) + (qty or 0)
+                if cash is not None:
+                    cash -= value
+        else:
+            if not reasons:
+                passed.add(o.get("id"))
+        out.append({"id": o.get("id"), "symbol": sym, "side": side, "type": typ, "qty": qty,
+                    "fingerprint": desk.fingerprint(o), "verdict": "BLOCK" if reasons else "PASS",
+                    "reasons": reasons, "warnings": warns, "exit": bool(exit_)})
+    return out
+
+
+def cmd_check(a, h, cfg):
+    import desk
+    doc = desk.read(h, a.file if a.file else "orders.json") if not (a.file and os.path.isabs(a.file)) else None
+    if a.file and os.path.isabs(a.file):
+        with open(a.file) as f:
+            doc = json.load(f)
+    if not doc or not doc.get("orders"):
+        sys.exit("no orders to check: psx-budget writes them (budget.py --write)")
+    fresh = None
+    if a.live:
+        import freshness as F
+        try:
+            fresh = F.fetch_live(h)["quotes"]
+        except Exception as e:  # noqa: BLE001
+            print("Live prices failed (%s): checking against the last close." % e)
+    res = check_orders(h, cfg, doc["orders"], desk.now(a.now), fresh)
+    if not a.no_write:
+        desk.write(h, "risk.json", {"made": desk.now(a.now).isoformat(timespec="minutes"), "verdicts": res})
+    if a.json:
+        print(json.dumps(res, indent=1))
+        return 0
+    cap, _ = desk.capital(h, cfg)
+    print("RISK CHECK (%s style; capital %s; market %s)" % (cfg.get("risk_profile"), C.fmt_pkr(cap), C.market_state(desk.now(a.now))))
+    for r in res:
+        print("  %-5s %s %s %s x%s: %s" % (r["id"], r["verdict"], r["side"], r["symbol"], r["qty"],
+                                         "; ".join(r["reasons"]) if r["reasons"] else ("exit, always allowed" if r["exit"] else "within your limits")))
+        for w in r["warnings"]:
+            print("        warning: " + w)
+    if any(r["verdict"] == "BLOCK" for r in res):
+        print("A BLOCK is final for that exact order: change the plan or the size, then run psx-budget and psx-risk again.")
+    else:
+        print("All passed. Next: psx-broker shows the tickets to type into your app.")
+    print(desk.DISCLAIMER)
+    return 1 if any(r["verdict"] == "BLOCK" for r in res) else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--home")
@@ -412,6 +590,12 @@ def main(argv=None):
     p.add_argument("--capital", type=float)
     p.add_argument("--risk-pct", type=float, help="percent of capital to risk (default: profile's risk_per_trade)")
     p.add_argument("--target", type=float)
+    p = sub.add_parser("check", help="psx-risk: PASS or BLOCK each order in trader/orders.json")
+    p.add_argument("--file", help="another orders file (default trader/orders.json)")
+    p.add_argument("--live", action="store_true", help="check against live prices (one request)")
+    p.add_argument("--now", help="pin the clock, YYYY-MM-DD HH:MM Pakistan time")
+    p.add_argument("--no-write", action="store_true")
+    p.add_argument("--json", action="store_true")
     p = sub.add_parser("portfolio")
     p.add_argument("--json", action="store_true")
     F.add_args(p)
@@ -419,7 +603,7 @@ def main(argv=None):
     h = C.home(a.home)
     cfg = C.load_config(h)
     return {"quiz": cmd_quiz, "profile": cmd_profile, "settings": cmd_settings, "set": cmd_set, "unset": cmd_unset,
-            "position": cmd_position, "portfolio": cmd_portfolio}[a.cmd](a, h, cfg)
+            "position": cmd_position, "portfolio": cmd_portfolio, "check": cmd_check}[a.cmd](a, h, cfg)
 
 
 if __name__ == "__main__":

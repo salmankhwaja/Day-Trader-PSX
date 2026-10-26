@@ -181,7 +181,102 @@ def parse_company(text, symbol=None):
             p.update(parse_payout_details(p["details"]))
             payouts.append(p)
     c["payouts"] = payouts
+    c["announcements"] = parse_announcements(text)
+    c["financials"] = parse_financials(text)
     return c
+
+
+# ------------------------------------------------------------------ announcements and financials
+
+# What an announcement is about, from its title (first match wins; checked in this order).
+ANNOUNCE_TAGS = [
+    ("results", r"financial result|quarterly report|half yearly report|annual report|accounts"),
+    ("payout", r"dividend|bonus|right(?:s)? (?:issue|shares)|book closure|entitlement|payout"),
+    ("board", r"board meeting|closed period"),
+    ("meeting", r"general meeting|\bagm\b|\beogm\b|\begm\b|resolutions passed"),
+    ("deal", r"acqui|merger|amalgamation|scheme of arrangement|tender offer|public offer|delist|buy-?back"),
+    ("material", r"material information|price sensitive"),
+]
+
+
+INSIDER_WHO = r"director|chief executive|\bceo\b|\bcfo\b|executive|sponsor|substantial|beneficial|insider|disclosure of interest"
+INSIDER_WHAT = (r"transaction|purchase|sale\b|selling|buying|acqui|dispos|dealing|disclosure of interest|"
+                r"change in (?:share)?holding|section 102")
+
+
+def classify(title, tab=None):
+    low = (title or "").lower()
+    if re.search(INSIDER_WHO, low) and re.search(INSIDER_WHAT, low):
+        return "insider"
+    for tag, rx in ANNOUNCE_TAGS:
+        if re.search(rx, low):
+            return tag
+    if tab == "Financial Results":
+        return "results"
+    if tab == "Board Meetings":
+        return "board"
+    return "other"
+
+
+def _mdy(s):
+    s = _text(s)
+    for f in ("%b %d, %Y", "%B %d, %Y", "%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return dt.datetime.strptime(s, f).date().isoformat()
+        except ValueError:
+            pass
+    return None
+
+
+def parse_announcements(text):
+    """[{date, title, tab, tag, pdf}] from the Announcements section of a company page (newest first)."""
+    i = text.find('id="announcements"')
+    if i < 0:
+        return []
+    end = text.find('id="financials"', i)
+    seg = text[i:end if end > 0 else i + 200000]
+    out = []
+    for m in re.finditer(r'class="tabs__panel[^"]*"\s+data-name="([^"]+)"(.*?)</table>', seg, flags=re.S):
+        tab = m.group(1)
+        for cells in _table_rows(m.group(2)):
+            if len(cells) < 2:
+                continue
+            title = _text(cells[1])
+            pdf = re.search(r'href="([^"]+\.pdf)"', cells[2] if len(cells) > 2 else "")
+            out.append({"date": _mdy(cells[0]), "title": title, "tab": tab, "tag": classify(title, tab),
+                        "pdf": pdf.group(1) if pdf else None})
+    out.sort(key=lambda a: a["date"] or "", reverse=True)
+    return out
+
+
+def parse_financials(text):
+    """{"annual": {"periods": [...], "Sales": [...], "Profit after Taxation": [...], "EPS": [...]},
+    "quarterly": {...}, "ratios": {...}} in thousands of rupees (EPS in rupees), newest period first."""
+    out = {}
+    i = text.find('id="financials"')
+    if i >= 0:
+        seg = text[i:text.find('id="ratios"', i) if text.find('id="ratios"', i) > 0 else i + 100000]
+        for m in re.finditer(r'class="tabs__panel[^"]*"\s+data-name="([^"]+)"(.*?)</table>', seg, flags=re.S):
+            out[m.group(1).lower()] = _fin_table(m.group(2))
+    j = text.find('id="ratios"')
+    if j >= 0:
+        out["ratios"] = _fin_table(text[j:text.find("</table>", j)])
+    return out
+
+
+def _fin_table(fragment):
+    periods = [_text(h) for h in re.findall(r"<th\b[^>]*>(.*?)</th>", fragment, flags=re.S)][1:]
+    t = {"periods": periods}
+    for cells in _table_rows(fragment):
+        label = _text(cells[0])
+        vals = []
+        for c in cells[1:]:
+            v = _text(c)
+            neg = v.startswith("(") and v.endswith(")")
+            n = _num(v.strip("()"))
+            vals.append(-n if (neg and n is not None) else n)
+        t[label] = vals
+    return t
 
 
 def company_path(h, symbol):

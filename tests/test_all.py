@@ -1181,21 +1181,196 @@ class TestFinqalabAndTickets(Market):
         self.assertEqual(dashboard.build_data(self.h, self.cfg)["mine"]["tickets"][0]["symbol"], tk[0]["symbol"])
 
 
-class TestUSPack(unittest.TestCase):
-    """The 11 US day-trading skills ship with this repo, listed in the marketplace and the README."""
+class TestPSXSkills(unittest.TestCase):
+    """Eleven psx-* desk skills, each a complete folder with an up-to-date copy of the shared code."""
+    NAMES = ["psx-scanner", "psx-news", "psx-entry", "psx-exit", "psx-timemachine", "psx-risk", "psx-budget",
+             "psx-broker", "psx-alerts", "psx-analyst", "psx-insiders"]
 
-    def test_eleven_skills_present_and_documented(self):
-        base = os.path.join(ROOT, "us-day-trader")
-        skills = sorted(d for d in os.listdir(base) if os.path.isfile(os.path.join(base, d, "SKILL.md")))
-        self.assertEqual(len(skills), 11)
+    def test_folders_manifest_readme_and_sync(self):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import sync_skills
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(sync_skills.main(["--check"]), 0, "run python3 tools/sync_skills.py")
+        with open(os.path.join(ROOT, ".claude-plugin", "plugin.json")) as f:
+            listed = json.load(f)["skills"]
         with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
             readme = f.read()
-        for d in skills:
-            self.assertIn("`%s`" % d, readme)
-        with open(os.path.join(ROOT, ".claude-plugin", "marketplace.json")) as f:
-            m = json.load(f)
-        self.assertIn("./us-day-trader", [p["source"] for p in m["plugins"]])
-        self.assertTrue(os.path.exists(os.path.join(base, "LICENSE")))
+        for n in self.NAMES:
+            with open(os.path.join(ROOT, n, "SKILL.md"), encoding="utf-8") as f:
+                text = f.read()
+            self.assertTrue(text.startswith("---\nname: %s\ndescription: " % n), n)
+            desc = text.split("description: ", 1)[1].split("\n", 1)[0]
+            self.assertLessEqual(len(desc), 1024, n)
+            self.assertIn("Not financial advice", text, n)
+            self.assertIn("./" + n, listed)
+            self.assertIn("`%s`" % n, readme)
+            for tool in sync_skills.SKILLS[n]:
+                self.assertTrue(os.path.exists(os.path.join(ROOT, n, "scripts", tool)), (n, tool))
+        self.assertFalse(os.path.exists(os.path.join(ROOT, "us-day-trader")))
+
+
+import desk as DK  # noqa: E402
+import intraday as IN  # noqa: E402
+import scanner as SC  # noqa: E402
+import news as NW  # noqa: E402
+import entry as EN  # noqa: E402
+import exitplan as EX  # noqa: E402
+import timemachine as TM  # noqa: E402
+import budget as BU  # noqa: E402
+import broker as BR  # noqa: E402
+import alerts as AL  # noqa: E402
+import analyst as AN  # noqa: E402
+import insiders as INS  # noqa: E402
+import datetime as _dt  # noqa: E402
+
+INT = os.path.join(FIX, "psx-int-SYN07-2026-10-26.json")
+
+
+class TestDesk(Market):
+    def setUp(self):
+        super().setUp()
+        run(PF.main, ["--home", self.h, "broker", "add", "AKD", "--preset", "akd", "--default"])
+        run(PF.main, ["--home", self.h, "cash", "deposit", "1000000"])
+        IN.fetch(self.h, "SYN07", INT)  # today's trades for SYN07, cached for 2026-10-26
+
+    def at(self, hhmm):
+        return _dt.datetime.fromisoformat("2026-10-26 " + hhmm)
+
+    def test_clock_and_price_limits(self):
+        self.assertEqual(C.market_state(self.at("09:20")), "pre-open")
+        self.assertEqual(C.market_state(self.at("10:00")), "open")
+        self.assertEqual(C.market_state(_dt.datetime(2026, 10, 30, 12, 30)), "break")  # Friday lunch
+        self.assertEqual(C.market_state(_dt.datetime(2026, 10, 31, 11, 0)), "weekend")
+        self.assertEqual(C.close_time(_dt.date(2026, 10, 30)).strftime("%H:%M"), "16:30")
+        self.assertEqual(C.circuit_band(300), (270.0, 330.0))
+        self.assertEqual(C.circuit_band(5), (4.0, 6.0))  # Rs 1 floor
+
+    def test_company_page_announcements_and_financials(self):
+        with open(os.path.join(FIX, "psx-company-OGDC-full.html")) as f:
+            c = P.parse_company(f.read(), "OGDC")
+        self.assertEqual(c["announcements"][0]["date"], "2026-10-23")
+        self.assertEqual(c["announcements"][0]["tag"], "board")
+        self.assertTrue(c["announcements"][0]["pdf"].endswith(".pdf"))
+        self.assertEqual(c["financials"]["annual"]["EPS"][0], 56.35)
+        self.assertEqual(c["financials"]["quarterly"]["periods"][-1], "Q3 2025")
+        self.assertEqual(c["financials"]["ratios"]["EPS Growth (%)"][1], -18.71)  # (18.71) is negative
+        self.assertEqual(P.classify("Election of Directors"), "other")
+        self.assertEqual(P.classify("Purchase of shares by CEO"), "insider")
+
+    def test_intraday_bars_and_opening_range(self):
+        ticks = IN.load(self.h, "SYN07", "2026-10-26")
+        self.assertTrue(ticks)
+        bars = IN.to_bars(ticks, 5)
+        self.assertEqual(bars[0]["t"], "09:32")
+        orr = IN.opening_range(bars, 15)
+        self.assertEqual(orr["ends"], "09:47")
+        self.assertGreaterEqual(orr["high"], max(b["high"] for b in bars[:3]))
+
+    def test_scanner_setups(self):
+        rows = rows_from([100.0] * 40)
+        for r in rows:
+            r["volume"] = 1000
+        rows[-1].update(close=105.0, volume=5000)
+        kinds = {s["setup"] for s in SC.daily_setups(rows)}
+        self.assertIn("breakout", kinds)
+        self.assertIn("surge", kinds)
+        rc, out = run(SC.main, ["--home", self.h, "orb", "SYN07", "--now", "2026-10-26 10:30", "--cached"])
+        st = DK.read(self.h, "setups.json")
+        self.assertEqual(st["mode"], "orb")
+        self.assertEqual(st["setups"][0]["symbol"], "SYN07")
+
+    def test_entry_waiting_triggered_expired(self):
+        run(SC.main, ["--home", self.h, "orb", "SYN07", "--now", "2026-10-26 10:30", "--cached"])
+        st = [EN.evaluate(self.h, self.cfg, "SYN07", "orb", now=self.at(t))["status"] for t in ("09:40", "10:05", "11:30")]
+        self.assertEqual(st, ["waiting", "triggered", "expired"])
+        self.assertEqual(EN.evaluate(self.h, self.cfg, "SYN07", now=self.at("15:00"))["status"], "expired")
+
+    def test_plan_budget_risk_tickets_fill_flatten(self):
+        run(SC.main, ["--home", self.h, "orb", "SYN07", "--now", "2026-10-26 10:30", "--cached"])
+        plan = EX.make_plan(self.h, self.cfg, "SYN07", stop="or-low", target="3R", now=self.at("10:30"))
+        self.assertEqual(plan["style"], "day")
+        self.assertEqual(plan["flat_by"], "15:20")
+        self.assertLess(plan["stop"], plan["entry"])
+        DK.write(self.h, "plan.json", plan)
+        r = BU.size(self.h, self.cfg, plan)
+        self.assertGreater(r["qty"], 0)
+        self.assertLessEqual(r["calc"]["loss_at_stop"], r["max_loss"] * 1.001)
+        orders = r["orders"]
+        self.assertEqual([o["id"] for o in orders], ["E1", "E1-SL", "E1-TP"])
+        self.assertLess(orders[1]["limit"], orders[1]["trigger"])
+        v = RK.check_orders(self.h, self.cfg, orders, self.at("10:35"))
+        self.assertEqual([x["verdict"] for x in v], ["PASS"] * 3)
+        late = RK.check_orders(self.h, self.cfg, orders, self.at("15:00"))
+        self.assertEqual(late[0]["verdict"], "BLOCK")  # within entry_cutoff_min of the close
+        self.assertIn("BLOCK", [x["verdict"] for x in RK.check_orders(self.h, self.cfg, orders[:1], self.at("10:35"))])  # no stop
+        short = [{"id": "S1", "symbol": "SYN05", "side": "SELL", "type": "market", "qty": 10}]
+        self.assertIn("short", RK.check_orders(self.h, self.cfg, short, self.at("10:35"))[0]["reasons"][0])
+        wild = [dict(orders[0], limit=round(plan["entry"] * 1.3, 2)), orders[1]]
+        self.assertTrue(any("price limits" in x for x in RK.check_orders(self.h, self.cfg, wild, self.at("10:35"))[0]["reasons"]))
+        DK.write(self.h, "orders.json", dict(r, made="2026-10-26T10:35"))
+        DK.write(self.h, "risk.json", {"verdicts": v})
+        _, st = BR.status(self.h)
+        self.assertTrue(all(x[2] for x in st))
+        changed = dict(r, orders=[dict(orders[0], qty=orders[0]["qty"] + 1)] + orders[1:])
+        DK.write(self.h, "orders.json", changed)
+        self.assertFalse(BR.status(self.h)[1][0][2])  # changed since the check: not READY
+        DK.write(self.h, "orders.json", dict(r, made="2026-10-26T10:35"))
+        run(BR.main, ["--home", self.h, "filled", "E1", "--price", str(plan["entry"]), "--qty", "100",
+                      "--now", "2026-10-26 10:41"])
+        lg = PF.load(self.h)
+        self.assertEqual(lg["stops"]["SYN07"], plan["stop"])
+        self.assertEqual(lg["entries"][-1]["time"], "10:41")
+        rc, out = run(BR.main, ["--home", self.h, "flatten", "--now", "2026-10-26 15:18"])
+        self.assertIn("SELL 100 SYN07", out)
+        entries, _ = RK._today_activity(self.h, "2026-10-26")
+        self.assertEqual(entries, 1)
+
+    def test_timemachine(self):
+        rows = C.read_prices(C.price_path(self.h, "SYN05"))
+        e = rows[-1]["close"]
+        plan = {"symbol": "SYN05", "style": "swing", "entry": e, "stop": round(e * 0.95, 2), "target": round(e * 1.1, 2),
+                "days": 10, "setup": None}
+        r1 = TM.run(self.h, self.cfg, plan, sims=2000, seed=5)
+        r2 = TM.run(self.h, self.cfg, plan, sims=2000, seed=5)
+        self.assertEqual(r1["simulated"], r2["simulated"])  # the seed makes it repeatable
+        s = r1["simulated"]
+        self.assertAlmostEqual(s["target_first"] + s["stop_first"] + s["still_open"], 1.0)
+        self.assertGreater(r1["history"]["n"], 100)
+        day = TM.run(self.h, self.cfg, dict(plan, symbol="SYN07", style="day", flat_by="15:20", setup="orb"),
+                     sims=100, seed=1, now=self.at("10:30"))
+        self.assertIsNone(day["simulated"])  # one cached session is not enough
+        self.assertIn("needs 10", day["note"])
+
+    def test_alerts_ring_once(self):
+        doc = AL.load(self.h)
+        AL.add_rule(doc, symbol="SYN05", kind="above", level=90.0)
+        AL.add_rule(doc, symbol="SYN05", kind="above", level=90.0)  # the same alert twice is one
+        AL.add_rule(doc, kind="time", time="15:20", date="2026-10-26", note="flat by")
+        AL.save(self.h, doc)
+        self.assertEqual(len(AL.load(self.h)["rules"]), 2)
+        q = {"SYN05": {"current": 91.0, "ldcp": 89.0}}
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(len(AL.check(self.h, self.cfg, self.at("10:00"), q)), 1)
+            self.assertEqual(len(AL.check(self.h, self.cfg, self.at("10:01"), q)), 0)  # rang already
+            self.assertEqual(len(AL.check(self.h, self.cfg, self.at("15:21"), q)), 1)
+
+    def test_analyst_news_insiders(self):
+        with open(os.path.join(FIX, "psx-company-OGDC-full.html")) as f:
+            P.save_company(self.h, P.parse_company(f.read(), "OGDC"))
+        r = AN.analyse(self.h, self.cfg, "OGDC", P.load_company(self.h, "OGDC"))
+        self.assertEqual(r["quarter"]["year_ago_period"], "Q3 2025")
+        self.assertAlmostEqual(r["quarter"]["eps_yoy"], 9.82 / 10.96 - 1)
+        self.assertAlmostEqual(r["year"]["eps_growth"], 56.35 / 39.50 - 1)
+        self.assertTrue(r["latest_results"]["pdf"].endswith(".pdf"))
+        items, upcoming = NW.gather(self.h, ["OGDC"], 10, _dt.date(2026, 10, 26))
+        self.assertEqual(items[0]["title"], "NOTICE OF BOARD MEETING")
+        self.assertTrue(any("board meeting" in u["what"] for u in upcoming))
+        rc, out = run(INS.main, ["--home", self.h, "SYN07", "--from-file", os.path.join(FIX, "psx-company-SYN07-insider.html"),
+                                 "--now", "2026-10-26 10:00"])
+        self.assertIn("TRANSACTION IN SHARES BY DIRECTOR", out)
+        self.assertIn("sell", out)
+        rc, out = run(INS.main, ["--home", self.h, "SYN07", "--cached", "--new", "--now", "2026-10-26 10:00"])
+        self.assertIn("None filed since the last run", out)
 
 
 class TestDocs(unittest.TestCase):

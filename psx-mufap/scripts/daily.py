@@ -87,7 +87,8 @@ def run(home, scope="watchlist", download=True, git=False):
         if not os.path.exists(p("universe.json")) or today.isoweekday() == 1:
             step("universe", "pkdata", ["universe"], home)
         whole = scope == "all" and os.path.exists(p("universe.json"))
-        step("company pages", "pkdata", ["company", "--all" if whole else "--watchlist"], home)
+        # watchlist pages daily (announcements change daily); the whole market weekly
+        step("company pages", "pkdata", ["company", "--all"] if whole else ["company", "--watchlist", "--max-age", "1"], home)
         step("prices", "pkdata", ["psx", "--all" if whole else "--watchlist"], home)
         step("payouts", "pkdata", ["payouts"], home)
         step("mufap", "pkdata", ["mufap"], home)
@@ -104,6 +105,8 @@ def run(home, scope="watchlist", download=True, git=False):
         step("my portfolio: dividends due", "portfolio", ["dividends"], home)
         step("my portfolio: advice", "portfolio", ["advise", "--no-fetch"] + every, home)
         step("my portfolio: funds", "funds", ["review", "--no-fetch"], home)
+    step("desk: today's setups (psx-scanner)", "scanner", ["daily", "--no-fetch"] + every, home)
+    step("desk: new insider dealings (psx-insiders)", "insiders", ["--new", "--cached"], home)
     step("dashboard", "dashboard", ["build"], home)
     step("dashboard (one file)", "dashboard", ["build", "--standalone", p("dashboard.html")], home)
     if git:

@@ -10,9 +10,8 @@ courage, the judgement and the final tap on your broker's app stay with you.
 
 > [!CAUTION]
 > **Research and practice only, not investment advice.** Suggestions are rules applied to past
-> prices. Backtests describe history, not the future. The PSX tools can't place a real order,
-> and that is deliberate. (The [US day-trading pack](#the-us-day-trading-pack-11-more-skills)
-> included alongside has one skill that can, through a broker connector, only after you type yes.)
+> prices. Backtests describe history, not the future. Nothing here can place a real order,
+> and that is deliberate. Most people who day trade lose money.
 
 ---
 
@@ -42,7 +41,7 @@ courage, the judgement and the final tap on your broker's app stay with you.
 9. [Run it on a schedule](#run-it-on-a-schedule)
 10. [Run it on your Android phone](#run-it-on-your-android-phone)
 11. [Use it with Claude](#use-it-with-claude)
-12. [The US day-trading pack: 11 more skills](#the-us-day-trading-pack-11-more-skills)
+12. [The day-trading desk: 11 PSX skills](#the-day-trading-desk-11-psx-skills)
 13. [Settings](#settings)
 14. [Brokers and their charges](#brokers-and-their-charges)
 15. [Your data and privacy](#your-data-and-privacy)
@@ -70,7 +69,7 @@ courage, the judgement and the final tap on your broker's app stay with you.
 | Match it to your nerves | A **risk quiz** that sets your style (conservative to very aggressive); every buy/sell variable follows it, and you can override any one |
 | Know what's at stake | A **risk calculator**: position sizing, money at risk to your stops, value-at-risk, volatility, beta, concentration, allocation vs target |
 | Plan ahead | A **SIP calculator**: monthly investing with yearly step-ups, inflation, and "how much a month for my goal?" |
-| Day-trade US stocks | [Jake Schincariol's 11 day-trading skills](#the-us-day-trading-pack-11-more-skills), included: scanner, news, entry and exit timing, a 10,000-session time machine, risk, budget, broker, alerts, earnings, Pelosi tracker |
+| Day-trade (or swing-trade) PSX shares | [The day-trading desk](#the-day-trading-desk-11-psx-skills): 11 skills, from the scanner (breakouts, flags, opening-range breakouts) through news, entry timing, exit plans, a 10,000-replay time machine, sizing, a risk gate and broker tickets, to alerts, results and insiders' dealings |
 | See it all | A dashboard (overview, screener, compare up to 6 companies, your portfolio, dividends, funds, risk and SIP) that works on a phone, in light and dark |
 
 Plain Python 3.8+ with the standard library only: nothing to `pip install`, nothing to break.
@@ -822,6 +821,7 @@ to see your holdings, buy ideas and the price calculator at today's prices (see
 | You're eyeing one share | **PSX-menu** › **16**: verdict, stop, target, size and the price calculator |
 | You want to change your watchlist | **PSX-menu** › **13**: add, remove, replace, top of a sector |
 | You want a second opinion | **PSX-menu** › **17**: import a PakistaniBulls page you saved, or download their public list |
+| You're day trading | **PSX-menu** › **18**: the desk, from scanner to tickets and alerts |
 | You want to set your risk style | **PSX-menu** › **14** › take the quiz |
 | You're planning monthly investing | **PSX-menu** › **15** SIP calculator, or the dashboard's Risk & SIP tab |
 | You want fresh data now | Home-screen **PSX-update** |
@@ -898,67 +898,98 @@ cp -r Day-Trader-PSX/psx-mufap ~/.claude/skills/
 Or install it as a plugin: `/plugin marketplace add salmankhwaja/Day-Trader-PSX`, then
 `/plugin install psx-mufap@pk-market-skill`.
 
-Want the 11 US day-trading skills too? See the next section.
+Want the 11 day-trading desk skills too? See the next section.
 
 ---
 
-## The US day-trading pack: 11 more skills
+## The day-trading desk: 11 PSX skills
 
-This repo also carries [Jake Schincariol's day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill)
-(MIT, "the Trader skill v2"), unchanged, in [`us-day-trader/`](us-day-trader): eleven Claude
-skills for **day trading US stocks**, built on free public data (Yahoo Finance charts, Nasdaq
-Trader's symbol lists, SEC EDGAR, the House Clerk). Its own README is
-[`us-day-trader/README.md`](us-day-trader/README.md).
+Eleven more Claude skills, one job each, for trading PSX shares by the day or the week. Each is
+its own folder (`psx-scanner/`, `psx-news/`, …) with its own copy of the code, so each installs on
+its own; they share your data folder, and each one picks up where the last left off (the files in
+`trader/` inside it).
 
 | Skill | Job | What it does |
 |---|---|---|
-| `trader-scanner` | Chart scanner | scans thousands of US charts for setups: opening-range breakouts, flags, oversold bounces |
-| `trader-news` | News monitor | breaking headlines and SEC 8-K filings on the stocks you watch |
-| `trader-entry` | Entry timer | watches a setup bar by bar and says when it triggers |
-| `trader-exit` | Exit planner | sets the stop, the target and the flat-by time before you enter |
-| `trader-timemachine` | Time machine | replays the rest of the session 10,000 times from the stock's own bars, plus every past day the setup fired |
-| `trader-risk` | Risk manager | checks each order against your limits: PASS or BLOCK |
-| `trader-budget` | Budget manager | sizes the position to your account and max loss per trade |
-| `trader-broker` | Order executor | shows the ticket; only after your yes, Claude sends it through a broker connector (Alpaca; paper account by default) |
-| `trader-alerts` | Price alerts | rings on the stop, the target and the closing bell |
-| `trader-analyst` | Earnings analyst | reads SEC XBRL filings and sums up what changed |
-| `trader-pelosi` | Pelosi tracker | reads US Congress members' trade disclosures |
+| `psx-scanner` | Chart scanner | before the open: breakouts, flags, oversold bounces, 52-week highs, gaps and volume surges in the daily charts; during the session: opening-range breakouts from today's trades; any time: gainers, losers, most traded |
+| `psx-news` | News monitor | each company's PSX announcements (results, dividends and book closures, board meetings, material information, deals, insiders), tagged, with the PDF; warns about board meetings and book closures ahead |
+| `psx-entry` | Entry timer | watches a setup bar by bar: waiting, triggered (a 5-minute close above the level) or expired (fell back, ran too far, too close to the close) |
+| `psx-exit` | Exit planner | the stop, the target and the flat-by time before you enter; checks PSX's daily price limits and reward-to-risk *after charges* |
+| `psx-timemachine` | Time machine | replays the plan 10,000 times from the share's own past (daily moves for swings, 5-minute bars for day trades) and every past day the same setup fired: target first, stop first, or neither |
+| `psx-budget` | Budget manager | how many shares, so a stop-out costs no more than you chose (charges both ways), as a bracket: limit buy, stop-loss, take-profit |
+| `psx-risk` | Risk manager | PASS or BLOCK for each order: stop attached, max loss, reward-to-risk, daily loss limit, trades per day, entry cutoff, size, cash, holdings cap, price limits, no short selling |
+| `psx-broker` | Order tickets | READY tickets to type into your app (only orders that passed psx-risk, unchanged), the fill recorded into your ledger, and the sell tickets to get flat by the close |
+| `psx-alerts` | Price alerts | rings once at a price, a stop, a target, a % move or a time; one live request covers every share; phone notifications in Termux |
+| `psx-analyst` | Results analyst | latest quarter and year from the company's PSX page: sales, profit, EPS, margins, growth, P/E, payout ratio, and the results PDF |
+| `psx-insiders` | Insider tracker | directors', executives' and sponsors' dealings in their own company's shares, from the disclosure notices on PSX |
 
-**Install them** (alongside `psx-mufap`):
+**One trade, start to finish:**
 
-```bash
-# Claude Code: copy the skill folders
-git clone https://github.com/salmankhwaja/Day-Trader-PSX.git
-cp -r Day-Trader-PSX/psx-mufap Day-Trader-PSX/us-day-trader/trader-* ~/.claude/skills/
-
-# or as plugins: both are in this repo's marketplace
-/plugin marketplace add salmankhwaja/Day-Trader-PSX
-/plugin install psx-mufap@pk-market-skill
-/plugin install day-trader-skill@pk-market-skill
-
-# Claude app: one zip per skill, uploaded under Customize › Skills (from the releases page, or:)
-cd Day-Trader-PSX/us-day-trader && for d in trader-*; do zip -r "../$d.zip" "$d"; done
+```mermaid
+flowchart LR
+    A[psx-scanner] --> B[psx-news] --> C[psx-entry] --> D[psx-exit] --> E[psx-timemachine] --> F[psx-budget] --> G[psx-risk] --> H[psx-broker]
+    H --> I[psx-alerts]
 ```
 
-They keep their working files (config, plans, orders) in a `trader/` folder wherever you run
-them (ignored by git here). The SEC tools want your name and email: put
-`"sec_user_agent": "Your Name you@example.com"` in `trader/config.json`.
+```bash
+cd psx-mufap/scripts                                  # the same tools, all in one place
+python3 scanner.py daily --live                       # 09:00: what's setting up
+python3 news.py --setups                              # anything announced on those?
+python3 scanner.py orb                                # 09:50: opening-range breakouts so far
+python3 entry.py watch OGDC                           # rings when it triggers
+python3 exitplan.py plan OGDC --stop or-mid --target 2R --write   # stop, target, flat by 15:20
+python3 timemachine.py run --write                    # the honest odds
+python3 budget.py --max-loss 2500 --write             # how many shares, as a bracket
+python3 risk.py check --live                          # PASS or BLOCK
+python3 broker.py show                                # the tickets; you type them into your app
+python3 broker.py filled E1 --price 301.60            # it filled: into your portfolio ledger
+python3 alerts.py add --from-plan && python3 alerts.py watch   # stop, target and 15:20
+python3 broker.py flatten                             # near the close: get flat
+python3 analyst.py OGDC MARI                          # results, any time
+python3 insiders.py --days 90                         # insiders' dealings, any time
+python3 intraday.py OGDC                              # today's 5-minute bars
+```
 
-> [!WARNING]
-> **Different market, different rules.** These skills are for **US stocks** (New York times,
-> dollars, FINRA rules). They don't work on PSX shares: Yahoo has no intraday bars for Karachi.
-> And unlike the PSX tools, `trader-broker` can lead to a **real order** at a US broker, only after
-> `trader-risk` passes it and you type yes, with Claude's own "Allow once / Deny" card as a second
-> check. Keep it on paper (`"paper": true`, the default) until you're sure, and set your broker
-> connector to "Needs approval". Most people who day trade lose money.
+Or ask Claude in plain words: *"scan for breakouts"*, *"has LUCK triggered?"*, *"plan a day
+trade in OGDC with the stop at the range middle"*, *"what are the odds?"*, *"size it for a 2,500
+rupee max loss"*, *"risk check"*, *"give me the tickets for Finqalab"*, *"it filled at 301.6"*,
+*"alert me at the stop"*, *"how were MARI's results?"*, *"are insiders selling HUBC?"*. In the
+menu: `pkm.py` › **18 Day-trading desk**.
 
-**Keeping them current.** `us-day-trader/` is a git subtree of the upstream repo, kept unchanged
-so updates come straight in:
+**PSX realities built in:**
+
+| PSX fact | How the desk uses it |
+|---|---|
+| Sessions: Mon-Thu 09:32-15:30 (pre-open 09:15); Fri 09:17-12:00 and 14:32-16:30 | the opening range starts at the open; flat-by is `flat_by_min` before the close; no day-trade entries in the last `entry_cutoff_min`; Friday's lunch break is "break", not "open" |
+| Daily price limit: 10% (or Rs 1) from yesterday's close | targets beyond it can't fill today; orders outside it are blocked; the scanner flags shares locked at a limit |
+| Charges both ways (commission, sales tax, CDC, levies) | every reward-to-risk is shown after charges; tight day trades often fail here |
+| T+1 settlement, no retail short selling | cash must be there; sells only of shares you hold |
+| No public order API on retail apps | tickets you type; Finqalab's stop-losses last one day, so they're re-listed each morning |
+| Free data: daily closes without highs/lows; intraday trades for today only | swing replays use closes (said so); each day's intraday trades are cached, so day-trade replays grow with use (10 sessions needed) |
+
+Their limits are part of your risk style (`risk.py settings`, `risk.py set KEY VALUE`):
+`orb_minutes`, `max_trades_per_day`, `daily_loss_limit_pct`, `min_reward_risk`,
+`entry_cutoff_min`, `flat_by_min`, `scan_min_value_traded` (see [Settings](#settings)).
+
+**Install them:**
 
 ```bash
-git subtree pull --prefix us-day-trader https://github.com/Jakeschincariol/day-trader-skill.git main --squash
-python3 -m unittest discover -s us-day-trader/tests     # their 315 offline tests
+# Claude Code: copy the skill folders (or install the plugin: all twelve skills come with it)
+cp -r Day-Trader-PSX/psx-* ~/.claude/skills/
+
+# Claude app: one zip per skill (from the releases page, or make them), each uploaded under Customize › Skills
+cd Day-Trader-PSX && for d in psx-*; do zip -r "$d.zip" "$d" -x '*__pycache__*'; done
 ```
+
+> [!NOTE]
+> The code lives once, in `psx-mufap/scripts/`. `python3 tools/sync_skills.py` copies what each
+> desk skill needs into its folder (the tests fail if a copy is out of date), so edit the code in
+> `psx-mufap/scripts/` only.
+
+**Credits.** The desk's shape (eleven single-job skills, from scanner to broker, with a time
+machine and a risk gate) comes from [Jake Schincariol's day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill)
+(MIT), built for US stocks. These are new tools written for PSX: its data portal, sessions, price
+limits, charges, announcements and brokers. Thank you, Jake.
 
 ---
 
@@ -1016,6 +1047,13 @@ in `config.json`); `risk.py settings` shows what's in effect and where it came f
 | Stops and targets | `min_stop_pct` | 4% | 5% | 7% | 8% | stop at least this far below entry (so daily noise doesn't trigger it) |
 | Stops and targets | `max_stop_pct` | 10% | 15% | 20% | 25% | stop at most this far below entry |
 | Stops and targets | `target_r` | 2 | 2 | 2.5 | 3 | target = entry + this x (entry - stop) |
+| Day trading | `orb_minutes` | 15 | 15 | 15 | 15 | opening range = the first this many minutes of the session |
+| Day trading | `max_trades_per_day` | 2 | 3 | 5 | 8 | most new day-trade entries in one day (psx-risk blocks the next) |
+| Day trading | `daily_loss_limit_pct` | 1% | 2% | 3% | 5% | stop opening trades once today's losses plus open risk reach this |
+| Day trading | `min_reward_risk` | 2 | 1.5 | 1.2 | 1 | a trade's target must pay at least this many times its risk, after charges |
+| Day trading | `entry_cutoff_min` | 60 | 45 | 30 | 20 | no new day-trade entries this close to the day's close |
+| Day trading | `flat_by_min` | 10 | 10 | 10 | 10 | a day trade is closed this many minutes before the close |
+| Day trading | `scan_min_value_traded` | 50,000,000 | 20,000,000 | 10,000,000 | 5,000,000 | scanner skips shares trading less than this much a day (60-day average, rupees) |
 | Stops and targets | `stop_limit_gap` | 1% | 1% | 1.5% | 2% | order tickets: a stop-loss order's limit price sits this far below its trigger, so it still fills when the price drops fast |
 | Sizing and limits | `risk_per_trade` | 0.5% | 1% | 2% | 3% | capital lost if a new buy hits its stop |
 | Sizing and limits | `max_position_pct` | 15% | 25% | 35% | 50% | most of the portfolio in one share (above it: TRIM) |
@@ -1125,17 +1163,17 @@ pkmarket/
 
 **Will it make me rich?** It will make you *informed*, which is cheaper and more reliable.
 
-**Can it place orders for me?** The PSX tools: no, by design. `portfolio.py orders` writes the
-tickets and your thumb types them in. Only the US pack's `trader-broker` can lead to an order, at a
-US broker (Alpaca, paper account by default), after `trader-risk` passes it and you type yes.
+**Can it place orders for me?** No, by design. `psx-broker` and `portfolio.py orders` write the
+tickets, your thumb types them in, and `broker.py filled` puts the fill in your ledger.
 
 **Where do the prices come from?** The PSX Data Portal and MUFAP: end of day, plus live prices
 from the portal's market watch when you ask (`--live`); see
 [Where the data comes from](#where-the-data-comes-from).
 
-**Can the US day-trading skills trade PSX shares?** Not today. They read Yahoo Finance's 1- and
-5-minute bars, and Yahoo only has daily bars for Karachi (`OGDC.KA`). For PSX, use the PSX tools,
-`--live`, and `portfolio.py orders`.
+**Can I day trade PSX with this?** You can plan, size, check and track day trades with the
+[desk](#the-day-trading-desk-11-psx-skills), including opening-range breakouts from the portal's
+intraday trades. Whether you *should* is another matter: charges both ways and the daily price
+limit make PSX day trading harder than it looks, and the desk shows you that in rupees.
 
 **Why does "expected next dividend" say *estimate*?** It assumes the company pays at about the
 same time as last year. That's a habit, not a promise, a bit like predicting when your cousin
@@ -1199,6 +1237,18 @@ psx-mufap/                      the skill and the tools
 │   ├── advice.py               stop-losses, sell/hold/trim rules, sized buy ideas, price calculator, one-share check
 │   ├── watchlist.py            add, remove, set, top-of-sector, import/export your watchlist
 │   ├── signals.py              second opinion: PakistaniBulls signals, imported or (opt-in) downloaded
+│   ├── scanner.py              psx-scanner: daily setups, opening-range breakouts, movers
+│   ├── news.py                 psx-news: company announcements, tagged, with PDFs
+│   ├── entry.py                psx-entry: waiting / triggered / expired
+│   ├── exitplan.py             psx-exit: stop, target, flat-by -> trader/plan.json
+│   ├── timemachine.py          psx-timemachine: 10,000 replays + every past time the setup fired
+│   ├── budget.py               psx-budget: size and bracket -> trader/orders.json
+│   ├── broker.py               psx-broker: READY tickets, fills into the ledger, flatten
+│   ├── alerts.py               psx-alerts: price, stop, target, move and clock alerts
+│   ├── analyst.py              psx-analyst: results and what changed
+│   ├── insiders.py             psx-insiders: directors' and sponsors' dealings
+│   ├── intraday.py             today's trades as 1- or 5-minute bars, cached by day
+│   ├── desk.py                 the desk's shared files in trader/
 │   ├── freshness.py            last fetch / fresh fetch / live before every piece of advice; live prices
 │   ├── funds.py                fund suggestions by risk profile; review of funds you hold
 │   ├── profiles.py             the four risk styles and every buy/sell variable, described
@@ -1211,10 +1261,9 @@ psx-mufap/                      the skill and the tools
 │   └── android_setup.sh        one-command setup in Termux
 ├── dashboard/                  index.html + app.js (Chart.js 4.4.1 from cdnjs, pinned with SRI)
 └── references/                 strategy and data-source notes
-us-day-trader/                  Jake Schincariol's 11 US day-trading skills (MIT, git subtree, unchanged)
-├── trader-scanner … trader-pelosi   one folder per skill: SKILL.md + its Python tool
-├── tests/                      their own offline tests
-└── LICENSE, README.md          their licence and guide
+psx-scanner/ … psx-insiders/   the 11 desk skills: SKILL.md + scripts/ (a synced copy of the code
+                                each needs) + brokers.json
+tools/sync_skills.py            copies the shared code into each desk skill (and checks it)
 tests/                          offline tests on synthetic data and trimmed page samples
 ci/                             GitHub Actions workflows, ready to enable (see ci/README.md)
 ```
