@@ -38,6 +38,8 @@ import psxinfo as P  # noqa: E402
 import paper  # noqa: E402
 import propose  # noqa: E402
 import rank  # noqa: E402
+import portfolio as PF  # noqa: E402
+import advice as A  # noqa: E402
 
 UI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
 FILES = {"/": ("index.html", "text/html; charset=utf-8"),
@@ -56,10 +58,14 @@ def build_data(h, cfg, all_=None, days=500):
     ranked, bm, notes = rank.rank_stocks(h, cfg, None, "score", all_)
     watch = {s.upper() for s in cfg["watchlist"]}
     pf = paper.load(h) if os.path.exists(paper.ppath(h)) else None
-    held = {k for k, v in (pf or {}).get("positions", {}).items() if v.get("kind") == "stock"}
+    held = {k for k, v in (pf or {}).get("positions", {}).items() if v.get("kind") == "stock"}  # paper
+    owned = set()
+    if os.path.exists(PF.lpath(h)):
+        owned = {p["symbol"] for p in PF.holdings(h, PF.load(h))}
+    held_any = held | owned
     # Make sure watchlist and held names are in, even if illiquid or outside the universe.
     have = {m["symbol"] for m in ranked}
-    extra = sorted((watch | held) - have)
+    extra = sorted((watch | held_any) - have)
     if extra:
         more, _, _ = rank.rank_stocks(h, cfg, extra, "score", False, min_volume=0)
         ranked += more
@@ -90,6 +96,7 @@ def build_data(h, cfg, all_=None, days=500):
             "symbol": m["symbol"], "name": m.get("name"), "sector": m.get("sector"),
             "shariah": m.get("shariah"), "tags": m.get("tags") or [], "close": m["close"],
             "last_date": m["last_date"], "watch": m["symbol"] in watch, "held": m["symbol"] in held,
+            "owned": m["symbol"] in owned,
             "r1w": r4(m["1w"]), "r1m": r4(m["1m"]), "r3m": r4(m["3m"]), "r6m": r4(m["6m"]),
             "r1y": r4(m["1y"]), "ytd": r4(m["ytd"]), "vol": r4(m["vol"]), "mdd": r4(m["mdd"]),
             "sharpe": r4(m["sharpe"]), "vs_idx_3m": r4(m["vs_index_3m"]), "trend": rank.trend_label(m),
@@ -108,11 +115,11 @@ def build_data(h, cfg, all_=None, days=500):
         dv = s["div"] or {}
         for u in dv.get("upcoming") or []:
             calendar.append({"symbol": s["symbol"], "type": "announced", "date": u.get("bc_from"),
-                             "details": u.get("details"), "held": s["held"], "shariah": s["shariah"]})
+                             "details": u.get("details"), "held": s["held"] or s["owned"], "shariah": s["shariah"]})
         e = dv.get("expected_next")
         if e and today <= e["around"] <= soon:
             calendar.append({"symbol": s["symbol"], "type": "expected", "date": e["around"],
-                             "details": "like last year: %s" % e.get("last_year"), "held": s["held"],
+                             "details": "like last year: %s" % e.get("last_year"), "held": s["held"] or s["owned"],
                              "shariah": s["shariah"]})
     calendar.sort(key=lambda x: x["date"] or "")
 
@@ -156,6 +163,40 @@ def build_data(h, cfg, all_=None, days=500):
                      "dividends": divs[-50:], "trades": pf["trades"][-100:],
                      "realized": round(sum(t.get("realized", 0) for t in pf["trades"]), 2)}
 
+    mine = None
+    if os.path.exists(PF.lpath(h)):
+        lg = PF.load(h)
+        s = PF.summary(h, lg)
+        review = A.review_holdings(h, cfg, lg, s)
+        rv = {r["symbol"]: r for r in review}
+        info = {x["symbol"]: x for x in stocks}
+        hold = []
+        for p in s["holdings"]:
+            r = rv.get(p["symbol"], {})
+            i = info.get(p["symbol"], {})
+            hold.append({"symbol": p["symbol"], "qty": p["qty"], "avg_cost": round(p["avg_cost"], 2),
+                         "cost": round(p["cost"], 2), "price": p["price"], "price_date": p["price_date"],
+                         "value": p["value"], "unrealised": p["unrealised"], "unrealised_pct": r4(p["unrealised_pct"]),
+                         "dividends": p["dividends"], "brokers": p["brokers"], "first_buy": p["first_buy"],
+                         "days_held": p["days_held"], "sector": i.get("sector"), "shariah": i.get("shariah"),
+                         "action": r.get("action"), "why": r.get("why"), "notes": r.get("notes") or [],
+                         "stop": r.get("stop"), "stop_source": r.get("stop_source"), "target": r.get("target"),
+                         "weight": r4(r.get("weight")), "trim_qty": r.get("trim_qty")})
+        fees = PF.fee_table(lg)
+        adv = None
+        adir = os.path.join(h, "advice")
+        if os.path.isdir(adir):
+            files = sorted(f for f in os.listdir(adir) if f.endswith(".json"))
+            if files:
+                with open(os.path.join(adir, files[-1])) as f:
+                    adv = json.load(f)
+        mine = {"summary": {k: s[k] for k in ("value", "cost", "unrealised", "realised", "dividends", "fees", "cash")},
+                "holdings": hold, "sales": s["sales"][-100:],
+                "fees": [dict(v, broker=k) for k, v in sorted(fees.items())],
+                "dividends": [e for e in lg["entries"] if e["type"] == "dividend"][-100:],
+                "buy_ideas": (adv or {}).get("buy") or [], "advice_date": (adv or {}).get("generated"),
+                "settings": {k: A.setting(cfg, k) for k in A.DEFAULTS}}
+
     proposal = None
     pdir = os.path.join(h, "proposals")
     if os.path.isdir(pdir):
@@ -190,6 +231,7 @@ def build_data(h, cfg, all_=None, days=500):
                                                    "div_yield": (s["div"] or {}).get("yield"),
                                                    "score": s["score"]}) for s in stocks]),
         "dividend_calendar": calendar, "portfolio": portfolio, "proposal": proposal, "funds": funds,
+        "mine": mine,
     }
 
 

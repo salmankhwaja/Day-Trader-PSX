@@ -13,8 +13,14 @@ funds, from a terminal, a dashboard, or by asking Claude.**
   trading costs and an honest out-of-sample test.
 - **Propose a paper portfolio** from those backtests, then review it daily. Dividends and bonus
   shares are credited automatically.
-- **Dashboard**: overview, screener, compare up to 6 companies, portfolio, dividend calendar,
-  funds. Works on a phone; light and dark.
+- **Your real portfolio**: every trade with its date, broker and actual charges (commission,
+  taxes, fees); first-in-first-out lots per broker; realised and unrealised profit and loss after
+  costs; dividends; costs by broker.
+- **Sell / hold / buy suggestions with stop-losses**: each holding gets SELL, TRIM, REVIEW or
+  HOLD with a trailing stop and target; buy ideas come from backtests, each with entry,
+  stop-loss, target and a quantity sized to your risk.
+- **Dashboard**: overview, screener, compare up to 6 companies, your portfolio, paper account,
+  dividend calendar, funds. Works on a phone; light and dark.
 
 Plain Python 3.8+, standard library only: nothing to `pip install`. **Nothing here can place a
 real order.** Research and practice only, not investment advice.
@@ -42,6 +48,8 @@ create goes to a data folder, `~/pkmarket` by default (change it with `PKM_HOME=
   psx/<SYMBOL>.csv     daily prices
   companies/           sector, P/E, dividend history per company
   mufap/               daily fund snapshots + NAV history
+  portfolio/ledger.json your real trades, brokers and charges
+  advice/              daily sell/hold/buy suggestions
   paper/portfolio.json your paper account
   proposals/           portfolio proposals
   dashboard/           the built dashboard
@@ -96,22 +104,64 @@ A stock is proposed only if its best strategy, tuned on the first 70% of its his
 well on the untouched last 30%: it beat a cash return, had a positive Sharpe ratio, lost less
 than 35% at worst, and its signal says buy today. At most 2 picks come from any one sector.
 
-## Run it every day (optional)
+### Your real portfolio, with buy and sell suggestions
+
+```bash
+python3 portfolio.py broker add AKD --commission-pct 0.15 --min-commission 50 --default
+python3 portfolio.py buy OGDC 500 298 --broker AKD --date 2026-10-25 --commission 223.5 --taxes 29 --other 10
+python3 portfolio.py sell OGDC 200 315 --broker AKD --date 2026-11-10 --commission 94.5
+python3 portfolio.py import my-trades.csv     # date,side,symbol,qty,price,broker,commission,taxes,other,note
+python3 portfolio.py cash deposit 500000      # optional: buy ideas then fit your cash
+python3 portfolio.py holdings                 # average cost incl. charges, value, P/L, stop
+python3 portfolio.py pnl --year 2026          # realised P/L per sale, after all charges
+python3 portfolio.py fees                     # what each broker has cost you
+python3 portfolio.py advise --all             # SELL / TRIM / REVIEW / HOLD + buy ideas with stops
+```
+
+Use the charges from your broker's contract note. Leave `--commission` out and it is estimated
+from the broker's schedule and marked "estimated". Shares are held at a broker, so a sale uses
+that broker's oldest shares first, and you can't sell shares you didn't hold at that broker on
+that date.
+
+How the suggestions work (all adjustable in `config.json`):
+
+| Rule | Default |
+|---|---|
+| Stop-loss | 2.5 × the 14-day average daily move below entry, kept 5–15% below entry, then trailing up behind the highest close since you bought. Your own `portfolio.py stop SYMBOL PRICE` always wins. |
+| Target | entry + 2 × (entry − stop) |
+| SELL | last close at or below the stop |
+| TRIM | one stock is over 25% of the portfolio (tells you how many to sell) |
+| REVIEW | below its 50- and 200-day averages and over 5 points behind KSE-100 in 3 months |
+| Buy ideas | the stocks that passed the backtest checks above and say buy today; quantity risks 1% of your capital between entry and stop, at most 25% in one stock, within your recorded cash |
+
+The suggestions use the last close, not live prices, and are rules applied to past prices: not
+investment advice. Nothing is ever ordered for you.
+
+## Run it on a schedule (optional)
 
 ```bash
 cd psx-mufap/scripts
-./install_services.sh                  # watchlist mode
-PKM_SCOPE=all ./install_services.sh    # whole market
+./install_services.sh                                   # 07:00, Monday to Friday
+PKM_SCHEDULE="07:00,04:00" ./install_services.sh        # twice a day
+PKM_SCHEDULE="18:30" PKM_DAYS="Mon..Sat" ./install_services.sh
+PKM_SCOPE=all PKM_SCHEDULE="04:00" ./install_services.sh  # whole market, overnight
 ```
+
+Times are 24-hour Pakistan time (`PKM_TZ` to change), comma-separated; `PKM_DAYS` takes
+`Mon..Fri`, `Mon,Wed,Fri`, `Mon..Sat` or `*` for every day. Run the script again to change the
+schedule. PSX publishes closing prices after the market closes (about 15:30), so a run at 04:00
+or 07:00 uses the previous session's close and is ready before the 09:30 open.
 
 This installs two systemd user services (no root):
 
-- **`pkm-daily.timer`**, weekdays at 17:15 Pakistan time. Refreshes prices, company data, payouts
-  and MUFAP; credits paper dividends; reviews holdings; records the account value; makes a fresh
-  proposal on Fridays (never booked without you); rebuilds the dashboard.
+- **`pkm-daily.timer`**, at your times. Refreshes prices, company data, payouts and MUFAP;
+  credits paper dividends; reviews the paper holdings; records the paper account value; lists
+  dividends due on your real holdings (for you to confirm); writes your sell / hold / buy
+  suggestions with stop-losses; makes a fresh paper proposal on Fridays; rebuilds the dashboard.
 - **`pkm-dashboard.service`**: the dashboard server, read-only, on `127.0.0.1:8787`.
 
-No systemd? Use cron: `15 17 * * 1-5 /path/to/psx-mufap/scripts/daily_sync.sh`.
+No systemd? Use cron, e.g. 07:00 and 04:00 on weekdays with the computer's clock on Pakistan
+time: `0 4,7 * * 1-5 /path/to/psx-mufap/scripts/daily_sync.sh`.
 
 ### Seeing the dashboard on your phone
 
@@ -136,6 +186,9 @@ example:
 - *"Which money market funds did best over 90 days?"*
 - *"Backtest a moving-average strategy on ENGRO"*
 - *"Propose a paper portfolio from the whole market"*
+- *"I bought 500 OGDC at 298 through AKD today, commission 223.50"*
+- *"What should I sell, and what could I buy, with stop-losses?"*
+- *"How much have I paid each broker this year, and what's my realised profit?"*
 
 Claude's phone sandbox blocks most websites. Claude then fetches pages with its own web tools
 and imports them. This works for the MUFAP table; PSX pages may stay out of reach. For full PSX
@@ -190,9 +243,11 @@ psx-mufap/                    the skill and the tools
   scripts/backtest.py         strategies, metrics, out-of-sample checks
   scripts/propose.py          portfolio proposals and daily review
   scripts/paper.py            paper account: trades, funds, dividends, daily marks
+  scripts/portfolio.py        your real portfolio: trades, brokers, charges, lots, P/L, dividends
+  scripts/advice.py           stop-losses, sell/hold/trim rules, sized buy ideas
   scripts/dashboard.py        build and serve the dashboard
   scripts/daily_sync.sh       the daily pipeline
-  scripts/install_services.sh systemd timer and dashboard service
+  scripts/install_services.sh systemd timer (your schedule) and dashboard service
   dashboard/                  index.html + app.js (Chart.js 4.4.1 from cdnjs, pinned with SRI)
   references/                 strategy and data-source notes
 tests/                        offline tests on synthetic data and trimmed page samples

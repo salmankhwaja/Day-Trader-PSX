@@ -20,6 +20,8 @@ import paper  # noqa: E402
 import psxinfo as P  # noqa: E402
 import propose  # noqa: E402
 import dashboard  # noqa: E402
+import portfolio as PF  # noqa: E402
+import advice as A  # noqa: E402
 
 
 def run(fn, argv):
@@ -391,6 +393,135 @@ class TestDashboard(Market):
         with self.assertRaises(SystemExit):  # refuses a LAN address without a password
             os.environ.pop("PKM_DASHBOARD_PASSWORD", None)
             dashboard.cmd_serve(argparse_ns(host="0.0.0.0", port=0), self.h, self.cfg)
+
+
+class TestLedger(Market):
+    def pf(self, *args):
+        return run(PF.main, ["--home", self.h] + list(args))
+
+    def test_fees_fifo_per_broker_and_pnl(self):
+        self.pf("broker", "add", "AKD", "--commission-pct", "0.15", "--min-commission", "50", "--default")
+        self.pf("broker", "add", "JSG", "--commission-pct", "0.10")
+        # actual contract-note charges on the first buy; estimated on the second
+        self.pf("buy", "SYN05", "1000", "50", "--broker", "AKD", "--date", "2026-01-05",
+                "--commission", "75", "--taxes", "12", "--other", "8")
+        self.pf("buy", "SYN05", "1000", "60", "--broker", "JSG", "--date", "2026-02-05")
+        lg = PF.load(self.h)
+        self.assertTrue(lg["entries"][1]["commission_estimated"])
+        self.assertAlmostEqual(lg["entries"][1]["commission"], 60.0)  # 0.10% of 60,000
+        # selling at AKD consumes AKD's lot, not the cheaper-or-older one elsewhere
+        self.pf("sell", "SYN05", "400", "70", "--broker", "AKD", "--date", "2026-03-05", "--commission", "50")
+        _, sales = PF.lots(PF.load(self.h))
+        s = sales[0]
+        unit = (50000 + 75 + 12 + 8) / 1000.0
+        self.assertAlmostEqual(s["cost"], round(400 * unit, 2))
+        self.assertAlmostEqual(s["proceeds"], 400 * 70 - 50)
+        self.assertAlmostEqual(s["pnl"], round(28000 - 50 - 400 * unit, 2))
+        self.assertEqual(s["avg_days_held"], 59)
+        hs = PF.holdings(self.h, PF.load(self.h))
+        self.assertEqual(hs[0]["qty"], 1600)
+        self.assertEqual(hs[0]["brokers"], {"AKD": 600, "JSG": 1000})
+        fees = PF.fee_table(PF.load(self.h))
+        self.assertAlmostEqual(fees["AKD"]["commission"] + fees["AKD"]["taxes"] + fees["AKD"]["other"], 75 + 12 + 8 + 50)
+
+    def test_no_short_selling_even_backdated(self):
+        self.pf("buy", "SYN05", "100", "50", "--broker", "AKD", "--date", "2026-03-01")
+        with self.assertRaises(SystemExit):
+            self.pf("sell", "SYN05", "200", "55", "--broker", "AKD", "--date", "2026-03-02")
+        with self.assertRaises(SystemExit):  # shares bought on 1 March can't be sold on 1 February
+            self.pf("sell", "SYN05", "50", "55", "--broker", "AKD", "--date", "2026-02-01")
+        with self.assertRaises(SystemExit):  # held at AKD, not at another broker
+            self.pf("sell", "SYN05", "50", "55", "--broker", "JSG", "--date", "2026-03-02")
+        self.pf("sell", "SYN05", "all", "55", "--broker", "AKD", "--date", "2026-03-02")
+        self.assertEqual(PF.holdings(self.h, PF.load(self.h)), [])
+        # deleting the buy would orphan the sale: refused
+        with self.assertRaises(SystemExit):
+            self.pf("delete", "1")
+
+    def test_cash_and_import(self):
+        self.pf("cash", "deposit", "100000", "--broker", "AKD", "--date", "2026-01-01")
+        csvp = os.path.join(self.h, "t.csv")
+        with open(csvp, "w") as f:
+            f.write("date,side,symbol,qty,price,broker,commission,taxes,other,note\n"
+                    "2026-01-10,buy,SYN05,500,40,AKD,30,0,5,first\n"
+                    "2026-01-20,sell,SYN05,200,45,AKD,15,0,2,\n")
+        self.pf("import", csvp)
+        lg = PF.load(self.h)
+        self.assertAlmostEqual(PF.cash_balance(lg), 100000 - 20035 + 9000 - 17)
+        bad = os.path.join(self.h, "bad.csv")
+        with open(bad, "w") as f:
+            f.write("date,side,symbol,qty,price,broker\n2026-01-30,sell,SYN05,9999,45,AKD\n")
+        with self.assertRaises(SystemExit):
+            self.pf("import", bad)
+        self.assertEqual(len(PF.load(self.h)["entries"]), len(lg["entries"]))  # all-or-nothing
+
+    def test_dividends_due_need_shares_before_book_closure(self):
+        # SYN03 payout in the synthetic market: book closure 2026-04-20, 25% of Rs 10
+        self.pf("buy", "SYN03", "1000", "30", "--broker", "AKD", "--date", "2026-03-01")
+        self.pf("buy", "SYN04", "1000", "30", "--broker", "AKD", "--date", "2026-12-01")  # bought after its closure
+        due = PF.due_dividends(self.h, self.cfg, PF.load(self.h))
+        self.assertEqual([d["symbol"] for d in due], ["SYN03"])
+        self.assertAlmostEqual(due[0]["net"], 2125.0)
+        self.pf("dividends", "--apply")
+        self.assertEqual(PF.due_dividends(self.h, self.cfg, PF.load(self.h)), [])
+
+
+class TestAdvice(Market):
+    def test_stop_rules(self):
+        rows = [{"date": "2026-01-%02d" % (i + 1), "open": 100, "close": 100 + (i % 2), "volume": 1} for i in range(20)]
+        st = A.stop_for(rows, 100.0, "2026-01-01", self.cfg)
+        self.assertLessEqual(st["initial"], 95.0)    # at least 5% below entry even when calm
+        self.assertGreaterEqual(st["initial"], 85.0)  # never more than 15% below
+        wild = [{"date": "2026-01-%02d" % (i + 1), "open": 100, "close": 100 + (20 if i % 2 else 0), "volume": 1} for i in range(20)]
+        self.assertAlmostEqual(A.stop_for(wild, 100.0, "2026-01-01", self.cfg)["initial"], 85.0)
+        up = [{"date": "2026-01-%02d" % (i + 1), "open": 100, "close": 100.0 + 2 * i, "volume": 1} for i in range(20)]
+        st = A.stop_for(up, 100.0, "2026-01-01", self.cfg)
+        self.assertGreater(st["stop"], st["initial"])  # trailed up behind the rally
+        self.assertAlmostEqual(st["target"], 100 + 2 * (100 - st["initial"]), places=1)
+
+    def test_actions_and_buy_sizing(self):
+        run(PF.main, ["--home", self.h, "broker", "add", "AKD", "--default"])
+        run(PF.main, ["--home", self.h, "cash", "deposit", "1000000", "--date", "2025-01-01"])
+        rows = C.read_prices(C.price_path(self.h, "SYN01"))  # a falling share
+        run(PF.main, ["--home", self.h, "buy", "SYN01", "1000", str(rows[-200]["close"]), "--broker", "AKD",
+                      "--date", rows[-200]["date"]])
+        lg = PF.load(self.h)
+        s = PF.summary(self.h, lg)
+        rv = A.review_holdings(self.h, self.cfg, lg, s)
+        self.assertEqual(rv[0]["action"], "SELL")
+        lg["stops"]["SYN01"] = 0.01  # your own stop wins over the computed one
+        rv = A.review_holdings(self.h, self.cfg, lg, s)
+        self.assertNotEqual(rv[0]["action"], "SELL")
+        self.assertEqual(rv[0]["stop_source"], "yours")
+        ideas, info = A.buy_ideas(self.h, self.cfg, lg, s, n=3, all_=True)
+        self.assertTrue(ideas)
+        capital = s["value"] + s["cash"]
+        spent = 0
+        for i in ideas:
+            self.assertNotEqual(i["symbol"], "SYN01")
+            self.assertLess(i["stop"], i["entry"])
+            self.assertGreater(i["target"], i["entry"])
+            self.assertLessEqual(i["risk_pkr"], capital * 0.01 + i["risk_per_share"])
+            self.assertLessEqual(i["qty"] * i["entry"], capital * 0.25 + i["entry"])
+            spent += i["cost"]
+        self.assertLessEqual(spent, s["cash"])  # never more than the cash you recorded
+
+    def test_trim_when_too_concentrated(self):
+        run(PF.main, ["--home", self.h, "broker", "add", "AKD", "--default"])
+        rows = C.read_prices(C.price_path(self.h, "SYN11"))
+        run(PF.main, ["--home", self.h, "buy", "SYN11", "100", str(rows[-30]["close"]), "--date", rows[-30]["date"]])
+        run(PF.main, ["--home", self.h, "buy", "SYN08", "10", "100", "--date", rows[-30]["date"]])
+        lg = PF.load(self.h)
+        rv = {r["symbol"]: r for r in A.review_holdings(self.h, self.cfg, lg, PF.summary(self.h, lg))}
+        self.assertEqual(rv["SYN11"]["action"], "TRIM")
+        self.assertGreater(rv["SYN11"]["trim_qty"], 0)
+
+    def test_dashboard_has_my_portfolio(self):
+        run(PF.main, ["--home", self.h, "buy", "SYN05", "100", "50", "--broker", "AKD", "--date", "2026-03-01"])
+        data = dashboard.build_data(self.h, self.cfg)
+        self.assertEqual([x["symbol"] for x in data["mine"]["holdings"]], ["SYN05"])
+        self.assertTrue(next(s for s in data["stocks"] if s["symbol"] == "SYN05")["owned"])
+        self.assertIn("AKD", [f["broker"] for f in data["mine"]["fees"]])
 
 
 def argparse_ns(**kw):

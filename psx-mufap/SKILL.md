@@ -1,6 +1,6 @@
 ---
 name: psx-mufap
-description: Rank Pakistan Stock Exchange (PSX) stocks (watchlist or every listed share, by sector, Shariah/KMI status and dividend yield) and MUFAP mutual funds, backtest strategies, propose a paper portfolio from backtests, track dividends and book closures, and build a comparison dashboard. Use when the user asks which PSX shares, sectors or Pakistani mutual funds are doing well, about dividends or Shariah compliance of PSX stocks, wants to compare companies, backtest, paper trade or see the dashboard. Never places real orders.
+description: Rank Pakistan Stock Exchange (PSX) stocks (watchlist or every listed share, by sector, Shariah/KMI status and dividend yield) and MUFAP mutual funds, backtest strategies, propose a paper portfolio from backtests, keep the user's real portfolio ledger (trades, brokers, commissions, P/L) with sell/hold/buy suggestions and stop-losses, track dividends and book closures, and build a comparison dashboard. Use when the user asks which PSX shares, sectors or Pakistani mutual funds are doing well, about dividends or Shariah compliance of PSX stocks, wants to compare companies, record a trade they made, see their portfolio or P/L, get buy/sell suggestions with stop-losses, backtest, paper trade or see the dashboard. Never places real orders.
 ---
 
 # PSX & MUFAP: rank, backtest, paper trade
@@ -19,6 +19,8 @@ code repository.
 | `backtest.py` | Test strategies with next-day fills, costs and out-of-sample checks |
 | `paper.py` | Pretend PKR account: buy/sell shares, invest/redeem funds, follow signals, credit dividends |
 | `propose.py` | Screen, backtest out-of-sample, propose a paper portfolio; review holdings daily |
+| `portfolio.py` | The user's REAL portfolio: trades, brokers, commissions, lots, P/L, dividends, cash; `advise` |
+| `advice.py` | Stop-losses, sell/hold/trim suggestions and sized buy ideas (used by `portfolio.py advise`) |
 | `dashboard.py` | Build the visual dashboard (compare, screener, portfolio, dividends, funds) and serve it |
 | `daily_sync.sh`, `install_services.sh` | The daily pipeline and its systemd timer, for the user's computer |
 
@@ -165,7 +167,59 @@ Rules:
   them where it went. At the start of a session, restore it from there before running
   `paper.py`.
 
-## Step 6: the dashboard
+## Step 6: the user's real portfolio
+
+`portfolio.py` is a ledger of what the user actually bought and sold, at which broker, and
+what it cost. It never contacts a broker. Keep it separate from the paper account.
+
+Recording trades the user tells you about ("I bought 500 OGDC at 298 through AKD yesterday"):
+- Ask for anything missing that matters: the date, the broker, and the actual charges from the
+  contract note (commission, taxes such as CVT/SST, other fees such as CDC/NCCPL). If they don't
+  have the charges, record without `--commission` and say it was estimated from the broker's
+  schedule.
+- Read the trade back in one line before recording it, then run the command:
+
+```
+python3 scripts/portfolio.py broker add AKD --commission-pct 0.15 --min-commission 50 --default
+python3 scripts/portfolio.py buy OGDC 500 298 --broker AKD --date 2026-10-25 --commission 223.5 --taxes 29 --other 10
+python3 scripts/portfolio.py sell OGDC 200 315 --broker AKD --date 2026-11-10 --commission 94.5
+python3 scripts/portfolio.py import trades.csv        # date,side,symbol,qty,price,broker,commission,taxes,other,note
+python3 scripts/portfolio.py cash deposit 500000      # optional: lets buy ideas respect available cash
+python3 scripts/portfolio.py holdings | pnl | fees | trades
+python3 scripts/portfolio.py delete ID                # fix a mistake
+python3 scripts/portfolio.py stop OGDC 280            # the user's own stop-loss; `auto` to go back
+python3 scripts/portfolio.py dividends [--apply]      # dividends due from book closures; confirm amounts first
+```
+
+Sales are matched first-in, first-out against that broker's lots; P/L is after every charge.
+A sale of shares not held at that broker on that date is refused. Capital gains tax is not
+computed (it depends on filer status and holding period); record it with `--taxes` if wanted.
+
+Suggestions:
+
+```
+python3 scripts/portfolio.py advise                   # watchlist buy ideas
+python3 scripts/portfolio.py advise --all --shariah   # whole market, Shariah only
+```
+
+For each holding: SELL (close at or below its stop), TRIM (over 25% of the portfolio, with a
+quantity), REVIEW (falling trend and lagging KSE-100), or HOLD, with stop and target, plus a
+note when a book closure is near. Then up to 3 buy ideas: the shares that passed the
+backtest gates and are long today, each with entry, stop-loss, target, a quantity that risks
+1% of capital between entry and stop (capped at 25% per stock and at recorded cash), and the
+estimated commission at the default broker.
+
+How to present them:
+- Lead with any SELL or TRIM, then buy ideas, each with its stop-loss. Show why (the rule
+  that fired, the out-of-sample result) in plain words.
+- Prices are the last close: say so, and that the user should check the live price.
+- Say once that these are rule-based suggestions from past prices, not investment advice,
+  and that you are not a licensed adviser. Never place or promise to place an order.
+- Stops and sizing rules live in config.json (`stop_atr_mult`, `min_stop_pct`, `max_stop_pct`,
+  `target_r`, `risk_per_trade`, `max_position_pct`); explain them if asked.
+- The ledger is the user's financial record: never publish it or commit it to a public repo.
+
+## Step 7: the dashboard
 
 ```
 python3 scripts/dashboard.py build                     # <home>/dashboard/ (index.html, app.js, data.json)
@@ -173,10 +227,11 @@ python3 scripts/dashboard.py build --standalone pkm.html   # one self-contained 
 python3 scripts/dashboard.py serve                     # http://127.0.0.1:8787
 ```
 
-Views: Overview (KSE-100, sectors, top ranked, upcoming dividends), Screener (filter by sector,
+Views: Overview (KSE-100, sectors, top ranked, upcoming dividends), My portfolio (real holdings
+with action, stop and target, buy ideas, allocation, costs by broker, realised P/L, dividends), Screener (filter by sector,
 Shariah, yield; tick up to 6 to compare), Compare (rebased prices, returns, risk, valuation,
-dividends side by side), Portfolio (value vs KSE-100, allocation, holdings with review action
-and next dividend, latest proposal), Dividends (calendar, top yields), Funds (MUFAP by category).
+dividends side by side), Paper (value vs KSE-100, allocation, holdings with review action and next
+dividend, latest proposal), Dividends (calendar, top yields), Funds (MUFAP by category).
 
 On the phone: when the user asks to see it, build the standalone file and send it, or publish
 it as a **private** artifact only if they ask (it contains PSX data: never share it publicly).

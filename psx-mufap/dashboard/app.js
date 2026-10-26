@@ -86,13 +86,14 @@
   function symCell(s) {
     return '<a href="#compare=' + encodeURIComponent(s.symbol) + '" data-sym="' + esc(s.symbol) + '"><b>' + esc(s.symbol) + "</b></a>" +
       (s.shariah ? '<span class="tag sh" title="KMI All Share (Shariah-compliant)">☪</span>' : "") +
-      (s.held ? '<span class="tag" title="In the paper portfolio">held</span>' : "") +
+      (s.owned ? '<span class="tag own" title="In your portfolio">owned</span>' : "") +
+      (s.held ? '<span class="tag" title="In the paper account">paper</span>' : "") +
       ((s.tags || []).indexOf("XD") >= 0 ? '<span class="tag" title="Trading ex-dividend">XD</span>' : "");
   }
 
   // ---------------------------------------------------------------- tabs
   var views = { overview: renderOverview, screener: renderScreener, compare: renderCompare,
-                portfolio: renderPortfolio, dividends: renderDividends, funds: renderFunds };
+                mine: renderMine, portfolio: renderPortfolio, dividends: renderDividends, funds: renderFunds };
   function show(v) {
     if (!views[v]) v = "overview";
     Array.prototype.forEach.call($("tabs").children, function (b) { b.classList.toggle("on", b.getAttribute("data-v") === v); });
@@ -195,7 +196,7 @@
       if (sec && s.sector !== sec) return false;
       if ($("f-sh").checked && !s.shariah) return false;
       if ($("f-watch").checked && !s.watch) return false;
-      if ($("f-held").checked && !s.held) return false;
+      if ($("f-held").checked && !s.owned && !s.held) return false;
       if (!isNaN(my) && !(((s.div || {}).yield || 0) * 100 >= my)) return false;
       return true;
     });
@@ -407,6 +408,87 @@
     }).join("") : "<li class='muted'>None yet.</li>";
   }
 
+  // ---------------------------------------------------------------- my (real) portfolio
+  function renderMine() {
+    var M = D.mine;
+    if (!M) {
+      $("v-mine").innerHTML = '<div class="empty">No trades recorded yet. Add your broker and trades:<br><code>portfolio.py broker add NAME --commission-pct 0.15</code><br>' +
+        '<code>portfolio.py buy SYMBOL QTY PRICE --broker NAME --date YYYY-MM-DD --commission X</code><br>or import a CSV: <code>portfolio.py import trades.csv</code></div>';
+      return;
+    }
+    var S = M.summary, total = S.value + (S.cash || 0);
+    var k = [["Market value", pkr(S.value), "invested " + pkr(S.cost), ""],
+             ["Unrealised", pkr(S.unrealised), S.cost ? pct(S.unrealised / S.cost) : "", sgn(S.unrealised)],
+             ["Realised + dividends", pkr(S.realised + S.dividends), "dividends " + pkr(S.dividends), sgn(S.realised + S.dividends)],
+             ["Costs paid", pkr(S.fees), "commission, taxes, fees", ""]];
+    if (S.cash != null) k.push(["Cash", pkr(S.cash), pctAbs(S.cash / total, 0) + " of total", ""]);
+    $("mi-kpis").innerHTML = k.map(function (x) {
+      return '<div class="kpi"><div class="l">' + esc(x[0]) + '</div><div class="v ' + x[3] + '">' + esc(x[1]) + '</div><div class="s">' + esc(x[2]) + "</div></div>";
+    }).join("");
+    var badge = { SELL: "<b class='neg'>SELL</b>", TRIM: "<b class='neg'>TRIM</b>", REVIEW: "<b>REVIEW</b>", HOLD: "HOLD", "NO DATA": "<span class='muted'>no data</span>" };
+    $("mi-hold").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Action</th><th>Price</th><th>Stop</th><th>P/L</th><th class='l'>Why</th><th>Qty</th><th>Avg cost</th><th>Target</th><th>Value</th><th class='l'>Broker</th><th class='l'>Since</th></tr>" +
+      M.holdings.map(function (hh) {
+        var s = bySym[hh.symbol] || { symbol: hh.symbol };
+        var brokers = Object.keys(hh.brokers || {}).map(function (b) { return esc(b) + " " + num(hh.brokers[b]); }).join(", ");
+        var why = esc(hh.why || "") + (hh.notes && hh.notes.length ? "<br><span class='muted small'>" + hh.notes.map(esc).join("<br>") + "</span>" : "");
+        return "<tr>" + cell(symCell(Object.assign({}, s, { held: false, owned: false })), "l") + cell(badge[hh.action] || esc(hh.action), "l") +
+          cell(num(hh.price, 2)) + cell(hh.stop == null ? "–" : num(hh.stop, 2) + (hh.stop_source === "yours" ? "*" : "")) +
+          cell(pct(hh.unrealised_pct), sgn(hh.unrealised_pct)) + "<td class='l' style='white-space:normal;min-width:200px'>" + why + "</td>" +
+          cell(num(hh.qty)) + cell(num(hh.avg_cost, 2)) + cell(hh.target == null ? "–" : num(hh.target, 2)) + cell(pkr(hh.value)) +
+          cell(brokers, "l") + cell(esc(hh.first_buy), "l") + "</tr>";
+      }).join("");
+    var st = M.settings;
+    $("mi-note").textContent = "Average cost includes commission, taxes and fees. Stop = " + st.stop_atr_mult + " × the 14-day average daily move, " +
+      Math.round(st.min_stop_pct * 100) + "–" + Math.round(st.max_stop_pct * 100) + "% below entry, trailing up; * = a stop you set. Prices are the last close.";
+    $("mi-buy").innerHTML = "<tr><th class='l'>Stock</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Cost incl. fees</th><th>Risk</th><th class='l'>Why it passed</th></tr>" +
+      (M.buy_ideas.length ? M.buy_ideas.map(function (i) {
+        var s = Object.assign({}, bySym[i.symbol] || { symbol: i.symbol, shariah: i.shariah }, { held: false });
+        return "<tr>" + cell(symCell(s), "l") + cell(num(i.entry, 2)) + cell(num(i.stop, 2) + " <span class='muted small'>" + pct(i.stop_pct) + "</span>") +
+          cell(num(i.target, 2)) + cell(i.qty ? num(i.qty) : "–") + cell(i.qty ? pkr(i.cost) : "–") + cell(i.qty ? pkr(i.risk_pkr) : "–") +
+          "<td class='l' style='white-space:normal;min-width:220px'>" + esc(i.strategy) + " " + esc(JSON.stringify(i.params || {})) +
+          ": out-of-sample " + pct(i.oos_cagr) + " a year vs buy-and-hold " + pct(i.oos_buyhold_cagr) + "</td></tr>";
+      }).join("") : "<tr><td class='l muted' colspan='8'>No buy ideas: nothing passed every check, or portfolio.py advise has not run yet.</td></tr>");
+    $("mi-buynote").textContent = (M.advice_date ? "From the run of " + M.advice_date + ". " : "") +
+      "Size risks " + (st.risk_per_trade * 100).toFixed(1) + "% of your capital between entry and stop, at most " + Math.round(st.max_position_pct * 100) +
+      "% in one stock. Rule-based suggestions from past prices, not investment advice; nothing is ordered for you.";
+    var alloc = {};
+    M.holdings.forEach(function (hh) { var key = hh.sector || "Unknown sector"; alloc[key] = (alloc[key] || 0) + (hh.value || hh.cost || 0); });
+    if (S.cash > 0) alloc.Cash = S.cash;
+    var ent = Object.keys(alloc).map(function (k) { return [k, alloc[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
+    if (ent.length > 6) { var rest = ent.slice(5).reduce(function (t, e) { return t + e[1]; }, 0); ent = ent.slice(0, 5).concat([["Other", rest]]); }
+    chart("mi-alloc", { type: "doughnut", data: { labels: ent.map(function (e) { return e[0]; }),
+      datasets: [{ data: ent.map(function (e) { return Math.round(e[1]); }), backgroundColor: ent.map(function (e, i) { return css(SLOTS[i]); }),
+        borderColor: css("--surface"), borderWidth: 2 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, cutout: "62%",
+        plugins: { legend: { position: window.innerWidth < 600 ? "bottom" : "right", labels: { color: css("--text-2"), boxWidth: 12, usePointStyle: true } },
+          tooltip: { callbacks: { label: function (c) { return c.label + ": " + pkr(c.raw) + " (" + pctAbs(c.raw / total, 0) + ")"; } } } } } });
+    var F = M.fees || [];
+    chart("mi-fees", { type: "bar", data: { labels: F.map(function (f) { return f.broker; }),
+      datasets: [["Commission", "commission", 0], ["Taxes", "taxes", 1], ["Other fees", "other", 2]].map(function (d) {
+        return { label: d[0], data: F.map(function (f) { return Math.round(f[d[1]]); }), backgroundColor: css(SLOTS[d[2]]), borderRadius: 4, borderSkipped: false };
+      }) },
+      options: baseOpts({ scales: { x: { stacked: true, ticks: { color: css("--text-2") }, grid: { display: false }, border: { display: false } },
+        y: { stacked: true, ticks: { color: css("--text-2") }, grid: { color: css("--grid") }, border: { display: false } } } }) });
+    $("mi-fees").parentNode.style.height = "200px";
+    $("mi-feet").innerHTML = "<tr><th class='l'>Broker</th><th>Trades</th><th>Turnover</th><th>Total costs</th><th>Cost rate</th></tr>" +
+      F.map(function (f) {
+        var t = f.commission + f.taxes + f.other;
+        return "<tr>" + cell(esc(f.broker) + (f.estimated ? " <span class='tag' title='commission estimated from the schedule on " + f.estimated + " trades'>est.</span>" : ""), "l") +
+          cell(num(f.trades)) + cell(pkr(f.turnover)) + cell(pkr(t)) + cell(f.turnover ? (100 * t / f.turnover).toFixed(3) + "%" : "–") + "</tr>";
+      }).join("");
+    var sales = (M.sales || []).slice().reverse();
+    $("mi-sales").innerHTML = "<tr><th class='l'>Date</th><th class='l'>Stock</th><th class='l'>Broker</th><th>Qty</th><th>P/L</th><th>%</th><th>Days</th></tr>" +
+      (sales.length ? sales.map(function (x) {
+        return "<tr>" + cell(esc(x.date), "l") + cell("<b>" + esc(x.symbol) + "</b>", "l") + cell(esc(x.broker), "l") + cell(num(x.qty)) +
+          cell(pkr(x.pnl), sgn(x.pnl)) + cell(pct(x.pnl_pct), sgn(x.pnl_pct)) + cell(num(x.avg_days_held)) + "</tr>";
+      }).join("") : "<tr><td class='l muted' colspan='7'>No sales yet.</td></tr>");
+    var dv = (M.dividends || []).slice().reverse();
+    $("mi-divs").innerHTML = dv.length ? dv.map(function (d) {
+      return "<li><span><b>" + esc(d.symbol) + "</b>" + (d.estimated ? " <span class='tag'>estimated</span>" : "") + "</span><span>" + pkr(d.net) +
+        " <span class='muted small'>" + esc(d.date) + "</span></span></li>";
+    }).join("") : "<li class='muted'>None recorded.</li>";
+  }
+
   // ---------------------------------------------------------------- dividends
   function renderDividends() {
     if (!rendered.dividends) { $("d-held").onchange = renderDividends; $("d-sh").onchange = renderDividends; }
@@ -471,7 +553,7 @@
     var saved = fromHash ? decodeURIComponent(fromHash).split(",") : (store("compare") || []);
     var slots = store("slots") || {};
     saved.forEach(function (s) { if (bySym[s] && slots[s]) state.slots[s] = slots[s]; addCompare(s); });
-    if (!state.compare.length) D.stocks.filter(function (s) { return s.held || s.watch; }).slice(0, 3).forEach(function (s) { addCompare(s.symbol); });
+    if (!state.compare.length) D.stocks.filter(function (s) { return s.owned || s.held || s.watch; }).slice(0, 3).forEach(function (s) { addCompare(s.symbol); });
     show(fromHash ? "compare" : (store("view") || "overview"));
   }
   if (window.PKM_DATA) boot(window.PKM_DATA);

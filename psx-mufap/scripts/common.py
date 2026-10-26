@@ -40,6 +40,14 @@ DEFAULT_CONFIG = {
     "dividend_tax": 0.15,
     # Face value per share is Rs 10 for most PSX shares; list exceptions, e.g. {"ABC": 5}.
     "face_values": {},
+    # Your real portfolio's suggestions (portfolio.py advise). Stop = stop_atr_mult x the 14-day
+    # average daily move, kept 5-15% below entry, trailing up; risk 1% of capital per new idea.
+    "stop_atr_mult": 2.5,
+    "min_stop_pct": 0.05,
+    "max_stop_pct": 0.15,
+    "target_r": 2.0,
+    "risk_per_trade": 0.01,
+    "max_position_pct": 0.25,
 }
 
 

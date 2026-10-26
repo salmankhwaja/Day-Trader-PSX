@@ -86,7 +86,8 @@ def evaluate(h, cfg, symbol, strategies, max_dd):
             "price": closes[-1], "price_date": rows[-1]["date"]}
 
 
-def build_proposal(h, cfg, a):
+def build_proposal(h, cfg, a, exclude=None):
+    """`exclude`: symbols never to pick (default: what the paper account already holds)."""
     ranked, _, notes = rank_stocks(h, cfg, a.symbols, "score", a.all, a.sector, a.shariah, a.min_volume)
     if not ranked:
         sys.exit("nothing to screen: download prices first")
@@ -99,7 +100,7 @@ def build_proposal(h, cfg, a):
                   "name": m.get("name"), "div_yield": m.get("div_yield")})
         evals.append(e)
     pf = paper.load(h) if os.path.exists(paper.ppath(h)) else None
-    held = set(pf["positions"]) if pf else set()
+    held = set(exclude) if exclude is not None else (set(pf["positions"]) if pf else set())
     picks, per_sector = [], {}
     for e in evals:
         if not e["pass"] or e["symbol"] in held:

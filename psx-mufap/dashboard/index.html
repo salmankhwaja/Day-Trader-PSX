@@ -67,6 +67,7 @@ tr:hover td { background: var(--surface-2); }
 .chip button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 0 0 2px; }
 .tag { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-2); margin-left: 4px; }
 .tag.sh { border-color: var(--good); color: var(--good-text); }
+.tag.own { border-color: var(--accent); color: var(--accent); }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
 input, select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 8px; min-width: 0; }
@@ -97,7 +98,8 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
     <button data-v="overview" class="on">Overview</button>
     <button data-v="screener">Screener</button>
     <button data-v="compare">Compare</button>
-    <button data-v="portfolio">Portfolio</button>
+    <button data-v="mine">My portfolio</button>
+    <button data-v="portfolio">Paper</button>
     <button data-v="dividends">Dividends</button>
     <button data-v="funds">Funds</button>
   </nav>
@@ -122,7 +124,7 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
       <select id="f-sector" aria-label="Sector"><option value="">All sectors</option></select>
       <label class="ck"><input type="checkbox" id="f-sh"> Shariah</label>
       <label class="ck"><input type="checkbox" id="f-watch"> Watchlist</label>
-      <label class="ck"><input type="checkbox" id="f-held"> Held</label>
+      <label class="ck"><input type="checkbox" id="f-held"> Owned or paper</label>
       <label class="ck">Min yield <input id="f-yield" type="number" min="0" step="1" style="width:64px" placeholder="%"></label>
       <button class="btn" id="f-compare">Compare selected (0)</button>
     </div>
@@ -149,6 +151,22 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
     </div>
   </section>
 
+  <section class="view" id="v-mine">
+    <div class="kpis" id="mi-kpis"></div>
+    <div class="card"><h2>What to do now: your holdings</h2><div class="tablewrap"><table id="mi-hold"></table></div>
+      <div class="note" id="mi-note"></div></div>
+    <div class="card" style="margin-top:12px"><h2>Buy ideas, with stop-loss</h2><div class="tablewrap"><table id="mi-buy"></table></div>
+      <div class="note" id="mi-buynote"></div></div>
+    <div class="grid" style="margin-top:12px">
+      <div class="card"><h2>Allocation</h2><div class="chart"><canvas id="mi-alloc"></canvas></div></div>
+      <div class="card"><h2>Costs by broker</h2><div class="chart"><canvas id="mi-fees"></canvas></div><div class="tablewrap"><table id="mi-feet"></table></div></div>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <div class="card"><h2>Realised profit and loss</h2><div class="tablewrap"><table id="mi-sales"></table></div></div>
+      <div class="card"><h2>Dividends received</h2><ul class="list" id="mi-divs"></ul></div>
+    </div>
+  </section>
+
   <section class="view" id="v-portfolio">
     <div class="kpis" id="pf-kpis"></div>
     <div class="grid">
@@ -164,7 +182,7 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
 
   <section class="view" id="v-dividends">
     <div class="filters">
-      <label class="ck"><input type="checkbox" id="d-held"> Held only</label>
+      <label class="ck"><input type="checkbox" id="d-held"> My shares only</label>
       <label class="ck"><input type="checkbox" id="d-sh"> Shariah only</label>
     </div>
     <div class="grid">
