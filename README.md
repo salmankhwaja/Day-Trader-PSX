@@ -33,6 +33,7 @@ courage, the judgement and the final tap on your broker's app stay with you.
    - [Practise with paper money](#8-practise-with-paper-money)
    - [Know your risk](#9-know-your-risk)
    - [Plan a SIP](#10-plan-a-sip)
+   - [Fresh data or what's on file?](#11-fresh-data-or-whats-on-file)
 7. [Your risk style](#your-risk-style)
 8. [How the suggestions work](#how-the-suggestions-work)
 9. [Run it on a schedule](#run-it-on-a-schedule)
@@ -57,7 +58,8 @@ courage, the judgement and the final tap on your broker's app stay with you.
 | Know what's doing well | Your watchlist or **every listed share**, ranked on 1-week to 1-year returns, risk, trend and lead or lag against the KSE-100, with sector, **Shariah status** (KMI All Share) and **dividend yield** |
 | Pick a mutual fund | MUFAP funds ranked **inside their own category**, and suggestions by risk appetite: low, medium or high, Shariah or conventional |
 | Track your real portfolio | Every trade with date, broker and actual charges; first-in-first-out lots per broker; mutual funds; realised and unrealised P/L after costs; dividends; what each broker has cost you |
-| Know what to do next | **SELL / TRIM / REVIEW / HOLD** for each holding, with a trailing **stop-loss** and target. **Buy ideas**, each with entry, stop-loss, target and a sensible quantity |
+| Know what to do next | **SELL / TRIM / REVIEW / HOLD** for each holding, with a trailing **stop-loss** and target. **Buy ideas**, each with entry, stop-loss, target and a sensible quantity. A **price calculator** on every one: rupees lost at the stop and made at the target, after charges |
+| Ask about one share | `portfolio.py check OGDC`: a verdict for your style, the backtest, stop, target, size and the price calculator in one go |
 | Test an idea first | Backtests of moving-average, breakout, RSI and momentum strategies, with costs, next-day fills and an honest out-of-sample test |
 | Practise | A paper account in pretend PKR: all of the drama, none of the margin calls |
 | Match it to your nerves | A **risk quiz** that sets your style (conservative to very aggressive); every buy/sell variable follows it, and you can override any one |
@@ -82,7 +84,15 @@ Straight from the source, end of day, no middlemen, no paid feed:
 | Broker tariffs | Published rate sheets, listed in [`brokers.json`](psx-mufap/brokers.json) | estimating charges |
 
 `pkdata.py` downloads these politely: one page a second. The PSX price page is undocumented,
-so every download is checked before it's saved. Prices are **end of day**, not live: this is a
+so every download is checked before it's saved.
+
+> [!NOTE]
+> **"The price URL gives me 404!"** It does, in a browser. Since late 2026 the PSX portal only
+> answers its data URLs (`/timeseries/...`, `/indices/...`, `/payouts`) for requests that come with
+> its own page's session: a cookie plus a key that every portal page carries (`window.__ps._k`),
+> sent back as an `X-Req-Id` header. The tools do exactly what the portal's own chart does: open
+> a normal page, read the key, then ask for the data. Company pages (`/company/<SYMBOL>`) still
+> open normally. Prices are **end of day**, not live: this is a
 planning tool, not a ticker. Format details are in
 [`references/data-sources.md`](psx-mufap/references/data-sources.md); terms of use are under
 [Data terms](#data-terms).
@@ -194,11 +204,34 @@ python3 rank.py sectors                         # sector league table
 ```
 
 ```bash
-# Advice on your portfolio
+# Advice on your portfolio (each one asks first: fetch fresh data, or use what's on file?)
 python3 portfolio.py advise                         # SELL / TRIM / REVIEW / HOLD with stop-losses,
-                                                    #   plus up to 3 buy ideas with entry, stop, target, quantity
+                                                    #   plus up to 3 buy ideas with entry, stop, target, quantity,
+                                                    #   and the price calculator for each
 python3 portfolio.py advise --all --shariah --buy 5 # buy ideas from the whole market, Shariah only
+python3 portfolio.py advise --fetch                 # download fresh prices first, no question asked
 ```
+
+```bash
+# One share, everything about it
+python3 portfolio.py check OGDC                     # verdict for your style, backtest, stop, target, size,
+                                                    #   and the price calculator
+python3 portfolio.py check OGDC --entry 250 --stop 232 --capital 500000   # your own numbers
+```
+
+The **price calculator** comes with every holding and every buy idea, so a suggestion is never
+just a word:
+
+```text
+SYN05 (BUY idea), buying: 2089 shares at 91.35 = PKR 190,830 + PKR 342 charges
+  falls to the stop 86.78 (-5.0%): lose about PKR 10,214 after charges
+  rises to the target 100.49 (+10.0%): gain about PKR 18,377 after charges
+  reward-to-risk 1.8 to 1; worth it if it works more than 36% of the time; break-even after charges 91.68
+```
+
+For shares you already hold it also says what selling today, or at the stop, would make or lose
+against what you paid. Charges come from your broker's schedule (see
+[Brokers and their charges](#brokers-and-their-charges)).
 
 ```bash
 # Check an idea against history first
@@ -344,6 +377,43 @@ The yearly return comes from, in order:
 Every plan also shows the result 3 points lower and 3 points higher, because the future rarely
 reads the plan.
 
+### 11. Fresh data or what's on file?
+
+Every piece of advice (`portfolio.py advise` and `check`, `rank.py stocks` and `funds`,
+`funds.py advise` and `review`, `propose.py run` and `review`, `risk.py portfolio`) starts by
+saying how old the data is and asking:
+
+```text
+Data on file: prices as of 2026-10-23, 3 days old, last fetched 2026-10-23 16:10. Fetch fresh data first? [y/N]
+```
+
+Say yes and it downloads only what that advice needs (the shares involved, your holdings, the
+KSE-100, and payouts or MUFAP as relevant), then advises. Say no and it advises on what's on
+file. Either way, **fetching is the only step that touches the network**: every number after it is
+calculated on the data on disk at that moment, and the output starts with the date it used:
+
+```text
+Based on prices as of 2026-10-26, 0 days old, last fetched 2026-10-26 16:05.
+```
+
+```bash
+python3 portfolio.py advise --fetch      # fetch first, don't ask
+python3 portfolio.py advise --no-fetch   # use what's on file, don't ask
+```
+
+When nobody is at the keyboard (a schedule, a script, Claude) it doesn't ask and doesn't fetch;
+the "Based on" line says so and suggests `--fetch`. The `pkm.py` menu always asks. Each
+successful download is noted in `fetch_log.json` in your data folder.
+
+**In the dashboard**, a strip under the tabs shows the data's date. When it's older than today it
+asks *Fetch now* or *Use stored data*, and you can tick **remember my choice**: it's kept in a
+cookie (`pkm_refresh`: ask, stored or auto), so next time the page either fetches by itself when
+the data is stale or quietly uses what it has. *Ask me again* forgets the choice. Fetching from the
+page runs the daily update on the computer or phone that serves it, then reloads the page.
+That needs the server to allow it (`dashboard.py serve --allow-refresh`, which the installers
+switch on when the dashboard is only reachable from the same machine). The one-file
+`dashboard.html` can't fetch by itself; it tells you which command to run.
+
 ---
 
 ## Your risk style
@@ -455,7 +525,7 @@ It installs two systemd *user* services (no root needed):
 | Service | What it does |
 |---|---|
 | `pkm-daily.timer` | At your times: refreshes prices, company data, payouts and MUFAP; credits paper dividends; lists dividends due on your real holdings (for you to confirm); writes your sell / hold / buy suggestions with stop-losses; reviews your funds; makes a fresh paper proposal on Fridays; rebuilds the dashboard |
-| `pkm-dashboard.service` | The dashboard server: read-only, on `127.0.0.1:8787` |
+| `pkm-dashboard.service` | The dashboard server on `127.0.0.1:8787`. It can run a fetch when the page asks (`PKM_DASH_REFRESH`, on by default when it listens on localhost only); otherwise it's read-only |
 
 <details>
 <summary><b>No systemd? Use cron</b></summary>
@@ -481,8 +551,13 @@ With the computer's clock on Pakistan time, for 04:00 and 07:00 on weekdays:
   ```
 
   The server refuses any address other than localhost without a password. It serves only its
-  three files, accepts GET only, and sends strict security headers. It speaks plain HTTP, so
-  never expose it to the open internet.
+  three files plus a small status endpoint, and sends strict security headers. It speaks plain
+  HTTP, so never expose it to the open internet.
+
+  The page's *Fetch now* button is off on other addresses unless you add `PKM_DASH_REFRESH=1`.
+  When on, a fetch request must carry the page's own header, come from an IP address or
+  `localhost` (or a name you list in `PKM_DASH_HOSTNAMES`, e.g. your Tailscale machine name),
+  carry the password, and wait two minutes after the last one. A stray website can't start one.
 
 </details>
 
@@ -592,12 +667,16 @@ Congratulations: you now have a trading terminal that cost less than a samosa.
 | Overview | KSE-100, sectors, top-ranked shares, dividends coming up |
 | Screener | every ranked share; filter by sector, Shariah, yield; tick to compare |
 | Compare | up to 6 companies side by side, dividends included |
-| My portfolio | what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; your funds; costs by broker; realised P/L |
+| My portfolio | what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; the price calculator (rupees at the stop and at the target, reward-to-risk); your funds; costs by broker; realised P/L |
 | Paper · Dividends · Funds | practice account, dividend calendar, MUFAP rankings |
 | Risk & SIP | your risk style, money at risk, value-at-risk, allocation vs target, and a live SIP calculator |
 
 The address only works on this phone: nothing leaves the device. If the page won't load, open
 Termux once, which wakes the dashboard service.
+
+When the data is older than today, the strip under the tabs offers **Fetch now** or **Use stored
+data**; tick *remember my choice* and it won't ask again (see
+[Fresh data or what's on file?](#11-fresh-data-or-whats-on-file)).
 
 ### Step 8: everyday use
 
@@ -605,7 +684,8 @@ Termux once, which wakes the dashboard service.
 |---|---|
 | Every weekday at 07:00 | Nothing. Prices, dividends, advice and the dashboard refresh themselves |
 | You bought or sold something | Home-screen **PSX-menu** › **6** or **7** |
-| You want advice now | **PSX-menu** › **4** for stocks with stop-losses, **5** for funds |
+| You want advice now | **PSX-menu** › **4** for stocks with stop-losses, **5** for funds (each asks whether to fetch fresh data first) |
+| You're eyeing one share | **PSX-menu** › **16**: verdict, stop, target, size and the price calculator |
 | You want to set your risk style | **PSX-menu** › **14** › take the quiz |
 | You're planning monthly investing | **PSX-menu** › **15** SIP calculator, or the dashboard's Risk & SIP tab |
 | You want fresh data now | Home-screen **PSX-update** |
@@ -653,7 +733,8 @@ Then add it as a custom skill in Claude's settings, and just ask:
 - *"Top 5 Shariah-compliant stocks by 3-month return"*
 - *"Compare LUCK, DGKC and MLCF, including dividends"*
 - *"I bought 500 OGDC at 298 through AKD today, commission 223.50, stop-loss at 280"*
-- *"What should I sell, and what could I buy, with stop-losses?"*
+- *"What should I sell, and what could I buy, with stop-losses?"* (Claude asks whether to fetch fresh data first, then says which date the advice is based on)
+- *"Should I buy MEBL at 250? What do I lose if it hits the stop?"*
 - *"Which Shariah money market funds should I consider, and how do mine compare?"*
 - *"How much have I paid each broker this year, and what's my realised profit?"*
 - *"Add my broker: 0.12% or 3 paisa a share, whichever is higher, Sindh sales tax"*
@@ -804,6 +885,9 @@ pkmarket/
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | A download says `FAILED` | PSX or MUFAP busy, down, or blocked on this network | Try later. One failed share doesn't stop the rest. Or save the page and use `--from-file` |
+| `timeseries/eod/<SYMBOL>` gives 404 in a browser | The portal now wants its own page's session key | Normal: the tools send it. If the tools fail too, update the repo; to save a price file by hand, open the company page, find the `eod` request in the browser's developer tools (Network tab) and save its response for `--from-file` |
+| Advice is on old prices | You answered "no" to fetching, or it ran unattended | Run it again with `--fetch`; the "Based on" line always shows the date used |
+| Dashboard has no *Fetch now* | Server started without `--allow-refresh`, or it's the one-file version | `dashboard.py serve --allow-refresh` (local only), or run `pkm.py daily` and reload |
 | "no price data" in a ranking | Prices not fetched yet | `pkdata.py psx --watchlist` (or `--all`) |
 | A buy idea has no quantity | No capital known | Record holdings, or `portfolio.py cash deposit AMOUNT` |
 | "that would sell … shares not held" | Wrong broker or date on a sale | Check `portfolio.py trades`; shares sell from the broker that holds them |
@@ -878,7 +962,8 @@ psx-mufap/                      the skill and the tools
 │   ├── propose.py              paper portfolio proposals and review
 │   ├── paper.py                paper account
 │   ├── portfolio.py            your real portfolio: trades, brokers, charges, lots, funds, P/L
-│   ├── advice.py               stop-losses, sell/hold/trim rules, sized buy ideas
+│   ├── advice.py               stop-losses, sell/hold/trim rules, sized buy ideas, price calculator, one-share check
+│   ├── freshness.py            "fetch first or use what's on file?" before every piece of advice
 │   ├── funds.py                fund suggestions by risk profile; review of funds you hold
 │   ├── profiles.py             the four risk styles and every buy/sell variable, described
 │   ├── risk.py                 risk quiz, profiles, settings, position sizing, portfolio risk

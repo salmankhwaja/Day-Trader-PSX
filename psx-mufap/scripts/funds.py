@@ -30,6 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
+import freshness as F  # noqa: E402
 import rank  # noqa: E402
 
 PROFILES = {
@@ -113,6 +114,7 @@ def p1(x):
 
 
 def cmd_advise(a, h, cfg):
+    F.decide(a, h, cfg, funds=True)
     date, out = advise(h, a.risk, a.shariah, a.top)
     if a.json:
         print(json.dumps({"date": date, "risk": a.risk, "shariah": a.shariah, "categories": out}, indent=1, default=str))
@@ -132,6 +134,7 @@ def cmd_advise(a, h, cfg):
 
 
 def cmd_review(a, h, cfg):
+    F.decide(a, h, cfg, funds=True)
     date, out = review(h)
     if not out:
         print("no funds recorded: portfolio.py fund-buy \"FUND NAME\" AMOUNT")
@@ -152,7 +155,8 @@ def main(argv=None):
     p.add_argument("--shariah", action="store_true")
     p.add_argument("--top", type=int, default=3)
     p.add_argument("--json", action="store_true")
-    sub.add_parser("review")
+    F.add_args(p)
+    F.add_args(sub.add_parser("review"))
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)

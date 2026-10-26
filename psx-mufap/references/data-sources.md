@@ -3,7 +3,16 @@
 ## PSX: `https://dps.psx.com.pk/timeseries/eod/<SYMBOL>`
 
 The PSX Data Portal's end-of-day series. It is undocumented; the format below is how
-open-source PSX tools describe it, and `pkdata.py` checks it on every download. JSON:
+open-source PSX tools describe it, and `pkdata.py` checks it on every download.
+
+**Session key (since late 2026).** The portal returns 404 for this URL (and may for
+`/indices/...` and `/payouts`) unless the request looks like its own page's: a session cookie
+plus the key each portal page embeds as `window.__ps = {"_k": "..."}`, sent back in an
+`X-Req-Id` header with `X-Requested-With: XMLHttpRequest` (the site's `script.js` does
+`$.ajaxSetup({headers: {"X-Req-Id": __ps._k}})`). `common.http_get` reads the key from the home
+page (or a company page) once per run and retries once with a fresh key on 401/403/404.
+
+JSON:
 
 ```json
 {"status": 1, "message": "", "data": [[1792697400, 245.10, 1834500, 243.00], ...]}

@@ -94,14 +94,14 @@ def run(home, scope="watchlist", download=True, git=False):
     every = ["--all"] if scope == "all" else []
     if os.path.exists(p("paper", "portfolio.json")):
         step("paper: dividends", "paper", ["dividends", "--apply"], home)
-        step("paper: review", "propose", ["review"], home)
+        step("paper: review", "propose", ["review", "--no-fetch"], home)
         step("paper: value", "paper", ["mark"], home)
         if today.isoweekday() == 5:
-            step("paper: proposal", "propose", ["run"] + every, home)
+            step("paper: proposal", "propose", ["run", "--no-fetch"] + every, home)
     if os.path.exists(p("portfolio", "ledger.json")):
         step("my portfolio: dividends due", "portfolio", ["dividends"], home)
-        step("my portfolio: advice", "portfolio", ["advise"] + every, home)
-        step("my portfolio: funds", "funds", ["review"], home)
+        step("my portfolio: advice", "portfolio", ["advise", "--no-fetch"] + every, home)
+        step("my portfolio: funds", "funds", ["review", "--no-fetch"], home)
     step("dashboard", "dashboard", ["build"], home)
     step("dashboard (one file)", "dashboard", ["build", "--standalone", p("dashboard.html")], home)
     if git:

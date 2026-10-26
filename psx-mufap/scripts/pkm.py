@@ -54,6 +54,14 @@ def yes(prompt, default=False):
     return str(v).lower().startswith("y")
 
 
+def fresh():
+    """Every piece of advice asks first: fetch fresh data, or use what's on file?"""
+    import freshness as F
+    st = F.status(C.home(), C.load_config(C.home()), F.scope(C.home(), C.load_config(C.home())), funds=True)
+    print("Data on file: %s." % F.describe(st, funds=True))
+    return "--fetch" if yes("Fetch fresh data first") else "--no-fetch"
+
+
 def opt(flag, value):
     return [flag, str(value)] if value not in (None, "") else []
 
@@ -87,7 +95,7 @@ def rank_stocks():
         sector = ask("Sector contains (blank = all)", "")
         args += opt("--sector", sector)
     sort = ask("Sort by score / 1m / 3m / 1y / div_yield", "score")
-    call("rank", *(args + ["--sort", sort]))
+    call("rank", *(args + ["--sort", sort, fresh()]))
 
 
 def stock_advice():
@@ -96,7 +104,15 @@ def stock_advice():
         args.append("--all")
     if yes("Shariah-compliant buys only"):
         args.append("--shariah")
-    call("portfolio", *args)
+    call("portfolio", *(args + [fresh()]))
+
+
+def check_share():
+    sym = ask("Symbol (e.g. OGDC)", required=True).upper()
+    args = ["check", sym]
+    args += opt("--entry", ask("Price you'd pay (blank = last close)", ""))
+    args += opt("--stop", ask("Your own stop (blank = computed)", ""))
+    call("portfolio", *(args + [fresh()]))
 
 
 def fund_advice():
@@ -104,9 +120,10 @@ def fund_advice():
     args = ["advise", "--risk", risk, "--top", ask("Funds per category", "3")]
     if yes("Shariah-compliant only"):
         args.append("--shariah")
-    call("funds", *args)
+    f = fresh()
+    call("funds", *(args + [f]))
     if yes("Check the funds you hold too"):
-        call("funds", "review")
+        call("funds", "review", "--no-fetch")  # just fetched above, or chose not to
 
 
 def record_trade(side):
@@ -221,7 +238,7 @@ def risk_menu():
     elif c == "f":
         call("risk", "set", ask("Setting name (see c)", required=True), ask("New value", required=True))
     else:
-        call("risk", "portfolio")
+        call("risk", "portfolio", fresh())
 
 
 def sip_menu():
@@ -260,6 +277,7 @@ MENU = [
     ("Settings: data folder, watchlist", settings),
     ("Risk: quiz, profiles, settings, my portfolio's risk", risk_menu),
     ("SIP calculator: plan or goal", sip_menu),
+    ("Check one share: verdict + price calculator", check_share),
 ]
 
 

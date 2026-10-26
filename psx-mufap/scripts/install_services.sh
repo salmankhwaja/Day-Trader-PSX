@@ -15,6 +15,8 @@
 #   PKM_SCOPE=all ./install_services.sh            every listed share
 #   PKM_GIT_PUSH=1 PKM_HOME=~/my-private-data-repo ./install_services.sh   also push data (private repo only)
 #   PKM_DASH_HOST=100.x.y.z PKM_DASHBOARD_PASSWORD='...' ./install_services.sh   # e.g. your Tailscale IP
+#   PKM_DASH_REFRESH=0 ./install_services.sh       dashboard can't start a fetch (default: it can when
+#                                                  it listens on 127.0.0.1 only; 1 to allow on other hosts)
 #
 # Remove with: systemctl --user disable --now pkm-daily.timer pkm-dashboard.service
 set -eu
@@ -24,6 +26,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${PKM_SCOPE:=watchlist}"
 : "${PKM_DASH_HOST:=127.0.0.1}"
 : "${PKM_DASH_PORT:=8787}"
+# The page may ask for fresh data by default only when the server is on this computer alone.
+case "$PKM_DASH_HOST" in 127.*|localhost|::1) : "${PKM_DASH_REFRESH:=1}" ;; *) : "${PKM_DASH_REFRESH:=0}" ;; esac
 : "${PKM_SCHEDULE:=07:00}"
 : "${PKM_DAYS:=Mon..Fri}"
 : "${PKM_TZ:=Asia/Karachi}"
@@ -51,7 +55,14 @@ umask 077
   echo "PKM_SCOPE=$PKM_SCOPE"
   echo "PKM_GIT_PUSH=$PKM_GIT_PUSH"
   [ -n "${PKM_DASHBOARD_PASSWORD:-}" ] && echo "PKM_DASHBOARD_PASSWORD=$PKM_DASHBOARD_PASSWORD"
+  [ -n "${PKM_DASH_HOSTNAMES:-}" ] && echo "PKM_DASH_HOSTNAMES=$PKM_DASH_HOSTNAMES"
 } > "$ENV_FILE"
+# With PKM_DASH_REFRESH=1 the dashboard page may start a fetch, so the server needs to write the data folder.
+if [ "$PKM_DASH_REFRESH" = "1" ]; then
+  DASH_FLAGS="--allow-refresh"; DASH_PATHS="ReadWritePaths=$PKM_HOME"; DASH_DESC="web server that may fetch on request"
+else
+  DASH_FLAGS=""; DASH_PATHS="ReadOnlyPaths=$PKM_HOME"; DASH_DESC="read-only web server"
+fi
 chmod 600 "$ENV_FILE"
 
 cat > "$UNIT_DIR/pkm-daily.service" <<UNIT
@@ -80,17 +91,17 @@ UNIT
 
 cat > "$UNIT_DIR/pkm-dashboard.service" <<UNIT
 [Unit]
-Description=PSX/MUFAP dashboard (read-only web server)
+Description=PSX/MUFAP dashboard ($DASH_DESC)
 After=network-online.target
 
 [Service]
 EnvironmentFile=$ENV_FILE
-ExecStart=/usr/bin/env python3 $HERE/dashboard.py serve --host $PKM_DASH_HOST --port $PKM_DASH_PORT
+ExecStart=/usr/bin/env python3 $HERE/dashboard.py serve --host $PKM_DASH_HOST --port $PKM_DASH_PORT $DASH_FLAGS
 Restart=on-failure
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ReadOnlyPaths=$PKM_HOME
+$DASH_PATHS
 
 [Install]
 WantedBy=default.target

@@ -35,6 +35,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
+import freshness as F  # noqa: E402
 import profiles as PR  # noqa: E402
 
 QUESTIONS = [
@@ -351,6 +352,7 @@ def portfolio_risk(h, cfg):
 
 
 def cmd_portfolio(a, h, cfg):
+    F.decide(a, h, cfg, F.held_symbols(h), funds=True, payouts=False)
     r = portfolio_risk(h, cfg)
     if a.json:
         print(json.dumps(r, indent=1, default=str))
@@ -412,6 +414,7 @@ def main(argv=None):
     p.add_argument("--target", type=float)
     p = sub.add_parser("portfolio")
     p.add_argument("--json", action="store_true")
+    F.add_args(p)
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)

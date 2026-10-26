@@ -16,7 +16,10 @@ import csv
 import json
 import math
 import os
+import http.cookiejar
+import re
 import time
+import urllib.error
 import urllib.request
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) pk-market-skill/1.0 (personal research)"
@@ -93,12 +96,63 @@ def write_user_config(h, updates, remove=()):
     return raw
 
 
-def http_get(url, timeout=30, data=None):
-    """GET (or POST when data is given) with a polite user agent and a 1 request/second throttle."""
+PSX_HOST = "https://dps.psx.com.pk"
+# PSX's data portal now answers its data URLs (/timeseries/..., /indices/..., /payouts) only for
+# requests that look like its own page's: a session cookie plus the per-session key every page
+# carries as window.__ps = {"_k": "..."}, sent back as the X-Req-Id header (without them,
+# /timeseries/eod/<SYMBOL> returns 404). We read the key from an ordinary page, once per run.
+_JAR = http.cookiejar.CookieJar()
+_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_JAR))
+_PSX = {"key": None}
+_KEY_RE = re.compile(r'window\.__ps\s*=\s*\{[^}]*?"_k"\s*:\s*"([^"]+)"')
+
+
+def _fetch(url, timeout, data, headers):
     time.sleep(1.0)
-    req = urllib.request.Request(url, data=data, headers={"User-Agent": UA, "Accept": "*/*"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    h = {"User-Agent": UA, "Accept": "*/*"}
+    h.update(headers or {})
+    req = urllib.request.Request(url, data=data, headers=h)
+    with _OPENER.open(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
+
+
+def psx_key(text=None, refresh=False):
+    """The PSX portal's session key: taken from `text` if it's a portal page, else from its home page."""
+    if text:
+        m = _KEY_RE.search(text)
+        if m:
+            _PSX["key"] = m.group(1)
+        return _PSX["key"]
+    if _PSX["key"] and not refresh:
+        return _PSX["key"]
+    page = _fetch(PSX_HOST + "/", 30, None, {"Accept": "text/html"})
+    m = _KEY_RE.search(page)
+    if not m:  # the home page changed: any company page carries it too
+        page = _fetch(PSX_HOST + "/company/OGDC", 30, None, {"Accept": "text/html"})
+        m = _KEY_RE.search(page)
+    _PSX["key"] = m.group(1) if m else None
+    return _PSX["key"]
+
+
+def http_get(url, timeout=30, data=None):
+    """GET (or POST when data is given) with a polite user agent and a 1 request/second throttle.
+    Requests to the PSX data portal carry its session cookie and key, like its own pages do."""
+    if not url.startswith(PSX_HOST) or "/company/" in url:
+        text = _fetch(url, timeout, data, None)
+        if url.startswith(PSX_HOST):
+            psx_key(text)
+        return text
+    for attempt in (0, 1):
+        key = psx_key(refresh=attempt == 1)
+        hdr = {"X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/javascript, text/html, */*; q=0.01",
+               "Referer": PSX_HOST + "/"}
+        if key:
+            hdr["X-Req-Id"] = key
+        try:
+            return _fetch(url, timeout, data, hdr)
+        except urllib.error.HTTPError as e:
+            if attempt == 1 or e.code not in (401, 403, 404, 419):
+                raise
 
 
 # ---------- price files ----------

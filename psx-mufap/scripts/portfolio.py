@@ -48,6 +48,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
+import freshness as F  # noqa: E402
 import psxinfo as P  # noqa: E402
 
 
@@ -793,6 +794,11 @@ def cmd_advise(a, h, cfg):
     return A.cmd_advise(a, h, cfg)
 
 
+def cmd_check(a, h, cfg):
+    import advice as A
+    return A.cmd_check(a, h, cfg)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--home")
@@ -869,13 +875,21 @@ def main(argv=None):
     p.add_argument("--buy", type=int, default=3, help="how many buy ideas (default 3)")
     p.add_argument("--candidates", type=int, help="default: your risk profile's 'candidates'")
     p.add_argument("--json", action="store_true")
+    F.add_args(p)
+    p = sub.add_parser("check", help="one share: verdict, stop, target, size and the price calculator")
+    p.add_argument("symbol")
+    p.add_argument("--entry", type=float, help="the price you'd pay (default: last close)")
+    p.add_argument("--stop", type=float, help="your own stop (default: computed from your style)")
+    p.add_argument("--capital", type=float, help="size against this instead of your recorded portfolio")
+    p.add_argument("--json", action="store_true")
+    F.add_args(p)
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)
     fn = {"broker": cmd_broker, "buy": cmd_trade, "sell": cmd_trade, "dividend": cmd_dividend,
           "dividends": cmd_dividends, "cash": cmd_cash, "holdings": cmd_holdings, "pnl": cmd_pnl, "fees": cmd_fees,
           "trades": cmd_trades, "delete": cmd_delete, "stop": cmd_stop, "import": cmd_import, "export": cmd_export,
-          "advise": cmd_advise, "fund-buy": cmd_fund, "fund-sell": cmd_fund}[a.cmd]
+          "advise": cmd_advise, "check": cmd_check, "fund-buy": cmd_fund, "fund-sell": cmd_fund}[a.cmd]
     return fn(a, h, cfg)
 
 

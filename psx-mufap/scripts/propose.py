@@ -36,6 +36,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
+import freshness as F  # noqa: E402
 import backtest as B  # noqa: E402
 import paper  # noqa: E402
 from rank import rank_stocks  # noqa: E402
@@ -140,6 +141,7 @@ def build_proposal(h, cfg, a, exclude=None):
 
 
 def cmd_run(a, h, cfg):
+    F.decide(a, h, cfg, F.scope(h, cfg, a.symbols, a.all), payouts=True)
     prop = build_proposal(h, cfg, a)
     d = os.path.join(h, "proposals")
     os.makedirs(d, exist_ok=True)
@@ -207,6 +209,7 @@ def review(h, cfg, stop_loss):
 
 
 def cmd_review(a, h, cfg):
+    F.decide(a, h, cfg, F.held_symbols(h), payouts=True)
     pf, out = review(h, cfg, a.stop_loss / 100.0)
     if not out:
         print("no stock positions to review")
@@ -243,9 +246,11 @@ def main(argv=None):
     p.add_argument("--max-position", type=float, default=20.0, help="%% of account per name")
     p.add_argument("--strategies", help="comma list (default: your risk profile's 'strategies')")
     p.add_argument("--apply", action="store_true")
+    F.add_args(p)
     p = sub.add_parser("review")
     p.add_argument("--stop-loss", type=float, default=15.0)
     p.add_argument("--apply", action="store_true")
+    F.add_args(p)
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)

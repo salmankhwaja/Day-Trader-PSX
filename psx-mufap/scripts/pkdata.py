@@ -16,7 +16,10 @@
 Sources
   PSX    https://dps.psx.com.pk/timeseries/eod/<SYMBOL>  JSON, about five years of daily
          [unix_time, close, volume, open] rows (undocumented; checked on parse).
-         Index symbols such as KSE100 are reported to work the same way.
+         Index symbols such as KSE100 are reported to work the same way. Since late 2026 the
+         portal answers this URL only with its page's session cookie and key (X-Req-Id, read
+         from window.__ps on any portal page); common.http_get does that, so opening the URL
+         directly in a browser gives 404 even though the tools work.
   MUFAP  https://www.mufap.com.pk/Industry/IndustryStatDaily?tab=1  the daily NAV and
          return table for every open-end fund, grouped by category.
 
@@ -132,8 +135,10 @@ def cmd_psx(a, h, cfg):
             failed.append(s)
             print("%-8s FAILED: %s" % (s, e))
     if failed:
-        print("\n%d failed: %s. If the site is blocked here, fetch %s with a web tool, "
-              "save it, and rerun with --from-file." % (len(failed), " ".join(failed), PSX_EOD % "<SYMBOL>"))
+        print("\n%d failed: %s. If the site is blocked here, open https://dps.psx.com.pk/company/<SYMBOL> in a "
+              "browser, find the request to %s in the developer tools' Network tab, save its response, "
+              "and rerun with --from-file. (Opening that URL directly gives 404: the portal wants its own "
+              "page's session.)" % (len(failed), " ".join(failed), PSX_EOD % "<SYMBOL>"))
         return 1
     return 0
 
@@ -444,8 +449,12 @@ def main(argv=None):
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)
-    return {"psx": cmd_psx, "mufap": cmd_mufap, "status": cmd_status, "universe": cmd_universe,
-            "company": cmd_company, "payouts": cmd_payouts, "init": cmd_init}[a.cmd](a, h, cfg)
+    rc = {"psx": cmd_psx, "mufap": cmd_mufap, "status": cmd_status, "universe": cmd_universe,
+          "company": cmd_company, "payouts": cmd_payouts, "init": cmd_init}[a.cmd](a, h, cfg)
+    if a.cmd in ("psx", "mufap", "payouts") and not rc:
+        import freshness
+        freshness.write_log(h, [a.cmd])  # so advice can say when the data was last fetched
+    return rc
 
 
 if __name__ == "__main__":

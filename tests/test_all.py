@@ -28,6 +28,7 @@ import pkm  # noqa: E402
 import profiles as PRF  # noqa: E402
 import risk as RK  # noqa: E402
 import sip as SP  # noqa: E402
+import freshness as FR  # noqa: E402
 
 
 def run(fn, argv):
@@ -765,6 +766,176 @@ class TestSIP(Market):
         self.assertIn("moderate profile mix", out)
         rc, out = run(SP.main, ["--home", self.h, "goal", "--target", "1000000", "--years", "5", "--rate", "12"])
         self.assertIn("a month", out)
+
+
+class TestFreshness(Market):
+    """Every advice says which data it used, and only fetches when asked."""
+
+    def test_fetch_log_and_status(self):
+        log = FR.read_log(self.h)
+        self.assertIn("psx", log)  # pkdata records each successful load
+        st = FR.status(self.h, self.cfg, ["SYN01", "NOPE"])
+        self.assertEqual(st["missing"], ["NOPE"])
+        self.assertEqual(st["prices_newest"], C.read_prices(C.price_path(self.h, "SYN01"))[-1]["date"])
+        self.assertIn("prices as of", FR.describe(st))
+
+    def test_no_fetch_unattended_and_flags(self):
+        calls = []
+        orig = FR.fetch
+        FR.fetch = lambda *a, **k: (calls.append(a) or (["psx"], []))
+        try:
+            ns = argparse_ns(fetch=False, no_fetch=False)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                st = FR.decide(ns, self.h, self.cfg, ["SYN01"])  # not a terminal: never fetches by itself
+            self.assertFalse(calls)
+            self.assertFalse(st["fetched"])
+            self.assertIn("add --fetch", out.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()):
+                FR.decide(argparse_ns(fetch=True, no_fetch=False), self.h, self.cfg, ["SYN01"])
+            self.assertEqual(calls[0][2], ["SYN01"])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()) as o:
+                FR.decide(argparse_ns(fetch=False, no_fetch=True, json=True), self.h, self.cfg, ["SYN01"])
+            self.assertEqual(o.getvalue(), "")  # --json output stays clean
+            self.assertIn("Based on", err.getvalue())
+        finally:
+            FR.fetch = orig
+
+    def test_every_advice_command_takes_the_flags(self):
+        run(PF.main, ["--home", self.h, "cash", "deposit", "500000"])
+        for fn, argv in ((PF.main, ["advise", "--no-fetch"]), (PF.main, ["check", "SYN05", "--no-fetch"]),
+                         (rank.main, ["stocks", "--no-fetch"]), (RK.main, ["portfolio", "--no-fetch"])):
+            try:
+                rc, out = run(fn, ["--home", self.h] + argv)
+            except SystemExit:
+                continue  # e.g. nothing recorded for risk.py portfolio
+            self.assertIn("Based on", out, argv)
+
+
+class TestPriceCalculator(Market):
+    def test_numbers(self):
+        b = PF.preset_broker("psx-minimum")
+        c = A.price_calc(b, 1000, 100.0, 95.0, 110.0, buying=True)
+        buy = sum(PF.estimate_charges(b, 1000, 100.0, "buy"))
+        self.assertAlmostEqual(c["loss_at_stop"], 5000 + buy + sum(PF.estimate_charges(b, 1000, 95.0, "sell")), places=1)
+        self.assertAlmostEqual(c["gain_at_target"], 10000 - buy - sum(PF.estimate_charges(b, 1000, 110.0, "sell")), places=1)
+        self.assertAlmostEqual(c["breakeven_win_rate"], c["loss_at_stop"] / (c["loss_at_stop"] + c["gain_at_target"]))
+        self.assertGreater(c["breakeven_price"], 100.0)
+        self.assertEqual(A.price_calc(b, 0, 100, 95, 110), None)
+
+    def test_advice_and_check_carry_it(self):
+        run(PF.main, ["--home", self.h, "broker", "add", "AKD", "--preset", "akd", "--default"])
+        run(PF.main, ["--home", self.h, "cash", "deposit", "1000000"])
+        rows = C.read_prices(C.price_path(self.h, "SYN05"))
+        run(PF.main, ["--home", self.h, "buy", "SYN05", "500", str(rows[-60]["close"]), "--date", rows[-60]["date"]])
+        rc, out = run(PF.main, ["--home", self.h, "advise", "--no-fetch", "--all"])
+        self.assertIn("PRICE CALCULATOR", out)
+        self.assertIn("selling today vs what you paid", out)
+        res = A.advise(self.h, self.cfg, argparse_ns(buy=3, all=True, shariah=False, sector=None, candidates=None))
+        self.assertTrue(all(r.get("calc") for r in res["holdings"]))
+        self.assertTrue(all(i.get("calc") for i in res["buy"] if i.get("qty")))
+        held = A.check(self.h, self.cfg, "SYN05")
+        self.assertTrue(held["held"])
+        self.assertIn("vs_cost_now", held["calc"])
+        fresh = A.check(self.h, self.cfg, "SYN08", entry=100.0, stop=90.0)
+        self.assertFalse(fresh["held"])
+        self.assertEqual(fresh["stop"], 90.0)
+        self.assertAlmostEqual(fresh["target"], 100 + float(self.cfg["target_r"]) * 10)
+        self.assertIn(fresh["action"], ("BUY", "NOT NOW"))
+        self.assertGreater(fresh["qty"], 0)
+        with self.assertRaises(ValueError):
+            A.check(self.h, self.cfg, "SYN08", entry=100.0, stop=101.0)
+        rc, out = run(PF.main, ["--home", self.h, "check", "SYN08", "--no-fetch", "--capital", "500000"])
+        self.assertIn("VERDICT", out)
+        self.assertIn("worth it if it works more than", out)
+
+
+class TestDashboardRefresh(Market):
+    def test_refresh_is_opt_in_and_guarded(self):
+        import threading
+        import urllib.error
+        import urllib.request
+        run(dashboard.main, ["--home", self.h, "build"])
+        with open(os.path.join(self.h, "dashboard", "data.json")) as f:
+            data = json.load(f)
+        self.assertIn("prices_as_of", data["freshness"])
+        H = dashboard.Handler
+        H.root, H.password, H.home, H.allow_refresh, H.hostnames = os.path.join(self.h, "dashboard"), None, self.h, False, ()
+        started = []
+        orig = dashboard.run_refresh
+
+        def fake(home, scope):
+            started.append(home)
+            with dashboard.REFRESH_LOCK:
+                dashboard.REFRESH.update(running=False, ok=True)
+        dashboard.run_refresh = fake
+        dashboard.REFRESH.update(running=False, last_start=0.0)
+        srv = dashboard.http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = "http://127.0.0.1:%d" % srv.server_address[1]
+        op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+        def post(headers):
+            try:
+                return op.open(urllib.request.Request(base + "/api/refresh", data=b"", method="POST", headers=headers)).status
+            except urllib.error.HTTPError as e:
+                return e.code
+        try:
+            self.assertFalse(json.load(op.open(base + "/api/status"))["refresh"])
+            self.assertEqual(post({"X-PKM-Refresh": "1"}), 405)  # off unless --allow-refresh
+            H.allow_refresh = True
+            self.assertEqual(post({}), 403)  # no custom header: a cross-site form
+            self.assertEqual(post({"X-PKM-Refresh": "1", "Host": "evil.example:80"}), 403)  # DNS rebinding
+            self.assertEqual(post({"X-PKM-Refresh": "1", "Origin": "http://evil.example"}), 403)
+            self.assertEqual(post({"X-PKM-Refresh": "1"}), 202)
+            import time
+            for _ in range(50):
+                if started:
+                    break
+                time.sleep(0.05)
+            self.assertEqual(started, [self.h])
+            self.assertEqual(post({"X-PKM-Refresh": "1"}), 429)  # cool-down
+            H.password = "pw"
+            self.assertEqual(post({"X-PKM-Refresh": "1"}), 401)
+        finally:
+            dashboard.run_refresh = orig
+            H.allow_refresh, H.password = False, None
+            dashboard.REFRESH.update(running=False, last_start=0.0)
+            srv.shutdown()
+            srv.server_close()
+
+
+class TestPSXSession(unittest.TestCase):
+    """The portal's data URLs need the session key from one of its pages (X-Req-Id)."""
+
+    def test_key_read_sent_and_refreshed(self):
+        import urllib.error
+        calls = []
+        pages = {"https://dps.psx.com.pk/": '<script>window.__ps = {"lc":"en","_k":"KEY%d","rv":"1"};</script>'}
+
+        def fake(url, timeout, data, headers):
+            calls.append((url, dict(headers or {})))
+            if url in pages:
+                return pages[url] % len(calls)
+            if (headers or {}).get("X-Req-Id") == "KEY1":  # the first key has expired
+                raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            return "[[1761523200,100.5,1000,99.0]]"
+        orig = C._fetch
+        C._fetch, C._PSX["key"] = fake, None
+        try:
+            out = C.http_get("https://dps.psx.com.pk/timeseries/eod/OGDC")
+            self.assertTrue(out.startswith("[["))
+            eod = [h for u, h in calls if "timeseries" in u]
+            self.assertEqual(eod[0]["X-Req-Id"], "KEY1")
+            self.assertEqual(eod[-1]["X-Req-Id"], "KEY3")  # fetched a fresh key and retried once
+            self.assertEqual(eod[-1]["X-Requested-With"], "XMLHttpRequest")
+            calls.clear()
+            C.http_get("https://www.mufap.com.pk/Industry/IndustryStatDaily?tab=1")
+            self.assertNotIn("X-Req-Id", calls[0][1])  # other sites get nothing extra
+            self.assertEqual(C.psx_key('x window.__ps = {"_k":"FROMPAGE"} y'), "FROMPAGE")
+        finally:
+            C._fetch, C._PSX["key"] = orig, None
 
 
 class TestDocs(unittest.TestCase):

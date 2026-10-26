@@ -36,6 +36,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
+import freshness as F  # noqa: E402
 from pkdata import latest_mufap, MUFAP_PERIODS  # noqa: E402
 import psxinfo as P  # noqa: E402
 
@@ -219,6 +220,7 @@ def p1(x):
 
 
 def cmd_stocks(a, h, cfg):
+    F.decide(a, h, cfg, F.scope(h, cfg, a.symbols, a.all, held=False), payouts=True)
     res, bm, notes = rank_stocks(h, cfg, a.symbols, a.sort, a.all, a.sector, a.shariah, a.min_volume)
     if a.json:
         print(json.dumps({"stocks": res, "benchmark": bm, "notes": notes}, indent=1, default=str))
@@ -264,6 +266,7 @@ def cmd_sectors(a, h, cfg):
 
 
 def cmd_funds(a, h, cfg):
+    F.decide(a, h, cfg, funds=True)
     date, funds = fund_rows(h)
     by_cat = rank_funds(funds, a.category, a.sort)
     if a.json:
@@ -319,6 +322,7 @@ def main(argv=None):
     p.add_argument("--sort", default="score",
                    choices=["score", "1w", "1m", "3m", "6m", "1y", "ytd", "sharpe", "div_yield"])
     p.add_argument("--json", action="store_true")
+    F.add_args(p)
     p = sub.add_parser("sectors")
     p.add_argument("--shariah", action="store_true")
     p.add_argument("--min-volume", type=float)
@@ -327,6 +331,7 @@ def main(argv=None):
     p.add_argument("--category")
     p.add_argument("--sort", default="score", choices=["score"] + MUFAP_PERIODS)
     p.add_argument("--json", action="store_true")
+    F.add_args(p)
     sub.add_parser("categories")
     a = ap.parse_args(argv)
     h = C.home(a.home)

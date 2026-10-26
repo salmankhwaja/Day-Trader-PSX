@@ -35,6 +35,26 @@ Data comes from the PSX Data Portal (`dps.psx.com.pk`: daily prices, index membe
 pages, payouts) and MUFAP (fund NAVs and returns), end of day. Say so when asked where the
 numbers come from.
 
+## Before every piece of advice: fetch, or use what's on file?
+
+Every time the user asks for advice (what to buy, sell or hold, one share, funds, rankings,
+portfolio risk), **first ask whether to fetch fresh data**, stating how old the data on file is
+(`python3 scripts/pkdata.py status`, or the "Data on file" line). Ask every time, unless the
+user has told you their standing choice in this conversation ("always fetch", "just use what you
+have"). Then run the command with the matching flag, so it never asks again or fetches
+silently:
+
+```
+python3 scripts/portfolio.py advise --fetch        # user said yes: download first, then advise
+python3 scripts/portfolio.py advise --no-fetch     # user said no: advise on the data on file
+```
+
+Every advice command takes `--fetch` / `--no-fetch` (`portfolio.py advise|check`, `rank.py
+stocks|funds`, `funds.py advise|review`, `propose.py run|review`, `risk.py portfolio`). Fetching
+is the only step that uses the network; all calculations then use the data on disk. The output
+starts with "Based on prices as of …": repeat that date in your answer. If the fetch fails
+(sandbox), say so, use the fallbacks below, or advise on the stored data with its date.
+
 ## Step 1: get fresh data
 
 First check what is already there: `python3 scripts/pkdata.py status`.
@@ -54,9 +74,13 @@ same page another way, save the body to a file, and import it:
    full page, not a summary). Save it, e.g. `mufap.md`, then
    `python3 scripts/pkdata.py mufap --from-file mufap.md`.
    The parser needs the table rows and the "(Annualized/Absolute Return)" category headings.
-2. **PSX:** fetch `https://dps.psx.com.pk/timeseries/eod/<SYMBOL>` and ask for the raw
-   JSON body verbatim. Save it and run `pkdata.py psx <SYMBOL> --from-file <file>`.
-   A summarised answer is useless here: the tool needs the full `data` array.
+2. **PSX:** since late 2026 `https://dps.psx.com.pk/timeseries/eod/<SYMBOL>` returns 404
+   unless the request carries the portal's session cookie and key (`window.__ps._k` from any
+   portal page, sent as `X-Req-Id`). `pkdata.py` does this itself; a plain web fetch tool can't,
+   so don't promise PSX prices through one. If the user saves the response themselves (company
+   page › browser developer tools › Network › the `eod` request), import it with
+   `pkdata.py psx <SYMBOL> --from-file <file>`. Company pages (`/company/<SYMBOL>`) still fetch
+   normally.
 3. If PSX can't be reached from this session at all, say so plainly and use the data the
    user syncs from their computer (`scripts/daily_sync.sh`, see README), or rank funds only.
 
@@ -219,11 +243,13 @@ Sales are matched first-in, first-out against that broker's lots; P/L is after e
 A sale of shares not held at that broker on that date is refused. Capital gains tax is not
 computed (it depends on filer status and holding period); record it with `--taxes` if wanted.
 
-Suggestions:
+Suggestions (after asking about fetching, see above):
 
 ```
-python3 scripts/portfolio.py advise                   # watchlist buy ideas
-python3 scripts/portfolio.py advise --all --shariah   # whole market, Shariah only
+python3 scripts/portfolio.py advise --fetch|--no-fetch                  # watchlist buy ideas
+python3 scripts/portfolio.py advise --all --shariah --no-fetch          # whole market, Shariah only
+python3 scripts/portfolio.py check MEBL --no-fetch                      # one share: verdict, stop, target, size
+python3 scripts/portfolio.py check MEBL --entry 250 --stop 232 --no-fetch   # with the user's own prices
 ```
 
 For each holding: SELL (close at or below its stop), TRIM (over 25% of the portfolio, with a
@@ -234,6 +260,12 @@ backtest gates and are long today, each with entry, stop-loss, target, a quantit
 estimated commission at the default broker.
 
 How to present them:
+- **Always include the price calculator** for every share you advise on (it's in the output's
+  PRICE CALCULATOR section, and in `--json` as `calc`): shares and cost incl. charges, rupees
+  lost if it falls to the stop, rupees gained at the target, reward-to-risk, the win rate it
+  needs to be worth it, and the break-even price. For holdings, also what selling today or at
+  the stop makes or loses against what they paid. When the user asks about a single share,
+  run `portfolio.py check SYMBOL` and give its verdict with the calculator.
 - Lead with any SELL or TRIM, then buy ideas, each with its stop-loss. Show why (the rule
   that fired, the out-of-sample result) in plain words.
 - Prices are the last close: say so, and that the user should check the live price.
@@ -290,6 +322,11 @@ with action, stop and target, buy ideas, allocation, costs by broker, realised P
 Shariah, yield; tick up to 6 to compare), Compare (rebased prices, returns, risk, valuation,
 dividends side by side), Paper (value vs KSE-100, allocation, holdings with review action and next
 dividend, latest proposal), Dividends (calendar, top yields), Funds (MUFAP by category).
+
+The page shows the data's date and, when it's older than today, asks *Fetch now* or *Use stored
+data*; the user's choice can be remembered in a cookie (`pkm_refresh`). Fetching from the page
+needs `dashboard.py serve --allow-refresh` (on by default from the installers when the server
+is local only); the standalone file can't fetch and names the command instead.
 
 On the phone: when the user asks to see it, build the standalone file and send it, or publish
 it as a **private** artifact only if they ask (it contains PSX data: never share it publicly).

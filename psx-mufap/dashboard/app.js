@@ -409,6 +409,17 @@
   }
 
   // ---------------------------------------------------------------- my (real) portfolio
+  // The price calculator: rupees if the price falls to the stop or rises to the target, after charges.
+  function calcCells(c, held) {
+    if (!c) return held ? cell("–") + cell("–") + cell("–") : cell("–") + cell("–") + cell("–") + cell("–");
+    var lose = c.loss_at_stop ? "<span class='neg'>−" + pkr(c.loss_at_stop).replace("PKR ", "") + "</span>" : "<span class='muted'>stop hit</span>";
+    var gain = held && !c.loss_at_stop ? "<span class='muted'>–</span>" :
+      "<span class='" + sgn(c.gain_at_target) + "'>" + (c.gain_at_target >= 0 ? "+" : "−") + num(Math.abs(c.gain_at_target)) + "</span>";
+    if (held) return cell(lose) + cell(gain) + cell("<span class='" + sgn(c.vs_cost_now) + "'>" + (c.vs_cost_now >= 0 ? "+" : "−") + num(Math.abs(c.vs_cost_now)) + "</span>");
+    return cell(lose) + cell(gain) + cell(c.reward_risk == null ? "–" : c.reward_risk.toFixed(1) + " : 1") +
+      cell(c.breakeven_win_rate == null ? "–" : pctAbs(c.breakeven_win_rate, 0));
+  }
+
   function renderMine() {
     var M = D.mine;
     if (!M) {
@@ -426,7 +437,7 @@
       return '<div class="kpi"><div class="l">' + esc(x[0]) + '</div><div class="v ' + x[3] + '">' + esc(x[1]) + '</div><div class="s">' + esc(x[2]) + "</div></div>";
     }).join("");
     var badge = { SELL: "<b class='neg'>SELL</b>", TRIM: "<b class='neg'>TRIM</b>", REVIEW: "<b>REVIEW</b>", HOLD: "HOLD", "NO DATA": "<span class='muted'>no data</span>" };
-    $("mi-hold").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Action</th><th>Price</th><th>Stop</th><th>P/L</th><th class='l'>Why</th><th>Qty</th><th>Avg cost</th><th>Target</th><th>Value</th><th class='l'>Broker</th><th class='l'>Since</th></tr>" +
+    $("mi-hold").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Action</th><th>Price</th><th>Stop</th><th>P/L</th><th class='l'>Why</th><th>Qty</th><th>Avg cost</th><th>Target</th><th>Value</th><th>At stop</th><th>At target</th><th>Sell today vs cost</th><th class='l'>Broker</th><th class='l'>Since</th></tr>" +
       M.holdings.map(function (hh) {
         var s = bySym[hh.symbol] || { symbol: hh.symbol };
         var brokers = Object.keys(hh.brokers || {}).map(function (b) { return esc(b) + " " + num(hh.brokers[b]); }).join(", ");
@@ -435,7 +446,7 @@
           cell(num(hh.price, 2)) + cell(hh.stop == null ? "–" : num(hh.stop, 2) + (hh.stop_source === "yours" ? "*" : "")) +
           cell(pct(hh.unrealised_pct), sgn(hh.unrealised_pct)) + "<td class='l' style='white-space:normal;min-width:200px'>" + why + "</td>" +
           cell(num(hh.qty)) + cell(num(hh.avg_cost, 2)) + cell(hh.target == null ? "–" : num(hh.target, 2)) + cell(pkr(hh.value)) +
-          cell(brokers, "l") + cell(esc(hh.first_buy), "l") + "</tr>";
+          calcCells(hh.calc, true) + cell(brokers, "l") + cell(esc(hh.first_buy), "l") + "</tr>";
       }).join("");
     var MF = M.funds || [];
     $("mi-fundcard").style.display = MF.length ? "" : "none";
@@ -448,15 +459,16 @@
       }).join("");
     var st = M.settings;
     $("mi-note").textContent = "Average cost includes commission, taxes and fees. Stop = " + st.stop_atr_mult + " × the 14-day average daily move, " +
-      Math.round(st.min_stop_pct * 100) + "–" + Math.round(st.max_stop_pct * 100) + "% below entry, trailing up; * = a stop you set. Prices are the last close.";
-    $("mi-buy").innerHTML = "<tr><th class='l'>Stock</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Cost incl. fees</th><th>Risk</th><th class='l'>Why it passed</th></tr>" +
+      Math.round(st.min_stop_pct * 100) + "–" + Math.round(st.max_stop_pct * 100) + "% below entry, trailing up; * = a stop you set. Prices are the last close. At stop / at target: rupees, after estimated broker charges, " +
+      "if the price falls to the stop or rises to the target from here; sell today vs cost: what selling at the last close would make or lose against what you paid.";
+    $("mi-buy").innerHTML = "<tr><th class='l'>Stock</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Cost incl. fees</th><th>Lose at stop</th><th>Gain at target</th><th>Reward : risk</th><th>Break-even win rate</th><th class='l'>Why it passed</th></tr>" +
       (M.buy_ideas.length ? M.buy_ideas.map(function (i) {
         var s = Object.assign({}, bySym[i.symbol] || { symbol: i.symbol, shariah: i.shariah }, { held: false });
         return "<tr>" + cell(symCell(s), "l") + cell(num(i.entry, 2)) + cell(num(i.stop, 2) + " <span class='muted small'>" + pct(i.stop_pct) + "</span>") +
-          cell(num(i.target, 2)) + cell(i.qty ? num(i.qty) : "–") + cell(i.qty ? pkr(i.cost) : "–") + cell(i.qty ? pkr(i.risk_pkr) : "–") +
+          cell(num(i.target, 2)) + cell(i.qty ? num(i.qty) : "–") + cell(i.qty ? pkr(i.cost) : "–") + calcCells(i.calc, false) +
           "<td class='l' style='white-space:normal;min-width:220px'>" + esc(i.strategy) + " " + esc(JSON.stringify(i.params || {})) +
           ": out-of-sample " + pct(i.oos_cagr) + " a year vs buy-and-hold " + pct(i.oos_buyhold_cagr) + "</td></tr>";
-      }).join("") : "<tr><td class='l muted' colspan='8'>No buy ideas: nothing passed every check, or portfolio.py advise has not run yet.</td></tr>");
+      }).join("") : "<tr><td class='l muted' colspan='10'>No buy ideas: nothing passed every check, or portfolio.py advise has not run yet.</td></tr>");
     $("mi-buynote").textContent = (M.advice_date ? "From the run of " + M.advice_date + ". " : "") +
       "Size risks " + (st.risk_per_trade * 100).toFixed(1) + "% of your capital between entry and stop, at most " + Math.round(st.max_position_pct * 100) +
       "% in one stock. Rule-based suggestions from past prices, not investment advice; nothing is ordered for you.";
@@ -625,6 +637,105 @@
       }).join("");
   }
 
+  // ---------------------------------------------------------------- data freshness
+  // Every number on the page is calculated from the data in data.json. Before using it, the page
+  // says how old it is and asks whether to fetch fresh data; the answer can be remembered in a
+  // cookie (pkm_refresh = ask | stored | auto). Fetching from the page needs the server to have
+  // been started with --allow-refresh; otherwise the page says which command to run.
+  function cookie(k, v) {
+    try {
+      if (v === undefined) {
+        var m = document.cookie.match(new RegExp("(?:^|; )" + k + "=([^;]*)"));
+        return m ? decodeURIComponent(m[1]) : store(k);
+      }
+      document.cookie = k + "=" + encodeURIComponent(v) + "; Max-Age=31536000; Path=/; SameSite=Strict" +
+        (location.protocol === "https:" ? "; Secure" : "");
+      store(k, v);  // a file:// page often can't keep cookies
+    } catch (e) { return null; }
+  }
+  function ageDays(d) {
+    if (!d) return null;
+    var t = new Date(d + "T00:00:00");
+    return isNaN(t) ? null : Math.max(0, Math.floor((Date.now() - t.getTime()) / 864e5));
+  }
+  var api = null, polling = null;
+  function today() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function dataLine() {
+    var F = D.freshness || {}, age = ageDays(F.prices_as_of);
+    return "Data: prices to <b>" + esc(F.prices_as_of || "–") + "</b>" +
+      (age != null ? " (" + (age === 0 ? "today" : age + " day" + (age === 1 ? "" : "s") + " old") + ")" : "") +
+      (F.mufap_as_of ? " · MUFAP " + esc(F.mufap_as_of) : "") + " · built " + esc(D.generated);
+  }
+  function freshness() {
+    var el = $("fresh"), F = D.freshness || {}, age = ageDays(F.prices_as_of);
+    var mode = cookie("pkm_refresh") || "ask", stale = age == null || age >= 1;
+    var can = api && api.refresh, html = dataLine();
+    el.hidden = false;
+    el.className = "fresh";
+    el.onclick = function (e) { if (e.target && e.target.id === "f-reload") location.reload(); };
+    if (api && api.running) {
+      el.className = "fresh stale";
+      el.innerHTML = html + " · <b>fetching fresh data…</b> (started " + esc(api.started) + "; the page reloads when done)";
+      return poll();
+    }
+    if (api && api.ok === false && api.finished) {
+      html += " · <span class='neg'>the last fetch (" + esc(api.finished) + ") had problems: " +
+        esc((api.tail || []).join("; ") || "unknown") + " (details: logs/refresh.log in the data folder)</span> <a id='f-reload'>reload</a>";
+    }
+    if (can && mode === "auto" && stale && store("autoFetched") !== today() && !(api && api.cooldown)) {
+      store("autoFetched", today());
+      return refresh();
+    }
+    if (mode === "ask" && stale) {
+      el.className = "fresh stale";
+      el.innerHTML = html + ". " + (can
+        ? "Fetch fresh data before you use these numbers? <button class='btn' id='f-go'>Fetch now</button> " +
+          "<button class='btn ghost' id='f-keep'>Use stored data</button>"
+        : "This page can't fetch by itself: run <code>python3 pkm.py daily</code> (menu 11), or start the server with " +
+          "<code>dashboard.py serve --allow-refresh</code>. <button class='btn ghost' id='f-keep'>Use stored data</button>") +
+        " <label class='ck small'><input type='checkbox' id='f-remember'> remember my choice</label>";
+      var rem = function () { return $("f-remember").checked; };
+      if ($("f-go")) $("f-go").onclick = function () { if (rem()) cookie("pkm_refresh", "auto"); refresh(); };
+      $("f-keep").onclick = function () { if (rem()) cookie("pkm_refresh", "stored"); el.className = "fresh"; el.innerHTML = dataLine() + " · using stored data"; };
+      return;
+    }
+    el.innerHTML = html + (can ? " · <a id='f-now'>Fetch now</a>" : "") +
+      (mode !== "ask" ? " · remembered: " + (mode === "auto" ? "fetch automatically when stale" : "use stored data") +
+        " (<a id='f-reset'>ask me again</a>)" : "");
+    if ($("f-now")) $("f-now").onclick = refresh;
+    if ($("f-reset")) $("f-reset").onclick = function () { cookie("pkm_refresh", "ask"); freshness(); };
+  }
+  function refresh() {
+    var el = $("fresh");
+    el.className = "fresh stale";
+    el.innerHTML = dataLine() + " · <b>asking the server to fetch fresh data…</b>";
+    fetch("api/refresh", { method: "POST", headers: { "X-PKM-Refresh": "1" }, credentials: "same-origin", cache: "no-store" })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        if (!x.ok) { el.innerHTML = dataLine() + " · <span class='neg'>" + esc(x.j.error || "refresh refused") + "</span>"; return; }
+        api = x.j; freshness();
+      })
+      .catch(function (e) { el.innerHTML = dataLine() + " · <span class='neg'>could not reach the server: " + esc(e.message) + "</span>"; });
+  }
+  function poll() {
+    if (polling) return;
+    polling = setInterval(function () {
+      fetch("api/status", { cache: "no-store", credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (st) {
+        api = st;
+        if (st.running) return;
+        clearInterval(polling); polling = null;
+        if (st.ok) location.reload(); else freshness();
+      }).catch(function () {});
+    }, 3000);
+  }
+  function checkFreshness() {
+    if (window.PKM_DATA || location.protocol === "file:") return freshness();
+    fetch("api/status", { cache: "no-store", credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (st) { api = st; freshness(); })
+      .catch(function () { freshness(); });
+  }
+
   // ---------------------------------------------------------------- boot
   function boot(data) {
     D = data;
@@ -632,6 +743,7 @@
     $("meta").textContent = "Built " + D.generated + " · " + D.stocks.length + " shares (" + D.scope + ") · prices to " +
       (D.calendar[D.calendar.length - 1] || "–");
     var theme = store("theme"); if (theme) document.documentElement.setAttribute("data-theme", theme);
+    checkFreshness();
     var fromHash = (location.hash.match(/compare=([^&]*)/) || [])[1];
     var saved = fromHash ? decodeURIComponent(fromHash).split(",") : (store("compare") || []);
     var slots = store("slots") || {};

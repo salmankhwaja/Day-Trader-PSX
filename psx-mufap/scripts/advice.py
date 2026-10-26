@@ -86,6 +86,65 @@ def stop_for(rows, entry, entry_date, cfg):
             "stop_pct": (stop / closes[-1] - 1) if closes[-1] else None}
 
 
+def price_calc(broker, qty, price, stop, target, buying=False):
+    """The price calculator attached to every suggestion: rupees at the stop and at the target.
+
+    `price` is today's close (holdings) or the entry (buy ideas). With buying=True the purchase
+    charges are counted too. Charges use the broker's schedule (portfolio.estimate_charges).
+    """
+    import portfolio as PF
+    if not qty or price is None or stop is None or target is None:
+        return None
+    qty = int(qty)
+
+    def fees(px, side):
+        return sum(PF.estimate_charges(broker, qty, px, side))
+
+    buy_fees = fees(price, "buy") if buying else 0.0
+    sell_stop, sell_target = fees(stop, "sell"), fees(target, "sell")
+    loss = qty * (price - stop) + buy_fees + sell_stop if price > stop else 0.0
+    gain = qty * (target - price) - buy_fees - sell_target
+    out = {"qty": qty, "price": round(price, 2), "stop": round(stop, 2), "target": round(target, 2),
+           "value": round(qty * price, 2), "buy_fees": round(buy_fees, 2),
+           "loss_at_stop": round(loss, 2), "gain_at_target": round(gain, 2),
+           "stop_move_pct": stop / price - 1, "target_move_pct": target / price - 1,
+           "reward_risk": round(gain / loss, 2) if loss > 0 else None,
+           "breakeven_win_rate": loss / (loss + gain) if loss > 0 and gain > 0 else None,
+           "breakeven_price": round(price + (buy_fees + fees(price, "sell")) / qty, 2)}
+    return out
+
+
+def calc_lines(c, label):
+    """Plain-language lines for one price calculation."""
+    if not c:
+        return []
+    out = ["%s: %d shares at %.2f = %s%s" % (label, c["qty"], c["price"], C.fmt_pkr(c["value"]),
+                                              " + %s charges" % C.fmt_pkr(c["buy_fees"]) if c["buy_fees"] else "")]
+    if c["loss_at_stop"]:
+        out.append("  falls to the stop %.2f (%s): lose about %s after charges" % (
+            c["stop"], C.fmt_pct(c["stop_move_pct"]), C.fmt_pkr(c["loss_at_stop"])))
+    else:
+        out.append("  already at or below the stop %.2f" % c["stop"])
+    if c.get("held") and c["loss_at_stop"] == 0:
+        out.append("  the stop has been hit, so the suggestion is to sell (the target no longer applies)")
+    else:
+        out.append("  rises to the target %.2f (%s): %s about %s after charges" % (
+            c["target"], C.fmt_pct(c["target_move_pct"]), "gain" if c["gain_at_target"] >= 0 else "still lose",
+            C.fmt_pkr(abs(c["gain_at_target"]))))
+    if c.get("held"):
+        out.append("  selling today vs what you paid (avg %.2f): %s %s after charges; at the stop: %s %s" % (
+            c["avg_cost"], "gain" if c["vs_cost_now"] >= 0 else "loss", C.fmt_pkr(abs(c["vs_cost_now"])),
+            "gain" if c["vs_cost_at_stop"] >= 0 else "loss", C.fmt_pkr(abs(c["vs_cost_at_stop"]))))
+    extra = []
+    if c["reward_risk"] is not None:
+        extra.append("reward-to-risk %.1f to 1" % c["reward_risk"])
+    if c["breakeven_win_rate"] is not None:
+        extra.append("worth it if it works more than %.0f%% of the time" % (100 * c["breakeven_win_rate"]))
+    extra.append("break-even after charges %.2f" % c["breakeven_price"])
+    out.append("  " + "; ".join(extra))
+    return out
+
+
 def _bench_3m(h, cfg):
     p = C.price_path(h, cfg["benchmark"])
     if not os.path.exists(p):
@@ -96,6 +155,7 @@ def _bench_3m(h, cfg):
 
 def review_holdings(h, cfg, lg, s):
     """One suggestion per holding. `s` is portfolio.summary()."""
+    import portfolio as PF
     out = []
     total = s["value"] + (s["cash"] or 0)
     b3 = _bench_3m(h, cfg)
@@ -145,6 +205,17 @@ def review_holdings(h, cfg, lg, s):
             r["why"] = "%s above the stop of %.2f" % (C.fmt_pct(px / r["stop"] - 1), r["stop"])
             if px >= st["target"]:
                 r["notes"].append("target %.2f reached: consider taking some profit or keeping the trailing stop" % st["target"])
+        bk = max(p["brokers"], key=p["brokers"].get) if p.get("brokers") else lg.get("default_broker")
+        r["calc"] = price_calc(lg["brokers"].get(bk) if bk else None, p["qty"], px, r["stop"], st["target"])
+        if r["calc"]:
+            b = lg["brokers"].get(bk) if bk else None
+            sell_now = sum(PF.estimate_charges(b, p["qty"], px, "sell"))
+            r["calc"].update(
+                held=True, avg_cost=round(p["avg_cost"], 2),
+                vs_cost_now=round(p["qty"] * (px - p["avg_cost"]) - sell_now, 2),
+                vs_cost_at_stop=round(p["qty"] * (r["stop"] - p["avg_cost"]) -
+                                      sum(PF.estimate_charges(b, p["qty"], r["stop"], "sell")), 2),
+                breakeven_price=round(p["avg_cost"] + sell_now / p["qty"], 2))
         c = P.load_company(h, sym) or {}
         for pay in list(c.get("payouts") or []) + [m for m in market if m["symbol"] == sym]:
             bc = pay.get("bc_from")
@@ -164,6 +235,18 @@ def open_risk(review):
         if r.get("price") and r.get("stop") is not None and r["price"] > r["stop"]:
             tot += r["qty"] * (r["price"] - r["stop"])
     return round(tot, 2)
+
+
+def size_for(cfg, capital, spendable, risk_left, entry, risk, lot=1):
+    """(qty, the limit that bound, all limits): the smallest of the four sizing rules, in lots."""
+    limits = {"risk per trade": int(capital * setting(cfg, "risk_per_trade") / risk),
+              "max position": int(capital * setting(cfg, "max_position_pct") / entry)}
+    if spendable is not None:
+        limits["cash after reserve"] = int(max(spendable, 0) / (entry * 1.005))
+    if risk_left is not None:
+        limits["open-risk budget"] = int(max(risk_left, 0) / risk)
+    binding = min(limits, key=limits.get)
+    return limits[binding] // lot * lot, binding, limits
 
 
 def buy_ideas(h, cfg, lg, s, n=3, all_=False, shariah=False, sector=None, candidates=None, review=None):
@@ -205,19 +288,14 @@ def buy_ideas(h, cfg, lg, s, n=3, all_=False, shariah=False, sector=None, candid
                 "oos_cagr": (e.get("out") or {}).get("cagr"), "oos_buyhold_cagr": (e.get("out_buyhold") or {}).get("cagr"),
                 "oos_mdd": (e.get("out") or {}).get("mdd"), "div_yield": e.get("div_yield"), "qty": None}
         if capital and risk > 0:
-            limits = {"risk per trade": int(capital * setting(cfg, "risk_per_trade") / risk),
-                      "max position": int(capital * setting(cfg, "max_position_pct") / entry)}
-            if spendable is not None:
-                limits["cash after reserve"] = int(max(spendable, 0) / (entry * 1.005))
-            if risk_left is not None:
-                limits["open-risk budget"] = int(max(risk_left, 0) / risk)
-            binding = min(limits, key=limits.get)
-            qty = limits[binding] // lot * lot
+            qty, binding, _ = size_for(cfg, capital, spendable, risk_left, entry, risk, lot)
             idea["limited_by"] = binding
             if qty > 0:
                 c, o = PF.estimate_commission(lg["brokers"].get(broker) if broker else None, qty, entry)
                 idea.update(qty=qty, cost=round(qty * entry + c + o, 2), est_fees=round(c + o, 2), broker=broker,
                             risk_pkr=round(qty * risk, 2))
+                idea["calc"] = price_calc(lg["brokers"].get(broker) if broker else None, qty, entry,
+                                          st["initial"], st["target"], buying=True)
                 if spendable is not None:
                     spendable -= idea["cost"]
                 if risk_left is not None:
@@ -249,6 +327,8 @@ def advise(h, cfg, args):
 
 
 def cmd_advise(a, h, cfg):
+    import freshness as F
+    F.decide(a, h, cfg, F.scope(h, cfg, None, a.all), payouts=True)
     res = advise(h, cfg, a)
     if a.json:
         print(json.dumps(res, indent=1, default=str))
@@ -285,6 +365,11 @@ def cmd_advise(a, h, cfg):
                   "or set \"capital\" in config.json.")
     elif not info.get("note"):
         print("Nothing passed every check today: no buy ideas. Holding cash is a valid outcome.")
+    calc = [l for r in res["holdings"] for l in calc_lines(r.get("calc"), "%s (%s), you hold" % (r["symbol"], r["action"]))]
+    calc += [l for i in res["buy"] for l in calc_lines(i.get("calc"), "%s (BUY idea), buying" % i["symbol"])]
+    if calc:
+        print("\nPRICE CALCULATOR (from the last close, after estimated broker charges)")
+        print("\n".join(calc))
     st = res["settings"]
     print("\nStops: %.1f x average daily move, %.0f-%.0f%% below entry, trailing upward. Sizing: %.1f%% of "
           "capital at risk per idea, max %.0f%% per stock, %d holdings, %.0f%% cash reserve. "
@@ -293,4 +378,104 @@ def cmd_advise(a, h, cfg):
               100 * st["max_position_pct"], st["max_holdings"], 100 * st["cash_reserve_pct"]))
     print("These are rule-based suggestions from past prices, not investment advice. Prices are the last "
           "close; check the live price and your own judgement before placing any order with your broker.")
+    return 0
+
+
+def check(h, cfg, symbol, entry=None, stop=None, capital=None):
+    """Everything about one share in one place: should I buy (or keep) it, and the rupees either way."""
+    import portfolio as PF
+    import propose
+    import rank
+    symbol = symbol.upper()
+    path = C.price_path(h, symbol)
+    if not os.path.exists(path):
+        raise ValueError("no prices on file for %s: fetch them first (--fetch, or pkdata.py psx %s)" % (symbol, symbol))
+    rows = C.read_prices(path)
+    lg = PF.load(h)
+    s = PF.summary(h, lg)
+    held = {p["symbol"]: p for p in s["holdings"]}
+    m = rank.stock_metrics(rows, cfg["risk_free_annual"]) if len(rows) > 30 else {}
+    info = rank.stock_info(h, cfg, symbol, payouts=P.load_payouts(h), price=rows[-1]["close"])
+    strategies = cfg.get("strategies") or propose.DEFAULT_STRATEGIES
+    ev = propose.evaluate(h, cfg, symbol, strategies)
+    res = {"symbol": symbol, "price": rows[-1]["close"], "price_date": rows[-1]["date"], "metrics": m, "info": info,
+           "test": ev, "risk_profile": cfg.get("risk_profile")}
+    if symbol in held:
+        r = [x for x in review_holdings(h, cfg, lg, s) if x["symbol"] == symbol][0]
+        res.update(held=True, action=r["action"], why=r["why"], notes=r["notes"], review=r, calc=r.get("calc"))
+        return res
+    px = entry or rows[-1]["close"]
+    st = stop_for(rows, px, rows[-1]["date"], cfg)
+    stp = stop if stop is not None else st["initial"]
+    if stp >= px:
+        raise ValueError("the stop must be below the entry price")
+    target = px + setting(cfg, "target_r") * (px - stp)
+    cap = capital or (s["value"] + (s["cash"] or 0)) or float(cfg.get("capital") or 0)
+    lot = int(cfg.get("lot_size") or 1)
+    qty, binding = None, None
+    if cap:
+        rev = review_holdings(h, cfg, lg, s)
+        spendable = (s["cash"] - setting(cfg, "cash_reserve_pct") * cap) if (s["cash"] is not None and not capital) else None
+        risk_left = setting(cfg, "max_open_risk_pct") * cap - open_risk(rev)
+        qty, binding, _ = size_for(cfg, cap, spendable, risk_left, px, px - stp, lot)
+    broker = lg.get("default_broker")
+    calc = price_calc(lg["brokers"].get(broker) if broker else None, qty or lot, px, stp, target, buying=True)
+    if ev["pass"]:
+        action, why = "BUY", "passes every check for your %s style: %s %s" % (cfg.get("risk_profile"), ev["strategy"], ev["params"])
+    else:
+        action, why = "NOT NOW", ev["why"]
+    if len(held) >= int(setting(cfg, "max_holdings")) and action == "BUY":
+        action, why = "NOT NOW", "you already hold %d shares, your style's limit (max_holdings)" % len(held)
+    if qty == 0 and action == "BUY":
+        why += "; but your sizing rules leave room for 0 shares (limited by %s)" % binding
+    res.update(held=False, action=action, why=why, entry=px, stop=round(stp, 2), stop_source="yours" if stop is not None else "computed",
+               target=round(target, 2), qty=qty, limited_by=binding, capital=cap, calc=calc, notes=[])
+    return res
+
+
+def cmd_check(a, h, cfg):
+    import freshness as F
+    F.decide(a, h, cfg, [a.symbol], payouts=True)
+    try:
+        r = check(h, cfg, a.symbol, a.entry, a.stop, a.capital)
+    except ValueError as e:
+        sys.exit(str(e))
+    if a.json:
+        print(json.dumps(r, indent=1, default=str))
+        return 0
+    i, m, ev = r["info"], r["metrics"], r["test"]
+    print("%s  %s%s%s" % (r["symbol"], i.get("name") or "", "  [%s]" % i["sector"] if i.get("sector") else "",
+                          "  Shariah (KMI)" if i.get("shariah") else ""))
+    print("Last close %.2f on %s.  1m %s  3m %s  1y %s  volatility %s  max drawdown (1y) %s" % (
+        r["price"], r["price_date"], C.fmt_pct(m.get("1m")), C.fmt_pct(m.get("3m")), C.fmt_pct(m.get("1y")),
+        C.fmt_pct(m.get("vol")), C.fmt_pct(m.get("mdd"))))
+    d = i.get("dividends") or {}
+    if d.get("yield_ttm") is not None:
+        print("Dividend yield (12 months) %s%s" % (C.fmt_pct(d["yield_ttm"]),
+                                                   "; next book closure %s" % d["upcoming"]["bc_from"] if d.get("upcoming") else ""))
+    if ev.get("strategy"):
+        print("Backtest: best rule %s %s; on the untested %s: CAGR %s (buy-and-hold %s), max drawdown %s; signal today %s" % (
+            ev["strategy"], ev["params"], "%s..%s" % (ev["out"]["start"], ev["out"]["end"]), C.fmt_pct(ev["out"]["cagr"]),
+            C.fmt_pct(ev["out_buyhold"]["cagr"]), C.fmt_pct(ev["out"]["mdd"]), "LONG" if ev["signal"] == 1 else "flat"))
+    print("\nVERDICT (%s style): %s. %s" % (r["risk_profile"], r["action"], r["why"]))
+    for n in r["notes"]:
+        print("  note: " + n)
+    if r["held"]:
+        rv = r["review"]
+        print("You hold %d at an average %.2f; stop %.2f (%s), target %.2f." % (
+            rv["qty"], rv["avg_cost"], rv["stop"], rv["stop_source"], rv["target"]))
+        if r.get("calc"):
+            print("\nPRICE CALCULATOR (after estimated broker charges)")
+            print("\n".join(calc_lines(r["calc"], "You hold")))
+    else:
+        print("Entry %.2f, stop %.2f (%s, %s), target %.2f (%s)." % (
+            r["entry"], r["stop"], r["stop_source"], C.fmt_pct(r["stop"] / r["entry"] - 1), r["target"],
+            C.fmt_pct(r["target"] / r["entry"] - 1)))
+        if r["qty"] is not None:
+            print("Size for capital %s: %d shares (limited by %s)." % (C.fmt_pkr(r["capital"]), r["qty"], r["limited_by"]))
+        else:
+            print("No capital on record: the calculator shows one board lot. Pass --capital, or record cash.")
+        print("\nPRICE CALCULATOR (after estimated broker charges)")
+        print("\n".join(calc_lines(r["calc"], "Buying")))
+    print("\nRule-based, from past prices; not investment advice. Check the live price before any order.")
     return 0

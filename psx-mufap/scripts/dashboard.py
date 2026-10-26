@@ -14,9 +14,17 @@ The dashboard has five views:
              dividends received, the latest proposal
   Funds      MUFAP rankings inside each category
 
-`build` reads only local files written by the other tools. `serve` is a small read-only web
-server for those three files: GET only, no directory listing, strict security headers. It binds
-to 127.0.0.1 by default. To reach it from your phone, use a private network such as Tailscale and
+`build` reads only local files written by the other tools. `serve` is a small web server for
+those three files: GET only, no directory listing, strict security headers. It binds to
+127.0.0.1 by default.
+
+Fetching from the dashboard is off unless you start it with `serve --allow-refresh` (or set
+PKM_DASH_REFRESH=1). Then the page can ask the server to run the daily update (fetch + rebuild):
+POST /api/refresh, which needs the X-PKM-Refresh header (a plain cross-site form can't send it),
+a Host that is an IP address, localhost or a name in PKM_DASH_HOSTNAMES (defeats DNS rebinding),
+a matching Origin, the password when one is set, and runs at most once at a time with a cool-down.
+GET /api/status says whether refresh is allowed and how the last one went. The page remembers
+your choice (ask each time / use stored data / fetch automatically when stale) in a cookie. To reach it from your phone, use a private network such as Tailscale and
 `--host <tailscale IP>`; any non-loopback host requires a password in PKM_DASHBOARD_PASSWORD
 (HTTP Basic auth, user "pkm"). The data is PSX market data: keep it private.
 """
@@ -28,9 +36,13 @@ import http.server
 import ipaddress
 import json
 import os
+import re
 import shutil
 import statistics
+import subprocess
 import sys
+import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
@@ -181,7 +193,7 @@ def build_data(h, cfg, all_=None, days=500):
                          "days_held": p["days_held"], "sector": i.get("sector"), "shariah": i.get("shariah"),
                          "action": r.get("action"), "why": r.get("why"), "notes": r.get("notes") or [],
                          "stop": r.get("stop"), "stop_source": r.get("stop_source"), "target": r.get("target"),
-                         "weight": r4(r.get("weight")), "trim_qty": r.get("trim_qty")})
+                         "weight": r4(r.get("weight")), "trim_qty": r.get("trim_qty"), "calc": r.get("calc")})
         fees = PF.fee_table(lg)
         adv = None
         adir = os.path.join(h, "advice")
@@ -228,8 +240,19 @@ def build_data(h, cfg, all_=None, days=500):
     except SystemExit:
         pass
 
+    import freshness
+    flog = freshness.read_log(h)
+    snap = None
+    try:
+        from pkdata import latest_mufap
+        snap = latest_mufap(h)
+    except Exception:
+        pass
     return {
         "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "freshness": {"prices_as_of": cal[-1] if cal else None, "last_fetch": flog.get("psx"),
+                      "mufap_as_of": os.path.basename(snap)[:-4] if snap else None,
+                      "mufap_fetched": flog.get("mufap")},
         "scope": "all" if all_ else "watchlist",
         "benchmark": {"symbol": bench, "metrics": {k: r4(bm[k]) for k in ("1m", "3m", "6m", "1y", "ytd", "vol", "mdd")}
                       if bm else None},
@@ -295,9 +318,52 @@ def cmd_build(a, h, cfg):
     return 0
 
 
+REFRESH = {"running": False, "started": None, "finished": None, "ok": None, "last_start": 0.0, "tail": []}
+REFRESH_LOCK = threading.Lock()
+COOLDOWN = 120  # seconds between refreshes
+HOST_RE = re.compile(r"^(\[[0-9a-fA-F:.]+\]|[0-9.]+|localhost)(:\d+)?$")
+
+
+def run_refresh(home, scope):
+    """Run the daily update (fetch everything, rebuild the dashboard) in the background."""
+    log = os.path.join(home, "logs")
+    os.makedirs(log, exist_ok=True)
+    cmd = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "daily.py"),
+           "--home", home, "--scope", scope]
+    ok = False
+    out = []
+    try:
+        p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=3600)
+        out = p.stdout.decode("utf-8", "replace").splitlines()
+        ok = p.returncode == 0
+        with open(os.path.join(log, "refresh.log"), "w") as f:  # the last run only
+            f.write("\n".join(out) + "\n")
+    except (OSError, subprocess.SubprocessError) as e:
+        out = ["refresh failed: %s" % e]
+    problems = []
+    for l in out:
+        l = l.strip()
+        m, m2 = re.match(r"(\d+) failed:", l), re.match(r"([\w ]+?) stopped:", l)
+        if m:
+            problems.append("%s share price download%s failed" % (m.group(1), "" if m.group(1) == "1" else "s"))
+        elif m2:
+            problems.append("%s download failed" % m2.group(1))
+        elif " failed:" in l and "FAILED" not in l and not l.startswith(("payouts", "mufap")):
+            problems.append(l.split(" failed:")[0] + " failed")
+    if not problems and any("FAILED" in l for l in out):
+        problems = ["some downloads failed"]
+    with REFRESH_LOCK:
+        REFRESH.update(running=False, finished=dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                       ok=ok and not problems, tail=list(dict.fromkeys(problems))[:6])
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     root = None
     password = None
+    home = None
+    allow_refresh = False
+    scope = "watchlist"
+    hostnames = ()
     server_version = "pkm"
     sys_version = ""
 
@@ -322,13 +388,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
         want = "Basic " + base64.b64encode(("pkm:" + self.password).encode()).decode()
         return hmac.compare_digest(got.encode(), want.encode())
 
+    def _deny_auth(self):
+        self._headers(401, "text/plain", 0)
+        self.send_header("WWW-Authenticate", 'Basic realm="pkm dashboard"')
+        self.end_headers()
+
+    def _json(self, code, obj):
+        body = json.dumps(obj).encode()
+        self._headers(code, "application/json", len(body))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _status(self):
+        with REFRESH_LOCK:
+            st = {k: REFRESH[k] for k in ("running", "started", "finished", "ok", "tail")}
+        st["refresh"] = bool(self.allow_refresh)
+        st["cooldown"] = max(0, int(COOLDOWN - (time.time() - REFRESH["last_start"]))) if REFRESH["last_start"] else 0
+        return st
+
+    def _host_ok(self):
+        host = (self.headers.get("Host") or "").strip()
+        name = host.rsplit(":", 1)[0] if not host.startswith("[") else host
+        if not (HOST_RE.match(host) or name.lower() in self.hostnames):
+            return False
+        origin = self.headers.get("Origin")
+        return origin is None or origin in ("http://" + host, "https://" + host)
+
     def do_GET(self):
         if not self._authorized():
-            self._headers(401, "text/plain", 0)
-            self.send_header("WWW-Authenticate", 'Basic realm="pkm dashboard"')
-            self.end_headers()
-            return
+            return self._deny_auth()
         path = self.path.split("?", 1)[0].split("#", 1)[0]
+        if path == "/api/status":
+            return self._json(200, self._status())
         if path not in FILES:
             self._headers(404, "text/plain", 9)
             self.end_headers()
@@ -352,7 +443,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._headers(405, "text/plain", 0)
         self.end_headers()
 
-    do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD
+    do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_HEAD
+
+    def do_POST(self):
+        path = self.path.split("?", 1)[0]
+        if path != "/api/refresh" or not self.allow_refresh:
+            return self.do_HEAD()
+        if not self._authorized():
+            return self._deny_auth()
+        if self.headers.get("X-PKM-Refresh") != "1" or not self._host_ok():
+            return self._json(403, {"error": "refused: needs the dashboard's own page on an allowed host"})
+        if int(self.headers.get("Content-Length") or 0) > 1024:
+            return self._json(413, {"error": "too large"})
+        with REFRESH_LOCK:
+            if REFRESH["running"]:
+                return self._json(409, {"error": "a refresh is already running"})
+            wait = COOLDOWN - (time.time() - REFRESH["last_start"])
+            if REFRESH["last_start"] and wait > 0:
+                return self._json(429, {"error": "just refreshed; try again in %d s" % wait})
+            REFRESH.update(running=True, started=dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), finished=None,
+                           ok=None, tail=[], last_start=time.time())
+        threading.Thread(target=run_refresh, args=(self.home, self.scope), daemon=True).start()
+        return self._json(202, self._status())
 
     def log_message(self, fmt, *args):
         sys.stderr.write("%s %s\n" % (self.log_date_time_string(), fmt % args))
@@ -368,9 +480,14 @@ def cmd_serve(a, h, cfg):
     if not loopback and not pw:
         sys.exit("refusing to listen on %s without a password: set PKM_DASHBOARD_PASSWORD "
                  "(and prefer a private network such as Tailscale; this server speaks plain HTTP)" % a.host)
-    Handler.root, Handler.password = root, pw
+    Handler.root, Handler.password, Handler.home = root, pw, h
+    Handler.allow_refresh = bool(a.allow_refresh or os.environ.get("PKM_DASH_REFRESH") == "1")
+    Handler.scope = "all" if os.environ.get("PKM_SCOPE") == "all" else "watchlist"
+    Handler.hostnames = tuple(n.strip().lower() for n in (os.environ.get("PKM_DASH_HOSTNAMES") or "").split(",") if n.strip())
     srv = http.server.ThreadingHTTPServer((a.host, a.port), Handler)
-    print("dashboard on http://%s:%d/ (Ctrl+C to stop)%s" % (a.host, a.port, "" if loopback else ", user pkm"))
+    print("dashboard on http://%s:%d/ (Ctrl+C to stop)%s%s" % (
+        a.host, a.port, "" if loopback else ", user pkm",
+        "; the page may fetch fresh data (--allow-refresh)" if Handler.allow_refresh else ""))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -389,6 +506,8 @@ def main(argv=None):
     p = sub.add_parser("serve")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8787)
+    p.add_argument("--allow-refresh", action="store_true",
+                   help="let the page start a data fetch + rebuild (also: PKM_DASH_REFRESH=1)")
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)
