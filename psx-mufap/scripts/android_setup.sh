@@ -21,6 +21,7 @@ PY="$(command -v python || command -v python3)"
 : "${PKM_DAYS:=Mon..Fri}"
 : "${PKM_SCOPE:=watchlist}"
 : "${PKM_DASH_REFRESH:=1}"   # 0 = the dashboard page can't start a fetch
+: "${PKM_DASH_LIVE:=1}"      # 0 = no live prices on the dashboard
 DATA=/storage/emulated/0/pkmarket
 
 say() { printf '\n== %s\n' "$*"; }
@@ -72,7 +73,7 @@ mkdir -p "$SV"
 cat > "$SV/run" <<EOF
 #!$PREFIX/bin/sh
 export PKM_HOME=$DATA PKM_SCOPE=$PKM_SCOPE
-exec $PY $HERE/dashboard.py serve --host 127.0.0.1 --port 8787 $( [ "$PKM_DASH_REFRESH" = "1" ] && echo --allow-refresh ) 2>&1
+exec $PY $HERE/dashboard.py serve --host 127.0.0.1 --port 8787 $( [ "$PKM_DASH_REFRESH" = "1" ] && echo --allow-refresh ) $( [ "$PKM_DASH_LIVE" = "1" ] && echo --allow-live ) 2>&1
 EOF
 chmod +x "$SV/run"
 # Build once so the page has something to show before the first scheduled run.

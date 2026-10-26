@@ -91,6 +91,9 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
 @media (max-width: 1312px) { .fresh { margin: 12px 16px 0; } }
 .fresh code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
 .fresh a { color: var(--accent); cursor: pointer; }
+#livebar { margin-top: 8px; }
+.tag.live { border-color: var(--s3); color: var(--s3); }
+.dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--s3); margin-right: 4px; vertical-align: middle; }
 @media (max-width: 600px) { .bar .btn { margin-left: auto; } .hide-m { display: none; } .bar .meta { display: none; } main { padding: 12px; } .kpi .v { font-size: 19px; } }
 </style>
 </head>
@@ -113,9 +116,12 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
   </nav>
 </header>
 <div class="fresh" id="fresh" role="status" aria-live="polite" hidden></div>
+<div class="fresh" id="livebar" hidden></div>
 <main>
   <section class="view on" id="v-overview">
     <div class="kpis" id="ov-kpis"></div>
+    <div class="card" id="ov-livecard" style="margin-bottom:12px" hidden><h2>Live prices: your shares and watchlist</h2>
+      <div class="tablewrap"><table id="ov-live"></table></div><div class="note" id="ov-livenote"></div></div>
     <div class="grid">
       <div class="card"><h2>KSE-100</h2><div class="seg" id="ov-range"></div><div class="chart" style="margin-top:8px"><canvas id="ov-index"></canvas></div></div>
       <div class="card"><h2>Sectors: median 3-month return</h2><div class="chart tall"><canvas id="ov-sectors"></canvas></div>

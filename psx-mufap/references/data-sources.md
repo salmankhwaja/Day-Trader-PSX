@@ -69,3 +69,12 @@ times face value, which the pages don't show: Rs 10 for most shares, otherwise s
 announcement plus one year: an estimate, not a company notice.
 
 KMI membership is recomposed periodically by PSX; refreshing the universe weekly picks that up.
+
+## PSX live prices: `https://dps.psx.com.pk/market-watch`
+
+The HTML table the portal's home page loads (same session key as above): one row per share with
+SYMBOL, SECTOR, LISTED IN, LDCP (last day's closing price), OPEN, HIGH, LOW, CURRENT, CHANGE,
+CHANGE (%), VOLUME. Numbers may sit in `data-order` attributes; the symbol cell carries
+`data-search="<SYMBOL>"`. `freshness.parse_market_watch` matches columns by heading and falls
+back to that order. One request covers the whole market, so `--live` and the dashboard ask for
+it at most twice a minute. Quotes go to `live.json`, never into the end-of-day files.

@@ -33,7 +33,7 @@ courage, the judgement and the final tap on your broker's app stay with you.
    - [Practise with paper money](#8-practise-with-paper-money)
    - [Know your risk](#9-know-your-risk)
    - [Plan a SIP](#10-plan-a-sip)
-   - [Fresh data or what's on file?](#11-fresh-data-or-whats-on-file)
+   - [Last fetch, fresh fetch or live?](#11-last-fetch-fresh-fetch-or-live)
 7. [Your risk style](#your-risk-style)
 8. [How the suggestions work](#how-the-suggestions-work)
 9. [Run it on a schedule](#run-it-on-a-schedule)
@@ -58,6 +58,7 @@ courage, the judgement and the final tap on your broker's app stay with you.
 | Know what's doing well | Your watchlist or **every listed share**, ranked on 1-week to 1-year returns, risk, trend and lead or lag against the KSE-100, with sector, **Shariah status** (KMI All Share) and **dividend yield** |
 | Pick a mutual fund | MUFAP funds ranked **inside their own category**, and suggestions by risk appetite: low, medium or high, Shariah or conventional |
 | Track your real portfolio | Every trade with date, broker and actual charges; first-in-first-out lots per broker; mutual funds; realised and unrealised P/L after costs; dividends; what each broker has cost you |
+| Decide during market hours | **Live prices** from PSX on the dashboard and in any advice (`--live`), alongside "last fetch" and "fresh fetch" |
 | Know what to do next | **SELL / TRIM / REVIEW / HOLD** for each holding, with a trailing **stop-loss** and target. **Buy ideas**, each with entry, stop-loss, target and a sensible quantity. A **price calculator** on every one: rupees lost at the stop and made at the target, after charges |
 | Ask about one share | `portfolio.py check OGDC`: a verdict for your style, the backtest, stop, target, size and the price calculator in one go |
 | Test an idea first | Backtests of moving-average, breakout, RSI and momentum strategies, with costs, next-day fills and an honest out-of-sample test |
@@ -76,6 +77,7 @@ Straight from the source, end of day, no middlemen, no paid feed:
 | What | Where it's downloaded from | Used for |
 |---|---|---|
 | Daily prices (about 5 years of close, volume, open) | PSX Data Portal, `dps.psx.com.pk/timeseries/eod/<SYMBOL>` | rankings, backtests, stop-losses, risk, the dashboard |
+| Live prices (every share's current price, high, low, volume) | PSX Data Portal, `/market-watch` | `--live` advice, `pkdata.py live`, the dashboard's Live prices |
 | Every listed share | PSX Data Portal, `/indices/ALLSHR` (KSE All Share Index) | whole-market mode (`--all`) |
 | Shariah-compliant shares | PSX Data Portal, `/indices/KMIALLSHR` (KMI All Share Islamic Index) | the ☪ flag and Shariah filters |
 | Sector, P/E, 52-week range, dividend history | PSX Data Portal, `/company/<SYMBOL>` | sectors, valuation, dividend yield |
@@ -167,6 +169,7 @@ python3 pkdata.py universe && python3 pkdata.py company --all && python3 pkdata.
 python3 pkdata.py psx LUCK DGKC MLCF              # just these symbols
 python3 pkdata.py psx OGDC --from-file ogdc.json  # import a page you saved yourself
 python3 pkdata.py status                          # what's on disk, and how fresh
+python3 pkdata.py live                            # live prices: your watchlist and holdings, one request
 ```
 
 > [!NOTE]
@@ -377,42 +380,64 @@ The yearly return comes from, in order:
 Every plan also shows the result 3 points lower and 3 points higher, because the future rarely
 reads the plan.
 
-### 11. Fresh data or what's on file?
+### 11. Last fetch, fresh fetch or live?
 
 Every piece of advice (`portfolio.py advise` and `check`, `rank.py stocks` and `funds`,
 `funds.py advise` and `review`, `propose.py run` and `review`, `risk.py portfolio`) starts by
-saying how old the data is and asking:
+saying how old the data is and asking which prices to use:
 
 ```text
-Data on file: prices as of 2026-10-23, 3 days old, last fetched 2026-10-23 16:10. Fetch fresh data first? [y/N]
+Data on file: prices as of 2026-10-23, 3 days old, last fetched 2026-10-23 16:10.
+Advise on [s] the last fetch, [f] a fresh fetch first, or [l] live prices? [s/f/l]
 ```
 
-Say yes and it downloads only what that advice needs (the shares involved, your holdings, the
-KSE-100, and payouts or MUFAP as relevant), then advises. Say no and it advises on what's on
-file. Either way, **fetching is the only step that touches the network**: every number after it is
-calculated on the data on disk at that moment, and the output starts with the date it used:
-
-```text
-Based on prices as of 2026-10-26, 0 days old, last fetched 2026-10-26 16:05.
-```
+| Choice | Flag | What it uses | Good for |
+|---|---|---|---|
+| **Last fetch** | `--no-fetch` | the end-of-day data already on file | quick answers; evenings and weekends |
+| **Fresh fetch** | `--fetch` | downloads end-of-day prices for the shares involved (plus payouts or MUFAP), then advises | the morning before the market opens |
+| **Live** | `--live` | **today's prices** from the PSX portal's market watch (one request covers every share), laid over the history; shares whose history is behind are fetched first | during market hours, before you place an order |
 
 ```bash
-python3 portfolio.py advise --fetch      # fetch first, don't ask
-python3 portfolio.py advise --no-fetch   # use what's on file, don't ask
+python3 portfolio.py advise --live          # sell / hold / buy on live prices, stops and calculator included
+python3 portfolio.py check OGDC --live      # one share, at its live price
+python3 portfolio.py advise --fetch         # fresh end-of-day data first
+python3 portfolio.py advise --no-fetch      # what's on file, no questions
+python3 pkdata.py live                      # just show live prices for your watchlist and holdings
 ```
 
-When nobody is at the keyboard (a schedule, a script, Claude) it doesn't ask and doesn't fetch;
-the "Based on" line says so and suggests `--fetch`. The `pkm.py` menu always asks. Each
-successful download is noted in `fetch_log.json` in your data folder.
+Whichever you choose, **fetching is the only step that touches the network**: every number after
+it is calculated on the data in hand, and the output starts with what it used:
 
-**In the dashboard**, a strip under the tabs shows the data's date. When it's older than today it
-asks *Fetch now* or *Use stored data*, and you can tick **remember my choice**: it's kept in a
-cookie (`pkm_refresh`: ask, stored or auto), so next time the page either fetches by itself when
-the data is stale or quietly uses what it has. *Ask me again* forgets the choice. Fetching from the
-page runs the daily update on the computer or phone that serves it, then reloads the page.
-That needs the server to allow it (`dashboard.py serve --allow-refresh`, which the installers
-switch on when the dashboard is only reachable from the same machine). The one-file
-`dashboard.html` can't fetch by itself; it tells you which command to run.
+```text
+Based on LIVE prices from PSX at 11:42 (market open; 6 of 6 shares quoted), prices as of 2026-10-26, ...
+```
+
+Live quotes are kept in `live.json` in your data folder and never written into the end-of-day
+price files; the evening download replaces them with the official close. The portal's prices can
+lag the exchange a little, and mutual funds have no live prices (NAVs come once a day).
+
+When nobody is at the keyboard (a schedule, a script, Claude) it doesn't ask; it uses the last
+fetch and says so. The `pkm.py` menu always asks. Each download is noted in `fetch_log.json`.
+
+**In the dashboard** there are two strips under the tabs:
+
+- **Data:** the end-of-day data's date. When it's older than today it asks *Fetch now* or *Use
+  stored data*, and **remember my choice** keeps the answer in a cookie (`pkm_refresh`: ask,
+  stored or auto). *Ask me again* forgets it. Fetching runs the daily update on the machine that
+  serves the page, then reloads it.
+- **Live prices:** tick it and the page shows live prices (remembered in the `pkm_live` cookie).
+  They update every minute while the market is open; the server asks PSX at most twice a minute
+  however many pages are open. With Live on:
+  - the Overview gets a *Live prices* card for your shares, watchlist and comparisons;
+  - the Screener's price column shows the live price and today's change;
+  - **My portfolio** values your holdings at live prices, reruns the price calculator, and flags
+    a holding whose live price has hit its stop;
+  - each buy idea shows its live price, warns when it's already at the stop, or when it has run
+    up more than 3% since the signal (the reward-to-risk shrinks as you chase).
+
+Both need the server to allow them: `dashboard.py serve --allow-refresh --allow-live`, which the
+installers switch on when the dashboard is only reachable from the same machine. The one-file
+`dashboard.html` can do neither; it tells you which command to run.
 
 ---
 
@@ -525,7 +550,7 @@ It installs two systemd *user* services (no root needed):
 | Service | What it does |
 |---|---|
 | `pkm-daily.timer` | At your times: refreshes prices, company data, payouts and MUFAP; credits paper dividends; lists dividends due on your real holdings (for you to confirm); writes your sell / hold / buy suggestions with stop-losses; reviews your funds; makes a fresh paper proposal on Fridays; rebuilds the dashboard |
-| `pkm-dashboard.service` | The dashboard server on `127.0.0.1:8787`. It can run a fetch when the page asks (`PKM_DASH_REFRESH`, on by default when it listens on localhost only); otherwise it's read-only |
+| `pkm-dashboard.service` | The dashboard server on `127.0.0.1:8787`. It can run a fetch when the page asks (`PKM_DASH_REFRESH`) and show live prices (`PKM_DASH_LIVE`), both on by default when it listens on localhost only; otherwise it's read-only |
 
 <details>
 <summary><b>No systemd? Use cron</b></summary>
@@ -554,7 +579,8 @@ With the computer's clock on Pakistan time, for 04:00 and 07:00 on weekdays:
   three files plus a small status endpoint, and sends strict security headers. It speaks plain
   HTTP, so never expose it to the open internet.
 
-  The page's *Fetch now* button is off on other addresses unless you add `PKM_DASH_REFRESH=1`.
+  The page's *Fetch now* button and live prices are off on other addresses unless you add
+  `PKM_DASH_REFRESH=1` and `PKM_DASH_LIVE=1`.
   When on, a fetch request must carry the page's own header, come from an IP address or
   `localhost` (or a name you list in `PKM_DASH_HOSTNAMES`, e.g. your Tailscale machine name),
   carry the password, and wait two minutes after the last one. A stray website can't start one.
@@ -675,8 +701,9 @@ The address only works on this phone: nothing leaves the device. If the page won
 Termux once, which wakes the dashboard service.
 
 When the data is older than today, the strip under the tabs offers **Fetch now** or **Use stored
-data**; tick *remember my choice* and it won't ask again (see
-[Fresh data or what's on file?](#11-fresh-data-or-whats-on-file)).
+data**; tick *remember my choice* and it won't ask again. Tick **Live prices** during market hours
+to see your holdings, buy ideas and the price calculator at today's prices (see
+[Last fetch, fresh fetch or live?](#11-last-fetch-fresh-fetch-or-live)).
 
 ### Step 8: everyday use
 
@@ -684,7 +711,7 @@ data**; tick *remember my choice* and it won't ask again (see
 |---|---|
 | Every weekday at 07:00 | Nothing. Prices, dividends, advice and the dashboard refresh themselves |
 | You bought or sold something | Home-screen **PSX-menu** › **6** or **7** |
-| You want advice now | **PSX-menu** › **4** for stocks with stop-losses, **5** for funds (each asks whether to fetch fresh data first) |
+| You want advice now | **PSX-menu** › **4** for stocks with stop-losses, **5** for funds (each asks: last fetch, fresh fetch or live prices) |
 | You're eyeing one share | **PSX-menu** › **16**: verdict, stop, target, size and the price calculator |
 | You want to set your risk style | **PSX-menu** › **14** › take the quiz |
 | You're planning monthly investing | **PSX-menu** › **15** SIP calculator, or the dashboard's Risk & SIP tab |
@@ -886,7 +913,9 @@ pkmarket/
 |---|---|---|
 | A download says `FAILED` | PSX or MUFAP busy, down, or blocked on this network | Try later. One failed share doesn't stop the rest. Or save the page and use `--from-file` |
 | `timeseries/eod/<SYMBOL>` gives 404 in a browser | The portal now wants its own page's session key | Normal: the tools send it. If the tools fail too, update the repo; to save a price file by hand, open the company page, find the `eod` request in the browser's developer tools (Network tab) and save its response for `--from-file` |
-| Advice is on old prices | You answered "no" to fetching, or it ran unattended | Run it again with `--fetch`; the "Based on" line always shows the date used |
+| Advice is on old prices | You chose the last fetch, or it ran unattended | Run it again with `--fetch` or `--live`; the "Based on" line always shows what was used |
+| "Live prices failed" | PSX unreachable, or the market-watch page changed | It falls back to the last fetch and says so. Try `pkdata.py live`; outside market hours it shows the last trades |
+| No *Live prices* box in the dashboard | Server started without `--allow-live`, or it's the one-file version | `dashboard.py serve --allow-live` (local only) |
 | Dashboard has no *Fetch now* | Server started without `--allow-refresh`, or it's the one-file version | `dashboard.py serve --allow-refresh` (local only), or run `pkm.py daily` and reload |
 | "no price data" in a ranking | Prices not fetched yet | `pkdata.py psx --watchlist` (or `--all`) |
 | A buy idea has no quantity | No capital known | Record holdings, or `portfolio.py cash deposit AMOUNT` |
@@ -963,7 +992,7 @@ psx-mufap/                      the skill and the tools
 │   ├── paper.py                paper account
 │   ├── portfolio.py            your real portfolio: trades, brokers, charges, lots, funds, P/L
 │   ├── advice.py               stop-losses, sell/hold/trim rules, sized buy ideas, price calculator, one-share check
-│   ├── freshness.py            "fetch first or use what's on file?" before every piece of advice
+│   ├── freshness.py            last fetch / fresh fetch / live before every piece of advice; live prices
 │   ├── funds.py                fund suggestions by risk profile; review of funds you hold
 │   ├── profiles.py             the four risk styles and every buy/sell variable, described
 │   ├── risk.py                 risk quiz, profiles, settings, position sizing, portfolio risk

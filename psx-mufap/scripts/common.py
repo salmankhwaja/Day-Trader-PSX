@@ -157,8 +157,28 @@ def http_get(url, timeout=30, data=None):
 
 # ---------- price files ----------
 
-def read_prices(path):
-    """List of dicts {date, open, close, volume} sorted by date, from a CSV we wrote."""
+# Live prices (freshness.py --live): today's PSX quotes laid over the end-of-day files while
+# advice is calculated. Never written to the price files; the evening download replaces them.
+LIVE = {"date": None, "quotes": {}}
+
+
+def read_prices(path, live=True):
+    """List of dicts {date, open, close, volume} sorted by date, from a CSV we wrote.
+    With live quotes loaded (and live=True), today's quote is the last row."""
+    out = _read_csv_prices(path)
+    if live and LIVE["quotes"] and os.path.basename(os.path.dirname(path)) == "psx":
+        q = LIVE["quotes"].get(os.path.splitext(os.path.basename(path))[0].upper())
+        if q and q.get("current"):
+            row = {"date": LIVE["date"], "open": q.get("open") or q["current"], "close": q["current"],
+                   "volume": float(q.get("volume") or 0), "live": True}
+            if out and out[-1]["date"] == LIVE["date"]:
+                out[-1] = row
+            elif not out or out[-1]["date"] < LIVE["date"]:
+                out.append(row)
+    return out
+
+
+def _read_csv_prices(path):
     out = []
     with open(path, newline="") as f:
         for row in csv.DictReader(f):

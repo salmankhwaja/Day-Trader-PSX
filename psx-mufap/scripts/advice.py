@@ -317,6 +317,7 @@ def advise(h, cfg, args):
     res = {"date": dt.date.today().isoformat(), "generated": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
            "holdings": hold, "buy": ideas, "info": info,
            "risk_profile": cfg.get("risk_profile"),
+           "prices": "live" if C.LIVE["quotes"] else "end of day",
            "settings": {k: setting(cfg, k) for k in SHOWN},
            "summary": {k: s[k] for k in ("value", "cost", "unrealised", "realised", "dividends", "fees", "cash")}}
     d = os.path.join(h, "advice")
@@ -368,7 +369,8 @@ def cmd_advise(a, h, cfg):
     calc = [l for r in res["holdings"] for l in calc_lines(r.get("calc"), "%s (%s), you hold" % (r["symbol"], r["action"]))]
     calc += [l for i in res["buy"] for l in calc_lines(i.get("calc"), "%s (BUY idea), buying" % i["symbol"])]
     if calc:
-        print("\nPRICE CALCULATOR (from the last close, after estimated broker charges)")
+        print("\nPRICE CALCULATOR (from the %s, after estimated broker charges)" % (
+            "live price" if res.get("prices") == "live" else "last close"))
         print("\n".join(calc))
     st = res["settings"]
     print("\nStops: %.1f x average daily move, %.0f-%.0f%% below entry, trailing upward. Sizing: %.1f%% of "
@@ -376,8 +378,10 @@ def cmd_advise(a, h, cfg):
           "See every setting: risk.py settings; change style: risk.py quiz." % (
               st["stop_atr_mult"], 100 * st["min_stop_pct"], 100 * st["max_stop_pct"], 100 * st["risk_per_trade"],
               100 * st["max_position_pct"], st["max_holdings"], 100 * st["cash_reserve_pct"]))
-    print("These are rule-based suggestions from past prices, not investment advice. Prices are the last "
-          "close; check the live price and your own judgement before placing any order with your broker.")
+    print("These are rule-based suggestions from past prices, not investment advice. Prices are %s; "
+          "check the live price and your own judgement before placing any order with your broker." % (
+              "live quotes from the PSX data portal, which can lag the exchange" if res.get("prices") == "live"
+              else "the last close"))
     return 0
 
 
@@ -399,6 +403,7 @@ def check(h, cfg, symbol, entry=None, stop=None, capital=None):
     strategies = cfg.get("strategies") or propose.DEFAULT_STRATEGIES
     ev = propose.evaluate(h, cfg, symbol, strategies)
     res = {"symbol": symbol, "price": rows[-1]["close"], "price_date": rows[-1]["date"], "metrics": m, "info": info,
+           "prices": "live" if rows[-1].get("live") else "end of day",
            "test": ev, "risk_profile": cfg.get("risk_profile")}
     if symbol in held:
         r = [x for x in review_holdings(h, cfg, lg, s) if x["symbol"] == symbol][0]
@@ -446,8 +451,8 @@ def cmd_check(a, h, cfg):
     i, m, ev = r["info"], r["metrics"], r["test"]
     print("%s  %s%s%s" % (r["symbol"], i.get("name") or "", "  [%s]" % i["sector"] if i.get("sector") else "",
                           "  Shariah (KMI)" if i.get("shariah") else ""))
-    print("Last close %.2f on %s.  1m %s  3m %s  1y %s  volatility %s  max drawdown (1y) %s" % (
-        r["price"], r["price_date"], C.fmt_pct(m.get("1m")), C.fmt_pct(m.get("3m")), C.fmt_pct(m.get("1y")),
+    print("%s %.2f on %s.  1m %s  3m %s  1y %s  volatility %s  max drawdown (1y) %s" % (
+        "Live price" if r["prices"] == "live" else "Last close", r["price"], r["price_date"], C.fmt_pct(m.get("1m")), C.fmt_pct(m.get("3m")), C.fmt_pct(m.get("1y")),
         C.fmt_pct(m.get("vol")), C.fmt_pct(m.get("mdd"))))
     d = i.get("dividends") or {}
     if d.get("yield_ttm") is not None:

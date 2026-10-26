@@ -17,6 +17,7 @@
 #   PKM_DASH_HOST=100.x.y.z PKM_DASHBOARD_PASSWORD='...' ./install_services.sh   # e.g. your Tailscale IP
 #   PKM_DASH_REFRESH=0 ./install_services.sh       dashboard can't start a fetch (default: it can when
 #                                                  it listens on 127.0.0.1 only; 1 to allow on other hosts)
+#   PKM_DASH_LIVE=0 ./install_services.sh          no live prices on the dashboard (default: as PKM_DASH_REFRESH)
 #
 # Remove with: systemctl --user disable --now pkm-daily.timer pkm-dashboard.service
 set -eu
@@ -28,6 +29,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${PKM_DASH_PORT:=8787}"
 # The page may ask for fresh data by default only when the server is on this computer alone.
 case "$PKM_DASH_HOST" in 127.*|localhost|::1) : "${PKM_DASH_REFRESH:=1}" ;; *) : "${PKM_DASH_REFRESH:=0}" ;; esac
+: "${PKM_DASH_LIVE:=$PKM_DASH_REFRESH}"   # live prices on the page: same default
 : "${PKM_SCHEDULE:=07:00}"
 : "${PKM_DAYS:=Mon..Fri}"
 : "${PKM_TZ:=Asia/Karachi}"
@@ -58,10 +60,13 @@ umask 077
   [ -n "${PKM_DASH_HOSTNAMES:-}" ] && echo "PKM_DASH_HOSTNAMES=$PKM_DASH_HOSTNAMES"
 } > "$ENV_FILE"
 # With PKM_DASH_REFRESH=1 the dashboard page may start a fetch, so the server needs to write the data folder.
-if [ "$PKM_DASH_REFRESH" = "1" ]; then
-  DASH_FLAGS="--allow-refresh"; DASH_PATHS="ReadWritePaths=$PKM_HOME"; DASH_DESC="web server that may fetch on request"
+DASH_FLAGS=""
+[ "$PKM_DASH_REFRESH" = "1" ] && DASH_FLAGS="--allow-refresh"
+[ "$PKM_DASH_LIVE" = "1" ] && DASH_FLAGS="$DASH_FLAGS --allow-live"
+if [ -n "$DASH_FLAGS" ]; then
+  DASH_PATHS="ReadWritePaths=$PKM_HOME"; DASH_DESC="web server that may fetch on request"
 else
-  DASH_FLAGS=""; DASH_PATHS="ReadOnlyPaths=$PKM_HOME"; DASH_DESC="read-only web server"
+  DASH_PATHS="ReadOnlyPaths=$PKM_HOME"; DASH_DESC="read-only web server"
 fi
 chmod 600 "$ENV_FILE"
 

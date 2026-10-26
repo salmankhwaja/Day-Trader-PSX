@@ -55,11 +55,10 @@ def yes(prompt, default=False):
 
 
 def fresh():
-    """Every piece of advice asks first: fetch fresh data, or use what's on file?"""
+    """Every piece of advice asks first: the last fetch, a fresh fetch, or live prices?"""
     import freshness as F
     st = F.status(C.home(), C.load_config(C.home()), F.scope(C.home(), C.load_config(C.home())), funds=True)
-    print("Data on file: %s." % F.describe(st, funds=True))
-    return "--fetch" if yes("Fetch fresh data first") else "--no-fetch"
+    return {"stored": "--no-fetch", "fetch": "--fetch", "live": "--live"}[F.ask_mode(st, funds=True)]
 
 
 def opt(flag, value):

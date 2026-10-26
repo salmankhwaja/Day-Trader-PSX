@@ -35,25 +35,32 @@ Data comes from the PSX Data Portal (`dps.psx.com.pk`: daily prices, index membe
 pages, payouts) and MUFAP (fund NAVs and returns), end of day. Say so when asked where the
 numbers come from.
 
-## Before every piece of advice: fetch, or use what's on file?
+## Before every piece of advice: last fetch, fresh fetch, or live?
 
 Every time the user asks for advice (what to buy, sell or hold, one share, funds, rankings,
-portfolio risk), **first ask whether to fetch fresh data**, stating how old the data on file is
-(`python3 scripts/pkdata.py status`, or the "Data on file" line). Ask every time, unless the
-user has told you their standing choice in this conversation ("always fetch", "just use what you
-have"). Then run the command with the matching flag, so it never asks again or fetches
-silently:
+portfolio risk), **first ask which prices to use**, stating how old the data on file is
+(`python3 scripts/pkdata.py status`):
+
+- **last fetch** (`--no-fetch`): the end-of-day data on file;
+- **fresh fetch** (`--fetch`): download end-of-day data for the shares involved first;
+- **live** (`--live`): today's PSX prices (the portal's market watch), laid over the history.
+  Suggest it during market hours (Mon-Fri, about 09:30-15:30 Pakistan time) or before an order.
+
+Ask every time, unless the user has given a standing choice in this conversation ("always use
+live"). Then run the command with that flag so it never asks or fetches silently:
 
 ```
-python3 scripts/portfolio.py advise --fetch        # user said yes: download first, then advise
-python3 scripts/portfolio.py advise --no-fetch     # user said no: advise on the data on file
+python3 scripts/portfolio.py advise --live         # or --fetch / --no-fetch
+python3 scripts/portfolio.py check MEBL --live
+python3 scripts/pkdata.py live MEBL OGDC           # just the live prices
 ```
 
-Every advice command takes `--fetch` / `--no-fetch` (`portfolio.py advise|check`, `rank.py
+Every advice command takes the three flags (`portfolio.py advise|check`, `rank.py
 stocks|funds`, `funds.py advise|review`, `propose.py run|review`, `risk.py portfolio`). Fetching
-is the only step that uses the network; all calculations then use the data on disk. The output
-starts with "Based on prices as of …": repeat that date in your answer. If the fetch fails
-(sandbox), say so, use the fallbacks below, or advise on the stored data with its date.
+is the only step that uses the network; all calculations then use the data in hand. The output
+starts with "Based on …" (live time and market open/closed, or the end-of-day date): repeat it in
+your answer. If a fetch or live request fails (sandbox), it falls back to the last fetch and says
+so; tell the user. Funds have no live prices (daily NAVs). Live quotes can lag the exchange.
 
 ## Step 1: get fresh data
 
@@ -246,9 +253,9 @@ computed (it depends on filer status and holding period); record it with `--taxe
 Suggestions (after asking about fetching, see above):
 
 ```
-python3 scripts/portfolio.py advise --fetch|--no-fetch                  # watchlist buy ideas
-python3 scripts/portfolio.py advise --all --shariah --no-fetch          # whole market, Shariah only
-python3 scripts/portfolio.py check MEBL --no-fetch                      # one share: verdict, stop, target, size
+python3 scripts/portfolio.py advise --no-fetch|--fetch|--live           # watchlist buy ideas
+python3 scripts/portfolio.py advise --all --shariah --live              # whole market, Shariah only
+python3 scripts/portfolio.py check MEBL --live                          # one share: verdict, stop, target, size
 python3 scripts/portfolio.py check MEBL --entry 250 --stop 232 --no-fetch   # with the user's own prices
 ```
 
@@ -325,8 +332,10 @@ dividend, latest proposal), Dividends (calendar, top yields), Funds (MUFAP by ca
 
 The page shows the data's date and, when it's older than today, asks *Fetch now* or *Use stored
 data*; the user's choice can be remembered in a cookie (`pkm_refresh`). Fetching from the page
-needs `dashboard.py serve --allow-refresh` (on by default from the installers when the server
-is local only); the standalone file can't fetch and names the command instead.
+needs `dashboard.py serve --allow-refresh`. A **Live prices** switch (`--allow-live`, cookie
+`pkm_live`) shows live prices, revalues holdings, reruns the price calculator and flags stops hit,
+updating every minute while the market is open. Both are on by default from the installers when
+the server is local only; the standalone file can do neither and names the command instead.
 
 On the phone: when the user asks to see it, build the standalone file and send it, or publish
 it as a **private** artifact only if they ask (it contains PSX data: never share it publicly).

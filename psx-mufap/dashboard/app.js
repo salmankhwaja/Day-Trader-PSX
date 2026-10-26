@@ -171,11 +171,12 @@
         (c.type === "expected" ? ' <span class="tag">estimate</span>' : "") + (c.held ? ' <span class="tag">held</span>' : "") +
         "</span><span class='muted'>" + esc(c.date) + "</span></li>";
     }).join("") : "<li class='muted'>Nothing on file. Run pkdata.py payouts and company.</li>";
+    drawLiveCard();
   }
 
   // ---------------------------------------------------------------- screener
   var SC_COLS = [
-    ["sel", "", null], ["symbol", "Stock", "l"], ["name", "Name", "l hide-m"], ["sector", "Sector", "l"], ["close", "Close"],
+    ["sel", "", null], ["symbol", "Stock", "l"], ["name", "Name", "l hide-m"], ["sector", "Sector", "l"], ["close", "Close / live"],
     ["r1m", "1M"], ["r3m", "3M"], ["r1y", "1Y"], ["vs_idx_3m", "3M vs idx"], ["vol", "Volatility"], ["sharpe", "Sharpe"],
     ["yield", "Div yield"], ["pe", "P/E"], ["trend", "Trend"], ["score", "Score"]
   ];
@@ -214,7 +215,8 @@
       var on = state.compare.indexOf(s.symbol) >= 0;
       return "<tr>" + cell("<input type='checkbox' class='sel' data-pick='" + esc(s.symbol) + "'" + (on ? " checked" : "") + " aria-label='Compare " + esc(s.symbol) + "'>", "l") +
         cell(symCell(s), "l") + cell(esc((s.name || "").slice(0, 28)), "l hide-m") + cell(esc((s.sector || "").slice(0, 24)), "l") +
-        cell(num(s.close, 2)) + cell(pct(s.r1m), sgn(s.r1m)) + cell(pct(s.r3m), sgn(s.r3m)) + cell(pct(s.r1y), sgn(s.r1y)) +
+        cell(quote(s.symbol) ? "<b>" + num(quote(s.symbol).current, 2) + "</b> <span class='small " + sgn(quote(s.symbol).change_pct) + "'>" +
+          pct((quote(s.symbol).change_pct || 0) / 100) + "</span>" : num(s.close, 2)) + cell(pct(s.r1m), sgn(s.r1m)) + cell(pct(s.r3m), sgn(s.r3m)) + cell(pct(s.r1y), sgn(s.r1y)) +
         cell(pct(s.vs_idx_3m), sgn(s.vs_idx_3m)) + cell(pctAbs(s.vol, 0)) + cell(s.sharpe == null ? "–" : s.sharpe.toFixed(2)) +
         cell(pctAbs((s.div || {}).yield)) + cell(s.pe == null ? "–" : num(s.pe, 1)) + cell(esc(s.trend)) + cell(num(s.score)) + "</tr>";
     }).join("") + "</tbody>";
@@ -427,8 +429,10 @@
         '<code>portfolio.py buy SYMBOL QTY PRICE --broker NAME --date YYYY-MM-DD --commission X</code><br>or import a CSV: <code>portfolio.py import trades.csv</code></div>';
       return;
     }
-    var S = M.summary, total = S.value + (S.cash || 0);
-    var k = [["Market value", pkr(S.value), "invested " + pkr(S.cost), ""],
+    var HS = M.holdings.map(liveHold), delta = HS.reduce(function (t, x, i) { return t + (x.live ? x.value - (M.holdings[i].value || 0) : 0); }, 0);
+    var S = Object.assign({}, M.summary, { value: M.summary.value + delta, unrealised: M.summary.unrealised + delta });
+    var total = S.value + (S.cash || 0), anyLive = HS.some(function (x) { return x.live; });
+    var k = [["Market value" + (anyLive ? " (live)" : ""), pkr(S.value), "invested " + pkr(S.cost), ""],
              ["Unrealised", pkr(S.unrealised), S.cost ? pct(S.unrealised / S.cost) : "", sgn(S.unrealised)],
              ["Realised + dividends", pkr(S.realised + S.dividends), "dividends " + pkr(S.dividends), sgn(S.realised + S.dividends)],
              ["Costs paid", pkr(S.fees), "commission, taxes, fees", ""]];
@@ -438,12 +442,12 @@
     }).join("");
     var badge = { SELL: "<b class='neg'>SELL</b>", TRIM: "<b class='neg'>TRIM</b>", REVIEW: "<b>REVIEW</b>", HOLD: "HOLD", "NO DATA": "<span class='muted'>no data</span>" };
     $("mi-hold").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Action</th><th>Price</th><th>Stop</th><th>P/L</th><th class='l'>Why</th><th>Qty</th><th>Avg cost</th><th>Target</th><th>Value</th><th>At stop</th><th>At target</th><th>Sell today vs cost</th><th class='l'>Broker</th><th class='l'>Since</th></tr>" +
-      M.holdings.map(function (hh) {
+      HS.map(function (hh) {
         var s = bySym[hh.symbol] || { symbol: hh.symbol };
         var brokers = Object.keys(hh.brokers || {}).map(function (b) { return esc(b) + " " + num(hh.brokers[b]); }).join(", ");
         var why = esc(hh.why || "") + (hh.notes && hh.notes.length ? "<br><span class='muted small'>" + hh.notes.map(esc).join("<br>") + "</span>" : "");
         return "<tr>" + cell(symCell(Object.assign({}, s, { held: false, owned: false })), "l") + cell(badge[hh.action] || esc(hh.action), "l") +
-          cell(num(hh.price, 2)) + cell(hh.stop == null ? "–" : num(hh.stop, 2) + (hh.stop_source === "yours" ? "*" : "")) +
+          cell(num(hh.price, 2) + (hh.live ? " <span class='tag live' title='Live; end-of-day " + num(hh.eod_price, 2) + "'>live</span>" : "")) + cell(hh.stop == null ? "–" : num(hh.stop, 2) + (hh.stop_source === "yours" ? "*" : "")) +
           cell(pct(hh.unrealised_pct), sgn(hh.unrealised_pct)) + "<td class='l' style='white-space:normal;min-width:200px'>" + why + "</td>" +
           cell(num(hh.qty)) + cell(num(hh.avg_cost, 2)) + cell(hh.target == null ? "–" : num(hh.target, 2)) + cell(pkr(hh.value)) +
           calcCells(hh.calc, true) + cell(brokers, "l") + cell(esc(hh.first_buy), "l") + "</tr>";
@@ -459,12 +463,19 @@
       }).join("");
     var st = M.settings;
     $("mi-note").textContent = "Average cost includes commission, taxes and fees. Stop = " + st.stop_atr_mult + " × the 14-day average daily move, " +
-      Math.round(st.min_stop_pct * 100) + "–" + Math.round(st.max_stop_pct * 100) + "% below entry, trailing up; * = a stop you set. Prices are the last close. At stop / at target: rupees, after estimated broker charges, " +
-      "if the price falls to the stop or rises to the target from here; sell today vs cost: what selling at the last close would make or lose against what you paid.";
+      Math.round(st.min_stop_pct * 100) + "–" + Math.round(st.max_stop_pct * 100) + "% below entry, trailing up; * = a stop you set. Prices are " + (anyLive ? "live where marked (the actions are from the end-of-day run, except a live price at or below the stop)" : "the last close") + ". At stop / at target: rupees, after estimated broker charges, " +
+      "if the price falls to the stop or rises to the target from here; sell today vs cost: what selling at that price would make or lose against what you paid.";
     $("mi-buy").innerHTML = "<tr><th class='l'>Stock</th><th>Entry</th><th>Stop</th><th>Target</th><th>Qty</th><th>Cost incl. fees</th><th>Lose at stop</th><th>Gain at target</th><th>Reward : risk</th><th>Break-even win rate</th><th class='l'>Why it passed</th></tr>" +
       (M.buy_ideas.length ? M.buy_ideas.map(function (i) {
         var s = Object.assign({}, bySym[i.symbol] || { symbol: i.symbol, shariah: i.shariah }, { held: false });
-        return "<tr>" + cell(symCell(s), "l") + cell(num(i.entry, 2)) + cell(num(i.stop, 2) + " <span class='muted small'>" + pct(i.stop_pct) + "</span>") +
+        var x = quote(i.symbol), lv = "";
+        if (x) {
+          i = Object.assign({}, i, { calc: liveCalc(i.calc, x.current, false) });
+          lv = "<br><span class='small'><span class='tag live'>live</span> " + num(x.current, 2) + " " +
+            (x.current <= i.stop ? "<b class='neg'>at or below the stop: skip</b>" :
+             x.current > i.entry * 1.03 ? "<span class='muted'>up " + pct(x.current / i.entry - 1) + " since the signal: re-check the size</span>" : "") + "</span>";
+        }
+        return "<tr>" + cell(symCell(s), "l") + cell(num(i.entry, 2) + lv) + cell(num(i.stop, 2) + " <span class='muted small'>" + pct(i.stop_pct) + "</span>") +
           cell(num(i.target, 2)) + cell(i.qty ? num(i.qty) : "–") + cell(i.qty ? pkr(i.cost) : "–") + calcCells(i.calc, false) +
           "<td class='l' style='white-space:normal;min-width:220px'>" + esc(i.strategy) + " " + esc(JSON.stringify(i.params || {})) +
           ": out-of-sample " + pct(i.oos_cagr) + " a year vs buy-and-hold " + pct(i.oos_buyhold_cagr) + "</td></tr>";
@@ -473,7 +484,7 @@
       "Size risks " + (st.risk_per_trade * 100).toFixed(1) + "% of your capital between entry and stop, at most " + Math.round(st.max_position_pct * 100) +
       "% in one stock. Rule-based suggestions from past prices, not investment advice; nothing is ordered for you.";
     var alloc = {};
-    M.holdings.forEach(function (hh) { var key = hh.sector || "Unknown sector"; alloc[key] = (alloc[key] || 0) + (hh.value || hh.cost || 0); });
+    HS.forEach(function (hh) { var key = hh.sector || "Unknown sector"; alloc[key] = (alloc[key] || 0) + (hh.value || hh.cost || 0); });
     (M.funds || []).forEach(function (f) { alloc["Mutual funds"] = (alloc["Mutual funds"] || 0) + (f.value || f.cost || 0); });
     if (S.cash > 0) alloc.Cash = S.cash;
     var ent = Object.keys(alloc).map(function (k) { return [k, alloc[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
@@ -729,11 +740,114 @@
     }, 3000);
   }
   function checkFreshness() {
-    if (window.PKM_DATA || location.protocol === "file:") return freshness();
+    if (window.PKM_DATA || location.protocol === "file:") { liveBar(); return freshness(); }
     fetch("api/status", { cache: "no-store", credentials: "same-origin" })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (st) { api = st; freshness(); })
+      .then(function (st) { api = st; freshness(); liveBar(); if (st && st.live && liveOn()) liveTick(); })
       .catch(function () { freshness(); });
+  }
+
+  // ---------------------------------------------------------------- live prices
+  // Optional: the server's /api/live returns the PSX portal's market watch (cached 30 s on the
+  // server). With Live switched on, prices refresh once a minute while the market is open, and the
+  // holdings, buy ideas, price calculator and screener use them. Off by default; the choice is
+  // kept in the pkm_live cookie.
+  var LV = null, liveTimer = null, liveErr = null;
+  function liveOn() { return cookie("pkm_live") === "1"; }
+  function quote(sym) { return LV && liveOn() ? (LV.quotes || {})[sym] || null : null; }
+  function liveBar() {
+    var el = $("livebar");
+    if (!(api && api.live)) {
+      if (window.PKM_DATA || location.protocol === "file:" || (api && !api.live)) {
+        el.hidden = false;
+        el.innerHTML = "Live prices: " + (window.PKM_DATA || location.protocol === "file:"
+          ? "not in the one-file version; open the dashboard from its server (<code>dashboard.py serve --allow-live</code>)."
+          : "off on this server (start it with <code>--allow-live</code>).") +
+          " From the command line: <code>python3 pkdata.py live</code>, or <code>--live</code> on any advice.";
+      }
+      return;
+    }
+    el.hidden = false;
+    var on = liveOn();
+    el.innerHTML = "<label class='ck'><input type='checkbox' id='lv-on'" + (on ? " checked" : "") + "> <b>Live prices</b></label> " +
+      (on ? (LV ? "<span class='dot-live'></span>PSX at " + esc(LV.fetched.slice(11, 16)) + " · " +
+        (LV.market_open ? "market open, updates every minute" : "market closed: last trades") +
+        " · <a id='lv-now'>update now</a>" : "loading…") +
+        (liveErr ? " · <span class='neg'>" + esc(liveErr) + "</span>" : "") +
+        "<span class='muted small'> · the portal can lag the exchange; orders go through your broker</span>"
+        : "<span class='muted'>off: everything uses the end-of-day data above</span>");
+    $("lv-on").onchange = function () {
+      cookie("pkm_live", this.checked ? "1" : "0");
+      if (this.checked) liveTick(); else { clearTimeout(liveTimer); liveTimer = null; liveBar(); redrawLive(); }
+    };
+    if ($("lv-now")) $("lv-now").onclick = liveTick;
+  }
+  function liveTick() {
+    clearTimeout(liveTimer); liveTimer = null;
+    if (!liveOn()) return;
+    fetch("api/live", { headers: { "X-PKM-Live": "1" }, cache: "no-store", credentials: "same-origin" })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        if (!x.ok) { liveErr = x.j.error || "live prices failed"; }
+        else { LV = x.j; liveErr = x.j.error ? "PSX didn't answer the last try; showing " + LV.fetched.slice(11, 16) : null; }
+      })
+      .catch(function (e) { liveErr = "could not reach the server: " + e.message; })
+      .then(function () {
+        liveBar(); redrawLive();
+        if (liveOn() && (!LV || LV.market_open) && document.visibilityState !== "hidden") liveTimer = setTimeout(liveTick, 60000);
+      });
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && liveOn() && api && api.live && !liveTimer) liveTick();
+  });
+  function currentView() { var b = $("tabs").querySelector("button.on"); return b ? b.getAttribute("data-v") : "overview"; }
+  function redrawLive() {
+    var v = currentView();
+    if (v === "overview") drawLiveCard(); else if (v === "screener") drawScreener(); else if (v === "mine") renderMine();
+  }
+  function drawLiveCard() {
+    var card = $("ov-livecard");
+    if (!card) return;
+    if (!(LV && liveOn())) { card.hidden = true; return; }
+    var syms = D.stocks.filter(function (s) { return s.owned || s.watch || s.held || state.compare.indexOf(s.symbol) >= 0; })
+      .map(function (s) { return s.symbol; });
+    card.hidden = false;
+    $("ov-live").innerHTML = "<tr><th class='l'>Stock</th><th>Live</th><th>Change</th><th>vs last close on file</th><th class='hide-m'>High</th><th class='hide-m'>Low</th><th>Volume</th></tr>" +
+      syms.map(function (sym) {
+        var s = bySym[sym], x = quote(sym);
+        if (!x) return "<tr>" + cell(symCell(s), "l") + "<td colspan='6' class='l muted'>not quoted</td></tr>";
+        var vs = s.close ? x.current / s.close - 1 : null, ch = x.change_pct == null ? null : x.change_pct / 100;
+        return "<tr>" + cell(symCell(s), "l") + cell("<b>" + num(x.current, 2) + "</b>") + cell(pct(ch, 2), sgn(ch)) + cell(pct(vs, 2), sgn(vs)) +
+          cell(num(x.high, 2), "hide-m") + cell(num(x.low, 2), "hide-m") + cell(num(x.volume)) + "</tr>";
+      }).join("");
+    $("ov-livenote").textContent = "PSX data portal at " + LV.fetched + " (Pakistan time). Change is against the previous close; " +
+      "\"vs last close on file\" is against the end-of-day data the rankings use.";
+  }
+  // Recalculate the price calculator from a new price, keeping the charges it estimated.
+  function liveCalc(c, px, held) {
+    if (!c || px == null) return c;
+    var n = Object.assign({}, c), k = c.qty;
+    var feeStop = c.loss_at_stop ? c.loss_at_stop - k * (c.price - c.stop) : 0;
+    var feeTgt = k * (c.target - c.price) - c.gain_at_target;
+    n.price = px; n.value = k * px;
+    n.loss_at_stop = px > c.stop ? k * (px - c.stop) + (feeStop || 0) : 0;
+    n.gain_at_target = k * (c.target - px) - feeTgt;
+    n.reward_risk = n.loss_at_stop > 0 ? n.gain_at_target / n.loss_at_stop : null;
+    n.breakeven_win_rate = n.loss_at_stop > 0 && n.gain_at_target > 0 ? n.loss_at_stop / (n.loss_at_stop + n.gain_at_target) : null;
+    if (held && c.vs_cost_now != null) n.vs_cost_now = c.vs_cost_now + k * (px - c.price);
+    return n;
+  }
+  function liveHold(hh) {
+    var x = quote(hh.symbol);
+    if (!x || hh.price == null) return hh;
+    var px = x.current, n = Object.assign({}, hh, { price: px, live: true, eod_price: hh.price });
+    n.value = hh.qty * px;
+    n.unrealised_pct = hh.cost ? n.value / hh.cost - 1 : null;
+    n.calc = liveCalc(hh.calc, px, true);
+    if (hh.stop != null && px <= hh.stop && hh.action !== "SELL") {
+      n.action = "SELL"; n.why = "live price " + num(px, 2) + " is at or below the stop " + num(hh.stop, 2) + " (end-of-day advice: " + (hh.action || "–") + ")";
+    }
+    return n;
   }
 
   // ---------------------------------------------------------------- boot

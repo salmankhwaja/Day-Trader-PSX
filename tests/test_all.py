@@ -938,6 +938,94 @@ class TestPSXSession(unittest.TestCase):
             C._fetch, C._PSX["key"] = orig, None
 
 
+class TestLive(Market):
+    """Live prices: one market-watch request, laid over the end-of-day history, never saved into it."""
+
+    def setUp(self):
+        super().setUp()
+        with open(os.path.join(FIX, "psx-market-watch.html")) as f:
+            self.mw = f.read()
+        self._get = C.http_get
+        C.http_get = lambda url, *a, **k: self.mw if "market-watch" in url else self._get(url, *a, **k)
+
+    def tearDown(self):
+        C.http_get = self._get
+        FR.use_live(None)
+        super().tearDown()
+
+    def test_parse(self):
+        q = FR.parse_market_watch(self.mw)
+        self.assertEqual(len(q), 12)
+        self.assertEqual(q["SYN01"]["ldcp"], 6.32)
+        self.assertAlmostEqual(q["SYN01"]["change_pct"], 2.0)
+        bare = "<tr><td>ABC</td><td>X</td><td>KSE100</td><td>10</td><td>10</td><td>11</td><td>9</td>" \
+               "<td>10.5</td><td>0.5</td><td>5.00%</td><td>1,000</td></tr>"
+        self.assertEqual(FR.parse_market_watch(bare)["ABC"]["current"], 10.5)  # no headings: PSX's order
+
+    def test_overlay_is_never_saved(self):
+        path = C.price_path(self.h, "SYN05")
+        eod = C.read_prices(path)
+        snap = {"date": "2099-01-02", "quotes": {"SYN05": {"current": 123.0, "open": 120.0, "volume": 5}}}
+        FR.use_live(snap)
+        rows = C.read_prices(path)
+        self.assertEqual(rows[-1], {"date": "2099-01-02", "open": 120.0, "close": 123.0, "volume": 5.0, "live": True})
+        self.assertEqual(C.read_prices(path, live=False), eod)
+        run(pkdata.main, ["--home", self.h, "psx", "SYN05", "--from-file", os.path.join(FIX, "psx-SYN05.json")])
+        FR.use_live(None)
+        self.assertEqual(C.read_prices(path)[-1]["date"], eod[-1]["date"])  # the download didn't keep it
+
+    def test_advice_modes(self):
+        run(PF.main, ["--home", self.h, "cash", "deposit", "500000"])
+        rc, out = run(PF.main, ["--home", self.h, "check", "SYN05", "--live"])
+        self.assertIn("LIVE prices from PSX", out)
+        self.assertTrue(os.path.exists(os.path.join(self.h, "live.json")))
+        self.assertIn("live", FR.read_log(self.h))
+        FR.use_live(None)
+        C.http_get = lambda *a, **k: (_ for _ in ()).throw(OSError("blocked"))
+        rc, out = run(PF.main, ["--home", self.h, "check", "SYN05", "--live"])
+        self.assertIn("Live prices failed", out)  # falls back to the last fetch, and says so
+        rc, out = run(pkdata.main, ["--home", self.h, "live", "--from-file", os.path.join(FIX, "psx-market-watch.html"), "SYN05"])
+        self.assertIn("SYN05", out)
+
+    def test_dashboard_live_endpoint(self):
+        import threading
+        import urllib.error
+        import urllib.request
+        run(dashboard.main, ["--home", self.h, "build"])
+        H = dashboard.Handler
+        H.root, H.password, H.home, H.allow_live, H.hostnames = os.path.join(self.h, "dashboard"), None, self.h, False, ()
+        dashboard.LIVE_CACHE.update(at=0.0, snap=None)
+        calls = []
+        get = C.http_get
+        C.http_get = lambda url, *a, **k: (calls.append(url), get(url))[1]
+        srv = dashboard.http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = "http://127.0.0.1:%d" % srv.server_address[1]
+        op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+        def live(headers):
+            try:
+                r = op.open(urllib.request.Request(base + "/api/live", headers=headers))
+                return r.status, json.load(r)
+            except urllib.error.HTTPError as e:
+                return e.code, None
+        try:
+            self.assertEqual(live({"X-PKM-Live": "1"})[0], 404)  # off unless --allow-live
+            H.allow_live = True
+            self.assertEqual(live({})[0], 403)
+            self.assertEqual(live({"X-PKM-Live": "1", "Host": "evil.example"})[0], 403)
+            code, body = live({"X-PKM-Live": "1"})
+            self.assertEqual(code, 200)
+            self.assertEqual(len(body["quotes"]), 12)
+            live({"X-PKM-Live": "1"})
+            self.assertEqual(len(calls), 1)  # cached: PSX asked once
+        finally:
+            H.allow_live = False
+            dashboard.LIVE_CACHE.update(at=0.0, snap=None)
+            srv.shutdown()
+            srv.server_close()
+
+
 class TestDocs(unittest.TestCase):
     """The README must keep up with the code: every tool and every setting is documented."""
 

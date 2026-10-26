@@ -1,35 +1,147 @@
-"""Before any advice: fetch fresh data, or use what's on file? Ask, then say which was used.
+"""Before any advice: which prices? The last fetch, a fresh fetch, or live. Ask, then say.
 
 Every advice command (portfolio.py advise / check, funds.py advise / review, propose.py,
-rank.py stocks / funds, risk.py portfolio) takes:
+rank.py stocks / funds, risk.py portfolio) takes one of:
 
-  --fetch      download fresh data for the shares (and funds) involved, then advise
-  --no-fetch   advise on the data already on file
+  --no-fetch   last fetch: advise on the end-of-day data already on file
+  --fetch      force fetch: download the end-of-day data for the shares (and funds) involved first
+  --live       live: today's PSX prices (the portal's market watch, one request for every share),
+               laid over the end-of-day history; shares whose history is behind are fetched first
 
-With neither, it asks when someone is at the keyboard ("Prices are from 2026-10-24, 2 days old.
-Fetch fresh data first? [y/N]"); when run unattended (by Claude, cron or the daily update) it
-doesn't fetch, and states the data's date at the top of the output. Either way every number
-after that point is calculated on the data on file at that moment: fetching is the only step
-that touches the network.
+With none, it asks when someone is at the keyboard; when run unattended (Claude, cron, the daily
+update) it uses the last fetch and says so. After that one step every number is calculated on
+the data in hand: fetching is the only step that touches the network. Live quotes are kept in
+<home>/live.json and never written into the end-of-day price files.
 
 The time of each fetch is kept in <home>/fetch_log.json, so the answer can say how fresh the
 data is.
 """
 import contextlib
 import datetime as dt
+import html as htmllib
 import io
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 
+MARKET_WATCH = C.PSX_HOST + "/market-watch"
+MODES = ("stored", "fetch", "live")
+
 
 def add_args(p):
     g = p.add_mutually_exclusive_group()
-    g.add_argument("--fetch", action="store_true", help="download fresh data first")
-    g.add_argument("--no-fetch", action="store_true", help="use the data already on file")
+    g.add_argument("--fetch", action="store_true", help="force fetch: download end-of-day data first")
+    g.add_argument("--no-fetch", action="store_true", help="last fetch: use the data already on file")
+    g.add_argument("--live", action="store_true", help="live: today's PSX prices over the stored history")
+
+
+# ---------------------------------------------------------------- live prices
+
+def pk_now():
+    """Pakistan time (UTC+5, no daylight saving)."""
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(hours=5)
+
+
+def market_open(now=None):
+    """Roughly whether PSX's regular session is on (Mon-Fri, 09:15-16:45 Pakistan time, which
+    covers Friday's split session). Only used to label quotes and pace the dashboard."""
+    now = now or pk_now()
+    return now.weekday() < 5 and dt.time(9, 15) <= now.time() <= dt.time(16, 45)
+
+
+def last_session(now=None):
+    """The most recent weekday on or before today, as YYYY-MM-DD (PSX holidays aside)."""
+    d = (now or pk_now()).date()
+    while d.weekday() >= 5:
+        d -= dt.timedelta(days=1)
+    return d.isoformat()
+
+
+def _num(v):
+    v = (v or "").replace(",", "").replace("%", "").strip()
+    neg = v.startswith("(") and v.endswith(")")
+    v = v.strip("()")
+    try:
+        x = float(v)
+    except ValueError:
+        return None
+    return -x if neg else x
+
+
+CELL_RE = re.compile(r"<t([hd])([^>]*)>(.*?)</t[hd]>", re.S | re.I)
+TAG_RE = re.compile(r"<[^>]+>")
+FIELDS = {"symbol": "symbol", "sector": "sector", "listed in": "listed_in", "ldcp": "ldcp", "open": "open",
+          "high": "high", "low": "low", "current": "current", "change": "change", "change (%)": "change_pct",
+          "volume": "volume"}
+DEFAULT_ORDER = ["symbol", "sector", "listed_in", "ldcp", "open", "high", "low", "current", "change",
+                 "change_pct", "volume"]
+
+
+def parse_market_watch(text):
+    """{SYMBOL: {ldcp, open, high, low, current, change, change_pct, volume, sector}} from the
+    portal's market-watch table (HTML). Columns are matched by their headings when present."""
+    order, quotes = None, {}
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", text, re.S | re.I):
+        cells = CELL_RE.findall(tr)
+        if not cells:
+            continue
+        if all(k == "h" for k, _, _ in cells):
+            names = [htmllib.unescape(TAG_RE.sub("", c)).strip().lower() for _, _, c in cells]
+            order = [FIELDS.get(n, n) for n in names]
+            continue
+        cols = order or DEFAULT_ORDER
+        row = {}
+        for (kind, attrs, body), name in zip(cells, cols):
+            m = re.search(r'data-search="([^"]+)"', attrs)
+            txt = htmllib.unescape(TAG_RE.sub("", body)).strip()
+            if name == "symbol":
+                row["symbol"] = (m.group(1) if m else txt).split()[0].upper() if (m or txt) else None
+            elif name in ("sector", "listed_in"):
+                row[name] = txt
+            else:
+                o = re.search(r'data-order="([^"]+)"', attrs)
+                row[name] = _num(o.group(1) if o else txt)
+        if row.get("symbol") and row.get("current"):
+            if row.get("change_pct") is None and row.get("ldcp"):
+                row["change_pct"] = round(100 * (row["current"] / row["ldcp"] - 1), 2)
+            quotes[row.pop("symbol")] = row
+    return quotes
+
+
+def live_path(h):
+    return os.path.join(h, "live.json")
+
+
+def fetch_live(h):
+    """One request for every share's current price. Saves and returns the snapshot."""
+    quotes = parse_market_watch(C.http_get(MARKET_WATCH))
+    if len(quotes) < 5:
+        raise ValueError("the market watch page had no prices (the portal may have changed)")
+    now = pk_now()
+    snap = {"fetched": now.strftime("%Y-%m-%d %H:%M:%S"), "date": last_session(now),
+            "market_open": market_open(now), "quotes": quotes}
+    with open(live_path(h), "w") as f:
+        json.dump(snap, f)
+    write_log(h, ["live"])
+    return snap
+
+
+def load_live(h):
+    try:
+        with open(live_path(h)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def use_live(snap):
+    """Lay these quotes over every price read from now on (in this process)."""
+    C.LIVE["date"] = snap["date"] if snap else None
+    C.LIVE["quotes"] = (snap or {}).get("quotes") or {}
 
 
 def log_path(h):
@@ -92,6 +204,11 @@ def describe(st, funds=False):
     last = st["last_fetch"].get("psx") or st["last_fetch"].get("mufap")
     if last:
         bits.append("last fetched %s" % last)
+    if st.get("live"):
+        lv = st["live"]
+        bits.insert(0, "LIVE prices from PSX at %s (%s; %d of %d shares quoted)" % (
+            lv["fetched"][11:16], "market open" if lv.get("market_open") else "market closed: last trades",
+            lv["quoted"], lv["asked"]))
     return ", ".join(bits)
 
 
@@ -159,33 +276,63 @@ def interactive():
         return False
 
 
+def ask_mode(st, funds=False):
+    try:
+        ans = input("Data on file: %s.\nAdvise on [s] the last fetch, [f] a fresh fetch first, or [l] live prices? [s/f/l] "
+                    % describe(st, funds)).strip().lower()
+    except EOFError:
+        ans = ""
+    if ans.startswith(("f", "y")):
+        return "fetch"
+    if ans.startswith("l"):
+        return "live"
+    return "stored"
+
+
 def decide(a, h, cfg, symbols=(), funds=False, payouts=True):
-    """Apply --fetch / --no-fetch / ask, then print the data date the advice is based on."""
+    """Apply --no-fetch / --fetch / --live (or ask), then print the data the advice is based on."""
     symbols = [s.upper() for s in symbols]
     out = sys.stderr if getattr(a, "json", False) else sys.stdout  # keep --json output clean
     st = status(h, cfg, symbols, funds)
-    want = None
-    if getattr(a, "fetch", False):
-        want = True
+    if getattr(a, "live", False):
+        mode = "live"
+    elif getattr(a, "fetch", False):
+        mode = "fetch"
     elif getattr(a, "no_fetch", False):
-        want = False
+        mode = "stored"
     elif interactive():
-        try:
-            ans = input("Data on file: %s. Fetch fresh data first? [y/N] " % describe(st, funds)).strip().lower()
-        except EOFError:
-            ans = ""
-        want = ans.startswith("y")
-    if want and len(symbols) > 60:
-        print("That's %d shares at about one a second: roughly %d minutes." % (len(symbols), len(symbols) // 60 + 1), file=out)
-    if want:
-        print("Fetching %s%s..." % ("%d share price%s" % (len(set(symbols)), "" if len(set(symbols)) == 1 else "s")
-                                    if symbols else "", " and the MUFAP table" if funds else ""), file=out, flush=True)
-        done, failed = fetch(h, cfg, symbols, funds, payouts)
+        mode = ask_mode(st, funds)
+    else:
+        mode = None  # unattended: the last fetch, and say so
+    want = list(symbols)
+    if mode == "live":  # only shares whose end-of-day history is behind need the slow download
+        last = last_session()
+        prev = (dt.date.fromisoformat(last) - dt.timedelta(days=1 if dt.date.fromisoformat(last).weekday() else 3)).isoformat()
+        want = [s for s, d in st["symbols"].items() if not d or d < prev]
+    if mode in ("fetch", "live") and (want or funds):
+        if len(want) > 60:
+            print("That's %d shares at about one a second: roughly %d minutes." % (len(want), len(want) // 60 + 1), file=out)
+        print("Fetching %s%s..." % ("%d share price%s" % (len(want), "" if len(want) == 1 else "s") if want else "",
+                                    (" and" if want else "") + " the MUFAP table" if funds else ""), file=out, flush=True)
+        done, failed = fetch(h, cfg, want, funds, payouts and mode == "fetch")
         if failed:
             print("Some downloads failed (%s); using what's on file for those." % ", ".join(failed), file=out)
-        st = status(h, cfg, symbols, funds)
-    note = "" if want else ("" if getattr(a, "no_fetch", False) or want is False else
-                            " (not refreshed: add --fetch to download first)")
+    live = None
+    if mode == "live" and funds and not symbols:
+        print("Funds have no live prices (NAVs are published once a day), so this is today's MUFAP table.", file=out)
+    if mode == "live" and symbols:
+        try:
+            snap = fetch_live(h)
+            use_live(snap)
+            live = {"fetched": snap["fetched"], "market_open": snap["market_open"],
+                    "quoted": sum(1 for s in symbols if s in snap["quotes"]), "asked": len(symbols)}
+        except Exception as e:  # noqa: BLE001 -- fall back to the stored data, loudly
+            print("Live prices failed (%s); using the last fetch instead." % e, file=out)
+            mode = "stored"
+    st = status(h, cfg, symbols, funds)
+    st["live"] = live
+    note = " (the last fetch; add --fetch for fresh end-of-day data or --live for live prices)" if mode is None else ""
     print("Based on %s%s.\n" % (describe(st, funds), note), file=out)
-    st["fetched"] = bool(want)
+    st["mode"] = mode or "stored"
+    st["fetched"] = mode == "fetch"
     return st

@@ -24,7 +24,12 @@ POST /api/refresh, which needs the X-PKM-Refresh header (a plain cross-site form
 a Host that is an IP address, localhost or a name in PKM_DASH_HOSTNAMES (defeats DNS rebinding),
 a matching Origin, the password when one is set, and runs at most once at a time with a cool-down.
 GET /api/status says whether refresh is allowed and how the last one went. The page remembers
-your choice (ask each time / use stored data / fetch automatically when stale) in a cookie. To reach it from your phone, use a private network such as Tailscale and
+your choice (ask each time / use stored data / fetch automatically when stale) in a cookie.
+
+Live prices are off unless you start it with `serve --allow-live` (or PKM_DASH_LIVE=1). Then
+GET /api/live (same header, Host and password rules, header X-PKM-Live) returns the PSX portal's
+market watch: every share's current price, fetched at most once every 30 seconds however many
+pages ask. The page polls it once a minute while the market is open and you've switched Live on. To reach it from your phone, use a private network such as Tailscale and
 `--host <tailscale IP>`; any non-loopback host requires a password in PKM_DASHBOARD_PASSWORD
 (HTTP Basic auth, user "pkm"). The data is PSX market data: keep it private.
 """
@@ -318,6 +323,9 @@ def cmd_build(a, h, cfg):
     return 0
 
 
+LIVE_CACHE = {"at": 0.0, "snap": None}
+LIVE_LOCK = threading.Lock()
+LIVE_TTL = 30  # seconds: PSX is asked at most twice a minute
 REFRESH = {"running": False, "started": None, "finished": None, "ok": None, "last_start": 0.0, "tail": []}
 REFRESH_LOCK = threading.Lock()
 COOLDOWN = 120  # seconds between refreshes
@@ -362,6 +370,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     password = None
     home = None
     allow_refresh = False
+    allow_live = False
     scope = "watchlist"
     hostnames = ()
     server_version = "pkm"
@@ -403,6 +412,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with REFRESH_LOCK:
             st = {k: REFRESH[k] for k in ("running", "started", "finished", "ok", "tail")}
         st["refresh"] = bool(self.allow_refresh)
+        st["live"] = bool(self.allow_live)
         st["cooldown"] = max(0, int(COOLDOWN - (time.time() - REFRESH["last_start"]))) if REFRESH["last_start"] else 0
         return st
 
@@ -420,6 +430,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0].split("#", 1)[0]
         if path == "/api/status":
             return self._json(200, self._status())
+        if path == "/api/live":
+            return self._live()
         if path not in FILES:
             self._headers(404, "text/plain", 9)
             self.end_headers()
@@ -438,6 +450,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._headers(200, ctype, len(body))
         self.end_headers()
         self.wfile.write(body)
+
+    def _live(self):
+        if not self.allow_live:
+            return self._json(404, {"error": "live prices are off: start the server with --allow-live"})
+        if self.headers.get("X-PKM-Live") != "1" or not self._host_ok():
+            return self._json(403, {"error": "refused: needs the dashboard's own page on an allowed host"})
+        import freshness
+        with LIVE_LOCK:
+            if LIVE_CACHE["snap"] is None or time.time() - LIVE_CACHE["at"] >= LIVE_TTL:
+                try:
+                    LIVE_CACHE["snap"] = freshness.fetch_live(self.home)
+                    LIVE_CACHE["at"] = time.time()
+                    LIVE_CACHE.pop("error", None)
+                except Exception as e:  # noqa: BLE001 -- report, keep the last good snapshot
+                    LIVE_CACHE["error"] = "%s: %s" % (type(e).__name__, str(e)[:200])
+                    LIVE_CACHE["at"] = time.time()  # don't hammer PSX while it's failing
+            snap, err = LIVE_CACHE["snap"], LIVE_CACHE.get("error")
+        if snap is None:
+            return self._json(502, {"error": "live prices failed: %s" % err})
+        out = dict(snap, market_open=freshness.market_open(), error=err)
+        return self._json(200, out)
 
     def do_HEAD(self):
         self._headers(405, "text/plain", 0)
@@ -482,12 +515,14 @@ def cmd_serve(a, h, cfg):
                  "(and prefer a private network such as Tailscale; this server speaks plain HTTP)" % a.host)
     Handler.root, Handler.password, Handler.home = root, pw, h
     Handler.allow_refresh = bool(a.allow_refresh or os.environ.get("PKM_DASH_REFRESH") == "1")
+    Handler.allow_live = bool(a.allow_live or os.environ.get("PKM_DASH_LIVE") == "1")
     Handler.scope = "all" if os.environ.get("PKM_SCOPE") == "all" else "watchlist"
     Handler.hostnames = tuple(n.strip().lower() for n in (os.environ.get("PKM_DASH_HOSTNAMES") or "").split(",") if n.strip())
     srv = http.server.ThreadingHTTPServer((a.host, a.port), Handler)
-    print("dashboard on http://%s:%d/ (Ctrl+C to stop)%s%s" % (
+    print("dashboard on http://%s:%d/ (Ctrl+C to stop)%s%s%s" % (
         a.host, a.port, "" if loopback else ", user pkm",
-        "; the page may fetch fresh data (--allow-refresh)" if Handler.allow_refresh else ""))
+        "; the page may fetch fresh data (--allow-refresh)" if Handler.allow_refresh else "",
+        "; live prices on (--allow-live)" if Handler.allow_live else ""))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -508,6 +543,8 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8787)
     p.add_argument("--allow-refresh", action="store_true",
                    help="let the page start a data fetch + rebuild (also: PKM_DASH_REFRESH=1)")
+    p.add_argument("--allow-live", action="store_true",
+                   help="let the page show live PSX prices (also: PKM_DASH_LIVE=1)")
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)

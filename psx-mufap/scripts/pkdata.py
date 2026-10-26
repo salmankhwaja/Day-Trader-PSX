@@ -4,6 +4,7 @@
   pkdata.py psx SYMBOL [SYMBOL ...]          download daily prices from the PSX data portal
   pkdata.py psx --watchlist                  ... for every symbol in config.json, plus the benchmark
   pkdata.py psx SYMBOL --from-file raw.json  parse a response you saved yourself (or a CSV)
+  pkdata.py live [--watchlist|SYMBOL ...]    live prices for every share (one request) -> live.json
   pkdata.py mufap                            download today's MUFAP performance summary
   pkdata.py mufap --from-file page.md        parse a saved copy (HTML or Markdown)
   pkdata.py universe                         every listed share + Shariah (KMI) flags -> universe.json
@@ -122,7 +123,7 @@ def cmd_psx(a, h, cfg):
                 raise ValueError("no price rows in the response")
             path = C.price_path(h, s)
             if os.path.exists(path):  # merge with what we already have
-                rows = C.read_prices(path) + rows
+                rows = C.read_prices(path, live=False) + rows
             rows = C.write_prices(path, rows)
             print("%-8s %5d days  %s .. %s  last close %.2f" % (
                 s, len(rows), rows[0]["date"], rows[-1]["date"], rows[-1]["close"]))
@@ -392,6 +393,35 @@ def cmd_init(a, h, cfg):
     return 0
 
 
+def cmd_live(a, h, cfg):
+    import freshness as F
+    try:
+        if a.from_file:
+            with open(a.from_file, encoding="utf-8", errors="replace") as f:
+                quotes = F.parse_market_watch(f.read())
+            now = F.pk_now()
+            snap = {"fetched": now.strftime("%Y-%m-%d %H:%M:%S"), "date": F.last_session(now),
+                    "market_open": F.market_open(now), "quotes": quotes}
+            with open(F.live_path(h), "w") as f:
+                json.dump(snap, f)
+        else:
+            snap = F.fetch_live(h)
+    except Exception as e:  # noqa: BLE001
+        sys.exit("live prices failed (%s). They come from %s, which needs the portal's session "
+                 "(the tools send it); try again, or use the end-of-day data." % (e, F.MARKET_WATCH))
+    q = snap["quotes"]
+    want = [s.upper() for s in a.symbols] or ([s.upper() for s in cfg["watchlist"]] + F.held_symbols(h)
+                                              if a.watchlist or not a.symbols else [])
+    want = list(dict.fromkeys(want))
+    print("Live PSX prices at %s (%s), %d shares quoted. The portal can lag the exchange." % (
+        snap["fetched"], "market open" if snap["market_open"] else "market closed: last trades", len(q)))
+    print(C.md_table(["Symbol", "Current", "Change", "Change %", "High", "Low", "Volume", "Prev close"],
+                     [[s, "%.2f" % q[s]["current"], "%+.2f" % (q[s].get("change") or 0), "%+.2f%%" % (q[s].get("change_pct") or 0),
+                       q[s].get("high") or "", q[s].get("low") or "", "{:,.0f}".format(q[s].get("volume") or 0),
+                       q[s].get("ldcp") or ""] if s in q else [s, "not quoted", "", "", "", "", "", ""] for s in want]))
+    return 0
+
+
 def cmd_status(a, h, cfg):
     print("home: %s" % h)
     uni = P.load_universe(h)
@@ -401,7 +431,7 @@ def cmd_status(a, h, cfg):
         files = sorted(os.listdir(d))
         lasts = {}
         for fn in files:
-            rows = C.read_prices(os.path.join(d, fn))
+            rows = C.read_prices(os.path.join(d, fn), live=False)
             if rows:
                 lasts[fn[:-4]] = (len(rows), rows[-1]["date"])
         if len(lasts) > 25:
@@ -443,6 +473,10 @@ def main(argv=None):
     p.add_argument("--from-file")
     p = sub.add_parser("mufap")
     p.add_argument("--from-file")
+    p = sub.add_parser("live", help="live prices for every share in one request (saved to live.json)")
+    p.add_argument("symbols", nargs="*")
+    p.add_argument("--watchlist", action="store_true", help="show the watchlist and holdings (the default)")
+    p.add_argument("--from-file", help="a market-watch page you saved")
     sub.add_parser("status")
     p = sub.add_parser("init")
     p.add_argument("--force", action="store_true")
@@ -450,7 +484,7 @@ def main(argv=None):
     h = C.home(a.home)
     cfg = C.load_config(h)
     rc = {"psx": cmd_psx, "mufap": cmd_mufap, "status": cmd_status, "universe": cmd_universe,
-          "company": cmd_company, "payouts": cmd_payouts, "init": cmd_init}[a.cmd](a, h, cfg)
+          "company": cmd_company, "payouts": cmd_payouts, "init": cmd_init, "live": cmd_live}[a.cmd](a, h, cfg)
     if a.cmd in ("psx", "mufap", "payouts") and not rc:
         import freshness
         freshness.write_log(h, [a.cmd])  # so advice can say when the data was last fetched
