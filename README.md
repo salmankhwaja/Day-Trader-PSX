@@ -24,11 +24,11 @@ equity funds by 90-day return"*.
 **Claude Code:**
 
 ```bash
-git clone https://github.com/<you>/<this-repo>.git
-cp -r <this-repo>/psx-mufap ~/.claude/skills/
+git clone https://github.com/salmankhwaja/Day-Trader-PSX.git
+cp -r Day-Trader-PSX/psx-mufap ~/.claude/skills/
 ```
 
-or as a plugin: `/plugin marketplace add <you>/<this-repo>` then
+or as a plugin: `/plugin marketplace add salmankhwaja/Day-Trader-PSX` then
 `/plugin install psx-mufap@pk-market-skill`.
 
 **Terminal:**
