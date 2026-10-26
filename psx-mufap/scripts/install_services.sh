@@ -3,13 +3,16 @@
 #   pkm-daily.timer      runs daily_sync.sh on weekdays at 17:15 Pakistan time
 #   pkm-dashboard        keeps the dashboard server running (127.0.0.1:8787 unless you set PKM_DASH_HOST)
 #
-#   PKM_HOME=~/pkmarket-data PKM_SCOPE=all ./install_services.sh
+#   ./install_services.sh                          watchlist, data in ~/pkmarket
+#   PKM_SCOPE=all ./install_services.sh            every listed share
+#   PKM_GIT_PUSH=1 PKM_HOME=~/my-private-data-repo ./install_services.sh   also push data (private repo only)
 #   PKM_DASH_HOST=100.x.y.z PKM_DASHBOARD_PASSWORD='...' ./install_services.sh   # e.g. your Tailscale IP
 #
 # Remove with: systemctl --user disable --now pkm-daily.timer pkm-dashboard.service
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
-: "${PKM_HOME:=$HOME/pkmarket-data}"
+: "${PKM_HOME:=$HOME/pkmarket}"
+: "${PKM_GIT_PUSH:=0}"
 : "${PKM_SCOPE:=watchlist}"
 : "${PKM_DASH_HOST:=127.0.0.1}"
 : "${PKM_DASH_PORT:=8787}"
@@ -20,6 +23,7 @@ umask 077
 {
   echo "PKM_HOME=$PKM_HOME"
   echo "PKM_SCOPE=$PKM_SCOPE"
+  echo "PKM_GIT_PUSH=$PKM_GIT_PUSH"
   [ -n "${PKM_DASHBOARD_PASSWORD:-}" ] && echo "PKM_DASHBOARD_PASSWORD=$PKM_DASHBOARD_PASSWORD"
 } > "$ENV_FILE"
 chmod 600 "$ENV_FILE"

@@ -1,0 +1,17 @@
+name: release
+# Push a tag like v1.1.0 to publish psx-mufap.zip, the file people add to Claude as a skill.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m unittest discover tests
+      - run: zip -r psx-mufap.zip psx-mufap -x '*__pycache__*'
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" psx-mufap.zip --title "$GITHUB_REF_NAME" --generate-notes

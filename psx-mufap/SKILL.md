@@ -8,7 +8,9 @@ description: Rank Pakistan Stock Exchange (PSX) stocks (watchlist or every liste
 Plain Python 3.8+, standard library only, in `scripts/`. Every tool prints Markdown
 tables that read well on a phone. Run them with `python3 scripts/<tool>.py ...`
 from this skill's folder. All data and the paper account live in one folder, the
-"home": `./pkmarket` unless `PKM_HOME` or `--home` says otherwise.
+"home": `~/pkmarket` unless `PKM_HOME` or `--home` says otherwise. `pkdata.py init` creates
+it with a starter `config.json`. The home holds the user's data only; never commit it to the
+code repository.
 
 | Tool | Job |
 |---|---|
@@ -157,9 +159,9 @@ Rules:
 - If a fill price is flagged STALE, refresh the data first or tell the user.
 - Nothing here can place a real order. If the user asks to trade for real, say this skill
   only paper trades and they should use their broker.
-- The account is `pkmarket/paper/portfolio.json`. Claude's sandbox may not keep files
+- The account is `paper/portfolio.json` in the home. Claude's sandbox may not keep files
   between chats: at the end of a session that changed the account, save the file where the
-  user keeps it (their private GitHub repo if connected, otherwise send it to them) and tell
+  user keeps it (their own private storage if they have one connected, otherwise send it to them) and tell
   them where it went. At the start of a session, restore it from there before running
   `paper.py`.
 
@@ -183,7 +185,7 @@ private network such as Tailscale.
 
 ## Settings
 
-`pkmarket/config.json` (optional; anything missing uses the default):
+`config.json` in the home (optional; anything missing uses the default):
 
 ```json
 {

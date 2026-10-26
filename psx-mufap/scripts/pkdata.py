@@ -10,6 +10,7 @@
   pkdata.py company --all|--watchlist|SYMBOL  sector, P/E, dividend history per company (cached 7 days)
   pkdata.py payouts                          latest dividend announcements and book closures
   pkdata.py psx --all                        prices for every share in universe.json (first run ~10 min)
+  pkdata.py init                             create the data folder with a starter config.json
   pkdata.py status                           what data is on disk and how fresh it is
 
 Sources
@@ -375,6 +376,17 @@ def cmd_payouts(a, h, cfg):
     return 0
 
 
+def cmd_init(a, h, cfg):
+    p = os.path.join(h, "config.json")
+    if os.path.exists(p) and not a.force:
+        print("%s already exists; edit it, or use --force to reset it" % p)
+        return 0
+    with open(p, "w") as f:
+        json.dump(C.DEFAULT_CONFIG, f, indent=2)
+    print("created %s\nEdit the watchlist, costs and tax rate in it, then run: pkdata.py psx --watchlist" % p)
+    return 0
+
+
 def cmd_status(a, h, cfg):
     print("home: %s" % h)
     uni = P.load_universe(h)
@@ -405,7 +417,7 @@ def cmd_status(a, h, cfg):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--home", help="data folder (default ./pkmarket or $PKM_HOME)")
+    ap.add_argument("--home", help="data folder (default ~/pkmarket or $PKM_HOME)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("psx")
     p.add_argument("symbols", nargs="*")
@@ -427,11 +439,13 @@ def main(argv=None):
     p = sub.add_parser("mufap")
     p.add_argument("--from-file")
     sub.add_parser("status")
+    p = sub.add_parser("init")
+    p.add_argument("--force", action="store_true")
     a = ap.parse_args(argv)
     h = C.home(a.home)
     cfg = C.load_config(h)
     return {"psx": cmd_psx, "mufap": cmd_mufap, "status": cmd_status, "universe": cmd_universe,
-            "company": cmd_company, "payouts": cmd_payouts}[a.cmd](a, h, cfg)
+            "company": cmd_company, "payouts": cmd_payouts, "init": cmd_init}[a.cmd](a, h, cfg)
 
 
 if __name__ == "__main__":

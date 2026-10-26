@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 # Daily pipeline for a computer with normal internet (e.g. Linux Mint). Run after the PSX close.
 #
-#   PKM_HOME=~/pkmarket-data ./daily_sync.sh            watchlist mode (fast)
-#   PKM_SCOPE=all PKM_HOME=~/pkmarket-data ./daily_sync.sh   every listed share (first run ~20 min)
+#   ./daily_sync.sh                       watchlist mode (fast), data in ~/pkmarket
+#   PKM_SCOPE=all ./daily_sync.sh         every listed share (first run ~20 min)
+#   PKM_HOME=/somewhere/else ./daily_sync.sh
 #
 # Steps: universe + Shariah list (weekly), company pages / dividends (weekly cache), latest
 # payouts, prices, MUFAP, credit paper dividends, review open positions, record the account
-# value, rebuild the dashboard, then commit and push PKM_HOME if it is a git repo.
+# value, rebuild the dashboard. Optional: with PKM_GIT_PUSH=1 and PKM_HOME a git repo, commit and
+# push it (e.g. to your own PRIVATE repo, so Claude on your phone can read fresh data).
 # Proposals are generated but NEVER booked automatically: you approve them (propose.py run --apply).
 #
-# MAKE THE DATA REPO PRIVATE: PSX does not allow its market data to be republished.
+# Never push the data folder to a public repo: PSX does not allow its market data to be republished.
 # Scheduling: see install_services.sh (systemd timer), or cron:
-#   15 17 * * 1-5  PKM_HOME=$HOME/pkmarket-data /path/to/daily_sync.sh >> $HOME/pkmarket-sync.log 2>&1
+#   15 17 * * 1-5  /path/to/daily_sync.sh >> $HOME/pkmarket-sync.log 2>&1
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
-: "${PKM_HOME:=$HOME/pkmarket-data}"
+: "${PKM_HOME:=$HOME/pkmarket}"
+: "${PKM_GIT_PUSH:=0}"
 : "${PKM_SCOPE:=watchlist}"
 export PKM_HOME
 mkdir -p "$PKM_HOME"
@@ -47,7 +50,7 @@ if [ -f "$PKM_HOME/paper/portfolio.json" ]; then
 fi
 step dashboard; py dashboard.py build
 
-if [ -d "$PKM_HOME/.git" ]; then
+if [ "$PKM_GIT_PUSH" = "1" ] && [ -d "$PKM_HOME/.git" ]; then
   cd "$PKM_HOME"
   git add -A
   if ! git diff --cached --quiet; then

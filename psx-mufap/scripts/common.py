@@ -8,7 +8,8 @@ Everything the tools write lives under one home folder:
     <home>/mufap/nav_history.csv  date,fund,category,nav (grows a row per fund per run)
     <home>/paper/portfolio.json the paper-trading account
 
-The home is ./pkmarket unless PKM_HOME or --home says otherwise.
+The home is ~/pkmarket unless PKM_HOME or --home says otherwise. It is yours alone:
+nothing in it belongs in the code repository.
 """
 import csv
 import json
@@ -33,11 +34,17 @@ DEFAULT_CONFIG = {
     # Annual risk-free rate used in Sharpe ratios (e.g. a money-market yield).
     "risk_free_annual": 0.0,
     "paper_starting_cash": 1000000,
+    # Shares averaging fewer than this many traded a day (60 sessions) are skipped with --all.
+    "min_avg_volume": 50000,
+    # Withholding tax on cash dividends in the paper account. An assumption: check your rate.
+    "dividend_tax": 0.15,
+    # Face value per share is Rs 10 for most PSX shares; list exceptions, e.g. {"ABC": 5}.
+    "face_values": {},
 }
 
 
 def home(arg=None):
-    h = arg or os.environ.get("PKM_HOME") or os.path.join(os.getcwd(), "pkmarket")
+    h = os.path.expanduser(arg or os.environ.get("PKM_HOME") or os.path.join("~", "pkmarket"))
     os.makedirs(h, exist_ok=True)
     return h
 
