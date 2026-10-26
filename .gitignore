@@ -1,0 +1,8 @@
+# Downloaded market data and the paper account stay private (PSX data may not be republished)
+pkmarket/
+pkmarket-data/
+*.csv
+!tests/fixtures/*.csv
+__pycache__/
+*.pyc
+dist/

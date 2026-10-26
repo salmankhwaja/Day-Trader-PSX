@@ -1,0 +1,7 @@
+{
+  "name": "psx-mufap",
+  "description": "Rank PSX stocks and MUFAP mutual funds, backtest strategies, and paper trade in PKR.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "skills": ["./psx-mufap"]
+}

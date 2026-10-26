@@ -1,0 +1,12 @@
+{
+  "name": "pk-market-skill",
+  "owner": {"name": "Khwaja Muhammad Salman"},
+  "plugins": [
+    {
+      "name": "psx-mufap",
+      "source": "./",
+      "description": "Rank PSX stocks and MUFAP mutual funds, backtest strategies, and paper trade in PKR.",
+      "version": "1.0.0"
+    }
+  ]
+}

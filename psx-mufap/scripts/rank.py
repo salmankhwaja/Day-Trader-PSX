@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Rank PSX stocks and MUFAP funds by recent performance.
+
+  rank.py stocks [--top 10] [--symbols A B ...] [--sort score|1m|3m|6m|1y|ytd|sharpe] [--json]
+  rank.py funds  [--top 5] [--category "Equity"] [--sort score|ytd|d30|d90|d365|y3] [--json]
+  rank.py categories        one line per MUFAP category: fund count, median and best returns
+
+Stocks use the price files from `pkdata.py psx`. For each symbol:
+  returns over 1W, 1M, 3M, 6M, 1Y (5/21/63/126/245 sessions) and year to date,
+  annualised volatility and max drawdown over the last year,
+  Sharpe = (1Y return - risk-free) / 1Y volatility,
+  trend: last close vs its 50- and 200-day averages,
+  vs index: 3M return minus the benchmark's (KSE100 by default).
+  score = average percentile (0-100) of 1M, 3M, 6M, 1Y returns and Sharpe across the list.
+
+Funds use the newest MUFAP snapshot from `pkdata.py mufap`. Funds are only compared
+inside their own category. Money market, income and fixed-rate categories report
+ANNUALISED returns; equity, balanced and asset-allocation categories report ABSOLUTE
+returns, so never compare numbers across those two groups.
+  score = average percentile within the category of the 30-day, 90-day and 1-year
+  returns; a fund needs at least two of the three, so one good week is not enough.
+
+Past performance is not a forecast. This is research, not investment advice.
+"""
+import argparse
+import csv
+import datetime as dt
+import json
+import os
+import statistics
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import common as C  # noqa: E402
+from pkdata import latest_mufap, MUFAP_PERIODS  # noqa: E402
+
+PERIODS = [("1w", 5), ("1m", 21), ("3m", 63), ("6m", 126), ("1y", C.TRADING_DAYS)]
+
+
+def percentiles(values):
+    """Percentile rank 0..100 for each value (None stays None). Ties share the average rank."""
+    pts = sorted(v for v in values if v is not None)
+    n = len(pts)
+    out = []
+    for v in values:
+        if v is None or n == 0:
+            out.append(None)
+        elif n == 1:
+            out.append(50.0)
+        else:
+            below = sum(1 for p in pts if p < v)
+            equal = sum(1 for p in pts if p == v)
+            out.append(100.0 * (below + (equal - 1) / 2.0) / (n - 1))
+    return out
+
+
+def stock_metrics(rows, rf=0.0):
+    closes = [r["close"] for r in rows]
+    last = len(closes) - 1
+    m = {"last_date": rows[-1]["date"], "close": closes[-1], "days": len(closes)}
+    for name, n in PERIODS:
+        m[name] = C.pct(closes[-1], closes[last - n]) if last - n >= 0 else None
+    year = rows[-1]["date"][:4]
+    prior = [r["close"] for r in rows if r["date"][:4] < year]
+    m["ytd"] = C.pct(closes[-1], prior[-1]) if prior else None
+    window = closes[-(C.TRADING_DAYS + 1):]
+    m["vol"] = C.ann_vol(C.daily_returns(window))
+    m["mdd"] = C.max_drawdown(window)
+    m["sharpe"] = ((m["1y"] - rf) / m["vol"]) if m["1y"] is not None and m["vol"] else None
+    s50, s200 = C.sma(closes, 50, last), C.sma(closes, 200, last)
+    m["above_50"] = closes[-1] > s50 if s50 else None
+    m["above_200"] = closes[-1] > s200 if s200 else None
+    return m
+
+
+def trend_label(m):
+    a, b = m["above_50"], m["above_200"]
+    if a is None or b is None:
+        return "?"
+    return {(True, True): "up", (False, False): "down"}.get((a, b), "mixed")
+
+
+def rank_stocks(h, cfg, symbols=None, sort="score"):
+    symbols = [s.upper() for s in (symbols or cfg["watchlist"])]
+    bench = cfg["benchmark"].upper()
+    bm = None
+    if os.path.exists(C.price_path(h, bench)):
+        brows = C.read_prices(C.price_path(h, bench))
+        if len(brows) > 70:
+            bm = stock_metrics(brows, cfg["risk_free_annual"])
+    res, missing = [], []
+    for s in symbols:
+        p = C.price_path(h, s)
+        if not os.path.exists(p):
+            missing.append(s)
+            continue
+        rows = C.read_prices(p)
+        if len(rows) < 30:
+            missing.append(s)
+            continue
+        m = stock_metrics(rows, cfg["risk_free_annual"])
+        m["symbol"] = s
+        m["vs_index_3m"] = (m["3m"] - bm["3m"]) if bm and m["3m"] is not None and bm["3m"] is not None else None
+        res.append(m)
+    keys = ["1m", "3m", "6m", "1y", "sharpe"]
+    pcts = {k: percentiles([m[k] for m in res]) for k in keys}
+    for i, m in enumerate(res):
+        got = [pcts[k][i] for k in keys if pcts[k][i] is not None]
+        m["score"] = sum(got) / len(got) if got else None
+    res.sort(key=lambda m: (m.get(sort) is None, -(m.get(sort) or 0)))
+    return res, bm, missing
+
+
+def fund_rows(h):
+    snap = latest_mufap(h)
+    if not snap:
+        sys.exit("no MUFAP data yet: run pkdata.py mufap first")
+    out = []
+    with open(snap, newline="") as f:
+        for r in csv.DictReader(f):
+            for k in ["nav"] + MUFAP_PERIODS:
+                r[k] = float(r[k]) if r[k] not in ("", None) else None
+            out.append(r)
+    return os.path.basename(snap)[:-4], out
+
+
+def rank_funds(funds, category=None, sort="score"):
+    by_cat = {}
+    for f in funds:
+        if category and category.lower() not in f["category"].lower():
+            continue
+        by_cat.setdefault(f["category"], []).append(f)
+    for cat, fs in by_cat.items():
+        keys = ["d30", "d90", "d365"]
+        pcts = {k: percentiles([f[k] for f in fs]) for k in keys}
+        for i, f in enumerate(fs):
+            got = [pcts[k][i] for k in keys if pcts[k][i] is not None]
+            # Two of the three periods at least, so a brand-new fund can't top the list on one number.
+            f["score"] = sum(got) / len(got) if len(got) >= 2 else None
+        fs.sort(key=lambda f: (f.get(sort) is None, -(f.get(sort) or 0)))
+    return by_cat
+
+
+def p1(x):
+    return "n/a" if x is None else "%.1f" % x
+
+
+def cmd_stocks(a, h, cfg):
+    res, bm, missing = rank_stocks(h, cfg, a.symbols, a.sort)
+    if a.json:
+        print(json.dumps({"stocks": res, "benchmark": bm, "missing": missing}, indent=1, default=str))
+        return 0
+    if not res:
+        sys.exit("no price data: run pkdata.py psx --watchlist first")
+    print("PSX ranking, prices to %s, sorted by %s" % (max(m["last_date"] for m in res), a.sort))
+    if bm:
+        print("%s: 1M %s  3M %s  1Y %s  YTD %s" % (cfg["benchmark"], C.fmt_pct(bm["1m"]), C.fmt_pct(bm["3m"]),
+                                                  C.fmt_pct(bm["1y"]), C.fmt_pct(bm["ytd"])))
+    rows = []
+    for i, m in enumerate(res[:a.top], 1):
+        rows.append([i, m["symbol"], "%.2f" % m["close"], C.fmt_pct(m["1m"]), C.fmt_pct(m["3m"]),
+                     C.fmt_pct(m["1y"]), C.fmt_pct(m["vs_index_3m"]), "n/a" if m["sharpe"] is None else "%.2f" % m["sharpe"],
+                     trend_label(m), p1(m["score"])])
+    print(C.md_table(["#", "Symbol", "Close", "1M", "3M", "1Y", "3M vs idx", "Sharpe", "Trend", "Score"], rows))
+    if missing:
+        print("\nno data for: %s" % " ".join(missing))
+    return 0
+
+
+def cmd_funds(a, h, cfg):
+    date, funds = fund_rows(h)
+    by_cat = rank_funds(funds, a.category, a.sort)
+    if a.json:
+        print(json.dumps({"report_date": date, "categories": by_cat}, indent=1, default=str))
+        return 0
+    if not by_cat:
+        sys.exit("no category matches %r; run rank.py categories to see the names" % a.category)
+    print("MUFAP ranking, report %s, sorted by %s within each category" % (date, a.sort))
+    for cat in sorted(by_cat):
+        fs = by_cat[cat]
+        kind = fs[0]["return_type"]
+        print("\n%s (%d funds, %s returns %%)" % (cat, len(fs), kind))
+        rows = [[i, f["fund"], p1(f["d30"]), p1(f["d90"]), p1(f["ytd"]), p1(f["d365"]), p1(f["score"])]
+                for i, f in enumerate(fs[:a.top], 1)]
+        print(C.md_table(["#", "Fund", "30D", "90D", "YTD", "1Y", "Score"], rows))
+        stale = [f["fund"] for f in fs[:a.top] if f["validity_date"] and
+                 (dt.date.fromisoformat(date) - dt.date.fromisoformat(f["validity_date"])).days > 3]
+        if stale:
+            print("NAV older than 3 days: " + ", ".join(stale))
+    return 0
+
+
+def cmd_categories(a, h, cfg):
+    date, funds = fund_rows(h)
+    by_cat = {}
+    for f in funds:
+        by_cat.setdefault(f["category"], []).append(f)
+    rows = []
+    for cat in sorted(by_cat):
+        fs = by_cat[cat]
+        vals = [f["d365"] for f in fs if f["d365"] is not None]
+        ytd = [f["ytd"] for f in fs if f["ytd"] is not None]
+        rows.append([cat, fs[0]["return_type"][:4], len(fs),
+                     p1(statistics.median(ytd)) if ytd else "n/a",
+                     p1(statistics.median(vals)) if vals else "n/a",
+                     p1(max(vals)) if vals else "n/a"])
+    print("MUFAP categories, report %s (returns in %%; 'annu' = annualised, 'abso' = absolute)" % date)
+    print(C.md_table(["Category", "Type", "Funds", "Median YTD", "Median 1Y", "Best 1Y"], rows))
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--home")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("stocks")
+    p.add_argument("--top", type=int, default=10)
+    p.add_argument("--symbols", nargs="*")
+    p.add_argument("--sort", default="score", choices=["score", "1w", "1m", "3m", "6m", "1y", "ytd", "sharpe"])
+    p.add_argument("--json", action="store_true")
+    p = sub.add_parser("funds")
+    p.add_argument("--top", type=int, default=5)
+    p.add_argument("--category")
+    p.add_argument("--sort", default="score", choices=["score"] + MUFAP_PERIODS)
+    p.add_argument("--json", action="store_true")
+    sub.add_parser("categories")
+    a = ap.parse_args(argv)
+    h = C.home(a.home)
+    cfg = C.load_config(h)
+    return {"stocks": cmd_stocks, "funds": cmd_funds, "categories": cmd_categories}[a.cmd](a, h, cfg)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
