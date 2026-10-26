@@ -198,7 +198,13 @@ def build_data(h, cfg, all_=None, days=500):
                          "days_held": p["days_held"], "sector": i.get("sector"), "shariah": i.get("shariah"),
                          "action": r.get("action"), "why": r.get("why"), "notes": r.get("notes") or [],
                          "stop": r.get("stop"), "stop_source": r.get("stop_source"), "target": r.get("target"),
-                         "weight": r4(r.get("weight")), "trim_qty": r.get("trim_qty"), "calc": r.get("calc")})
+                         "weight": r4(r.get("weight")), "trim_qty": r.get("trim_qty"), "calc": r.get("calc"),
+                         "first_buy_time": p.get("first_buy_time"), "price_source": p.get("price_source"),
+                         "price_time": p.get("price_time"), "net_pl": p.get("net_pl"), "net_pl_pct": r4(p.get("net_pl_pct")),
+                         "status": p.get("status"),
+                         "lots": [{"date": l["date"], "time": l.get("time"), "qty": l["qty"], "broker": l["broker"],
+                                   "unit_cost": round(l["unit_cost"], 4), "cost": l.get("cost"), "net_pl": l.get("net_pl"),
+                                   "status": l.get("status")} for l in p["lots"]]})
         fees = PF.fee_table(lg)
         adv = None
         adir = os.path.join(h, "advice")

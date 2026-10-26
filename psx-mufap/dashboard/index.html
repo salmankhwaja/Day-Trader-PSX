@@ -92,6 +92,10 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
 .fresh code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
 .fresh a { color: var(--accent); cursor: pointer; }
 #livebar { margin-top: 8px; }
+.st { display: inline-block; font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 999px; color: #fff; white-space: nowrap; }
+.st.GREEN { background: var(--good); } .st.RED { background: var(--bad); } .st.FLAT { background: var(--muted); }
+tr.row-GREEN td:first-child { box-shadow: inset 3px 0 0 var(--good); } tr.row-RED td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+tr.lot td { font-size: 12px; color: var(--text-2); border-bottom-style: dashed; }
 .tag.live { border-color: var(--s3); color: var(--s3); }
 .dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--s3); margin-right: 4px; vertical-align: middle; }
 @media (max-width: 600px) { .bar .btn { margin-left: auto; } .hide-m { display: none; } .bar .meta { display: none; } main { padding: 12px; } .kpi .v { font-size: 19px; } }
@@ -168,6 +172,8 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
 
   <section class="view" id="v-mine">
     <div class="kpis" id="mi-kpis"></div>
+    <div class="card" style="margin-bottom:12px"><h2>Bought vs now: profit or loss</h2><div class="tablewrap"><table id="mi-gr"></table></div>
+      <div class="note" id="mi-grnote"></div></div>
     <div class="card"><h2>What to do now: your holdings</h2><div class="tablewrap"><table id="mi-hold"></table></div>
       <div class="note" id="mi-note"></div></div>
     <div class="card" style="margin-top:12px" id="mi-fundcard"><h2>Your mutual funds</h2><div class="tablewrap"><table id="mi-funds"></table></div>

@@ -141,6 +141,7 @@ def load_live(h):
 def use_live(snap):
     """Lay these quotes over every price read from now on (in this process)."""
     C.LIVE["date"] = snap["date"] if snap else None
+    C.LIVE["fetched"] = snap.get("fetched") if snap else None
     C.LIVE["quotes"] = (snap or {}).get("quotes") or {}
 
 

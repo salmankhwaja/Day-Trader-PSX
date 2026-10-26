@@ -165,6 +165,7 @@ def review_holdings(h, cfg, lg, s):
     for p in s["holdings"]:
         sym = p["symbol"]
         r = {"symbol": sym, "qty": p["qty"], "avg_cost": round(p["avg_cost"], 2), "price": p["price"],
+             "status": p.get("status"), "net_pl": p.get("net_pl"), "net_pl_pct": p.get("net_pl_pct"),
              "price_date": p["price_date"], "value": p["value"], "unrealised_pct": p["unrealised_pct"], "notes": []}
         path = C.price_path(h, sym)
         rows = C.read_prices(path) if os.path.exists(path) else []
@@ -336,11 +337,12 @@ def cmd_advise(a, h, cfg):
         return 0
     if res["holdings"]:
         print("YOUR HOLDINGS")
-        print(C.md_table(["Stock", "Action", "Price", "Stop", "Target", "P/L", "Why"],
+        import portfolio as PF
+        print(C.md_table(["Stock", "Action", "Price", "Stop", "Target", "P/L if sold now", "Why"],
                          [[r["symbol"], r["action"], "n/a" if r.get("price") is None else "%.2f" % r["price"],
                            "n/a" if r.get("stop") is None else "%.2f%s" % (r["stop"], "*" if r.get("stop_source") == "yours" else ""),
                            "n/a" if r.get("target") is None else "%.2f" % r["target"],
-                           C.fmt_pct(r.get("unrealised_pct")), r["why"] + ("; " + "; ".join(r["notes"]) if r["notes"] else "")]
+                           "%s %s" % (PF.paint(r.get("status")), C.fmt_pct(r.get("net_pl_pct"))), r["why"] + ("; " + "; ".join(r["notes"]) if r["notes"] else "")]
                           for r in res["holdings"]]))
     else:
         print("No holdings recorded yet (portfolio.py buy ...). Buy ideas only.")

@@ -220,6 +220,8 @@ Recording trades the user tells you about ("I bought 500 OGDC at 298 through AKD
   have the charges, record without `--commission` and say it was estimated from the broker's
   schedule.
 - If they name a stop-loss, record it with `--stop`; if not, say a stop will be computed daily.
+- Record the time if they give one (`--time HH:MM`, Pakistan time); recorded today without one,
+  it's stamped with the current time.
 - Read the trade back in one line before recording it, then run the command:
 
 ```
@@ -233,6 +235,7 @@ python3 scripts/portfolio.py fund-sell "Alfalah Cash Fund - II" all --nav 108.10
 python3 scripts/portfolio.py sell OGDC 200 315 --broker AKD --date 2026-11-10 --commission 94.5
 python3 scripts/portfolio.py import trades.csv        # date,side,symbol,qty,price,broker,commission,taxes,other,note
 python3 scripts/portfolio.py cash deposit 500000      # optional: lets buy ideas respect available cash
+python3 scripts/portfolio.py holdings --live --lots   # GREEN / RED per holding and per purchase
 python3 scripts/portfolio.py holdings | pnl | fees | trades
 python3 scripts/portfolio.py delete ID                # fix a mistake
 python3 scripts/portfolio.py stop OGDC 280            # the user's own stop-loss; `auto` to go back
@@ -273,6 +276,10 @@ How to present them:
   needs to be worth it, and the break-even price. For holdings, also what selling today or at
   the stop makes or loses against what they paid. When the user asks about a single share,
   run `portfolio.py check SYMBOL` and give its verdict with the calculator.
+- When the user asks how their portfolio is doing, use `holdings` (ask last fetch / fresh / live
+  first) and show each share as **GREEN** (profit) or **RED** (loss) if sold now, after charges on
+  both sides: what they paid and when (date, time) against the price now and when it's from (live
+  time, or the 15:30 close). Mention purchases of the same share that differ in colour.
 - Lead with any SELL or TRIM, then buy ideas, each with its stop-loss. Show why (the rule
   that fired, the out-of-sample result) in plain words.
 - Prices are the last close: say so, and that the user should check the live price.

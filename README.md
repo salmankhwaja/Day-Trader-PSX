@@ -57,7 +57,7 @@ courage, the judgement and the final tap on your broker's app stay with you.
 |---|---|
 | Know what's doing well | Your watchlist or **every listed share**, ranked on 1-week to 1-year returns, risk, trend and lead or lag against the KSE-100, with sector, **Shariah status** (KMI All Share) and **dividend yield** |
 | Pick a mutual fund | MUFAP funds ranked **inside their own category**, and suggestions by risk appetite: low, medium or high, Shariah or conventional |
-| Track your real portfolio | Every trade with date, broker and actual charges; first-in-first-out lots per broker; mutual funds; realised and unrealised P/L after costs; dividends; what each broker has cost you |
+| Track your real portfolio | Every trade with date, time, broker and actual charges; each holding **GREEN or RED** against what you paid, at live prices or the last close; first-in-first-out lots per broker; mutual funds; realised and unrealised P/L after costs; dividends; what each broker has cost you |
 | Decide during market hours | **Live prices** from PSX on the dashboard and in any advice (`--live`), alongside "last fetch" and "fresh fetch" |
 | Know what to do next | **SELL / TRIM / REVIEW / HOLD** for each holding, with a trailing **stop-loss** and target. **Buy ideas**, each with entry, stop-loss, target and a sensible quantity. A **price calculator** on every one: rupees lost at the stop and made at the target, after charges |
 | Ask about one share | `portfolio.py check OGDC`: a verdict for your style, the backtest, stop, target, size and the price calculator in one go |
@@ -277,6 +277,9 @@ What the presets contain is explained in [Brokers and their charges](#brokers-an
 # Without a stop-loss: one is computed and trailed for you every day
 python3 portfolio.py buy OGDC 500 298 --broker AKD --date 2026-10-25
 
+# With the time you bought (24-hour, Pakistan time; recorded today without one, it's stamped "now")
+python3 portfolio.py buy OGDC 500 298 --broker AKD --date 2026-10-25 --time 10:42
+
 # With your own stop-loss
 python3 portfolio.py buy OGDC 500 298 --broker AKD --date 2026-10-25 --stop 280
 
@@ -307,7 +310,7 @@ python3 portfolio.py fund-sell "Alfalah Cash Fund - II" all --nav 108.10
 python3 portfolio.py dividends              # dividends due from book closures (check, then --apply)
 python3 portfolio.py dividend OGDC 3825     # or record the exact net amount you received
 python3 portfolio.py cash deposit 500000    # optional: buy ideas then fit your cash
-python3 portfolio.py import my-trades.csv   # columns: date,side,symbol,qty,price,broker,commission,taxes,other,note,stop
+python3 portfolio.py import my-trades.csv   # columns: date,side,symbol,qty,price,broker,commission,taxes,other,note,stop,time
 python3 portfolio.py trades                 # the full ledger, with ids
 python3 portfolio.py delete 7               # remove entry #7 (typos happen; markets don't care)
 ```
@@ -322,12 +325,34 @@ python3 portfolio.py delete 7               # remove entry #7 (typos happen; mar
 ### 7. See your portfolio
 
 ```bash
-python3 portfolio.py holdings          # shares and funds: average cost incl. charges, value, P/L, stop
+python3 portfolio.py holdings          # each share: bought (price, date, time) vs now (live or close): GREEN or RED
+python3 portfolio.py holdings --lots   # ...and every purchase on its own
+python3 portfolio.py holdings --live   # judged at live prices
 python3 portfolio.py pnl --year 2026   # realised profit per sale and redemption, after all charges
 python3 portfolio.py fees              # what each broker has cost you (brace yourself)
 python3 portfolio.py export trades.csv
 python3 dashboard.py build && python3 dashboard.py serve    # http://127.0.0.1:8787 › My portfolio
 ```
+
+**GREEN or RED?** Each holding compares what you paid, and when, with what it's worth now, and
+when that price is from:
+
+```text
+| Stock | Status  | Bought (avg cost incl. charges, first buy) | Now                              | Qty | P/L if sold now       |
+|-------|---------|--------------------------------------------|----------------------------------|-----|-----------------------|
+| OGDC  | ▲ GREEN | 298.62 on 2026-10-25 10:42                 | 311.40 live at 2026-10-27 11:42  | 500 | +PKR 6,021 (+4.0%)    |
+| MCB   | ▼ RED   | 301.20 on 2026-09-14 13:05 (2 buys)        | 289.75 close of 2026-10-26 15:30 | 200 | -PKR 2,465 (-4.1%)    |
+```
+
+- **GREEN** means selling at the price now would make money after the charges on *both* sides:
+  what you paid (price plus buying charges) against what you'd receive (price minus estimated
+  selling charges). **RED** means it would lose. A share that's up a hair can still be red once
+  the broker has had their cut.
+- **Now** is the live price with its time when you use `--live` (or switch on Live prices in the
+  dashboard); otherwise it's the last close, stamped 15:30, Pakistan time.
+- Bought the same share more than once? `--lots` (and the dashboard) shows each purchase with its
+  own date, time, broker and colour. Your second buy can be red while the first is green.
+- On a terminal the words are coloured; set `NO_COLOR=1` if you'd rather not.
 
 ### 8. Practise with paper money
 
@@ -693,7 +718,7 @@ Congratulations: you now have a trading terminal that cost less than a samosa.
 | Overview | KSE-100, sectors, top-ranked shares, dividends coming up |
 | Screener | every ranked share; filter by sector, Shariah, yield; tick to compare |
 | Compare | up to 6 companies side by side, dividends included |
-| My portfolio | what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; the price calculator (rupees at the stop and at the target, reward-to-risk); your funds; costs by broker; realised P/L |
+| My portfolio | **bought vs now**: each holding (and each purchase) GREEN or RED, with when you bought and when the price is from; what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; the price calculator (rupees at the stop and at the target, reward-to-risk); your funds; costs by broker; realised P/L |
 | Paper · Dividends · Funds | practice account, dividend calendar, MUFAP rankings |
 | Risk & SIP | your risk style, money at risk, value-at-risk, allocation vs target, and a live SIP calculator |
 

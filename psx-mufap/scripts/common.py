@@ -159,7 +159,8 @@ def http_get(url, timeout=30, data=None):
 
 # Live prices (freshness.py --live): today's PSX quotes laid over the end-of-day files while
 # advice is calculated. Never written to the price files; the evening download replaces them.
-LIVE = {"date": None, "quotes": {}}
+LIVE = {"date": None, "fetched": None, "quotes": {}}
+CLOSE_TIME = "15:30"  # PSX's regular close, Pakistan time: the time stamp of an end-of-day price
 
 
 def read_prices(path, live=True):

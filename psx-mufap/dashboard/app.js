@@ -432,7 +432,9 @@
     var HS = M.holdings.map(liveHold), delta = HS.reduce(function (t, x, i) { return t + (x.live ? x.value - (M.holdings[i].value || 0) : 0); }, 0);
     var S = Object.assign({}, M.summary, { value: M.summary.value + delta, unrealised: M.summary.unrealised + delta });
     var total = S.value + (S.cash || 0), anyLive = HS.some(function (x) { return x.live; });
+    var gN = HS.filter(function (x) { return x.status === "GREEN"; }).length, rN = HS.filter(function (x) { return x.status === "RED"; }).length;
     var k = [["Market value" + (anyLive ? " (live)" : ""), pkr(S.value), "invested " + pkr(S.cost), ""],
+             ["Green / red", gN + " / " + rN, "holdings in profit / at a loss", rN > gN ? "neg" : gN ? "pos" : ""],
              ["Unrealised", pkr(S.unrealised), S.cost ? pct(S.unrealised / S.cost) : "", sgn(S.unrealised)],
              ["Realised + dividends", pkr(S.realised + S.dividends), "dividends " + pkr(S.dividends), sgn(S.realised + S.dividends)],
              ["Costs paid", pkr(S.fees), "commission, taxes, fees", ""]];
@@ -440,15 +442,35 @@
     $("mi-kpis").innerHTML = k.map(function (x) {
       return '<div class="kpi"><div class="l">' + esc(x[0]) + '</div><div class="v ' + x[3] + '">' + esc(x[1]) + '</div><div class="s">' + esc(x[2]) + "</div></div>";
     }).join("");
+    var nG = HS.filter(function (x) { return x.status === "GREEN"; }).length, nR = HS.filter(function (x) { return x.status === "RED"; }).length;
+    $("mi-gr").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Status</th><th>P/L if sold now</th><th class='l'>Bought</th><th class='l'>Now</th><th class='hide-m'>Qty</th><th class='hide-m'>Paid (incl. charges)</th><th class='hide-m'>Worth now</th></tr>" +
+      HS.map(function (hh) {
+        var s = bySym[hh.symbol] || { symbol: hh.symbol }, lots = hh.lots || [];
+        var now = hh.price == null ? "–" : "<b>" + num(hh.price, 2) + "</b> " + (hh.price_source === "live" ? "<span class='tag live'>live</span> " : "<span class='muted small'>close</span> ") +
+          "<span class='small'>" + when(hh.price_date, hh.price_time) + "</span>";
+        var row = "<tr class='row-" + (hh.status || "") + "'>" + cell(symCell(Object.assign({}, s, { held: false, owned: false })), "l") + cell(stBadge(hh.status), "l") +
+          cell(plTxt(hh.net_pl, hh.net_pl_pct)) + cell("<b>" + num(hh.avg_cost, 2) + "</b> <span class='small'>" + when(hh.first_buy, hh.first_buy_time) + "</span>" +
+            (lots.length > 1 ? " <span class='muted small'>(avg of " + lots.length + " buys)</span>" : ""), "l") +
+          cell(now, "l") + cell(num(hh.qty), "hide-m") + cell(pkr(hh.cost), "hide-m") + cell(pkr(hh.value), "hide-m") + "</tr>";
+        if (lots.length > 1) row += lots.map(function (l) {
+          return "<tr class='lot'>" + cell("", "l") + cell(stBadge(l.status), "l") + cell(plTxt(l.net_pl, l.cost ? l.net_pl / l.cost : null)) +
+            cell(num(l.qty) + " @ " + num(l.unit_cost, 2) + " · " + when(l.date, l.time) + " · " + esc(l.broker), "l") +
+            cell("", "l") + cell(num(l.qty), "hide-m") + cell(pkr(l.cost), "hide-m") + cell(hh.price == null ? "–" : pkr(l.qty * hh.price), "hide-m") + "</tr>";
+        }).join("");
+        return row;
+      }).join("");
+    $("mi-grnote").innerHTML = "<b>" + nG + " in profit, " + nR + " at a loss.</b> GREEN / RED compares what you paid (price plus buying charges, with the date and time " +
+      "you bought) with what selling at the price now would bring after selling charges. Now is the live price with its time when Live prices is on, " +
+      "otherwise the last close (15:30 Pakistan time). Shares bought more than once show each purchase underneath.";
     var badge = { SELL: "<b class='neg'>SELL</b>", TRIM: "<b class='neg'>TRIM</b>", REVIEW: "<b>REVIEW</b>", HOLD: "HOLD", "NO DATA": "<span class='muted'>no data</span>" };
-    $("mi-hold").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Action</th><th>Price</th><th>Stop</th><th>P/L</th><th class='l'>Why</th><th>Qty</th><th>Avg cost</th><th>Target</th><th>Value</th><th>At stop</th><th>At target</th><th>Sell today vs cost</th><th class='l'>Broker</th><th class='l'>Since</th></tr>" +
+    $("mi-hold").innerHTML = "<tr><th class='l'>Stock</th><th class='l'>Action</th><th>Price</th><th>Stop</th><th>P/L if sold now</th><th class='l'>Why</th><th>Qty</th><th>Avg cost</th><th>Target</th><th>Value</th><th>At stop</th><th>At target</th><th>Sell today vs cost</th><th class='l'>Broker</th><th class='l'>Since</th></tr>" +
       HS.map(function (hh) {
         var s = bySym[hh.symbol] || { symbol: hh.symbol };
         var brokers = Object.keys(hh.brokers || {}).map(function (b) { return esc(b) + " " + num(hh.brokers[b]); }).join(", ");
         var why = esc(hh.why || "") + (hh.notes && hh.notes.length ? "<br><span class='muted small'>" + hh.notes.map(esc).join("<br>") + "</span>" : "");
         return "<tr>" + cell(symCell(Object.assign({}, s, { held: false, owned: false })), "l") + cell(badge[hh.action] || esc(hh.action), "l") +
           cell(num(hh.price, 2) + (hh.live ? " <span class='tag live' title='Live; end-of-day " + num(hh.eod_price, 2) + "'>live</span>" : "")) + cell(hh.stop == null ? "–" : num(hh.stop, 2) + (hh.stop_source === "yours" ? "*" : "")) +
-          cell(pct(hh.unrealised_pct), sgn(hh.unrealised_pct)) + "<td class='l' style='white-space:normal;min-width:200px'>" + why + "</td>" +
+          cell(stBadge(hh.status) + " <span class='" + sgn(hh.net_pl) + "'>" + pct(hh.net_pl_pct) + "</span>") + "<td class='l' style='white-space:normal;min-width:200px'>" + why + "</td>" +
           cell(num(hh.qty)) + cell(num(hh.avg_cost, 2)) + cell(hh.target == null ? "–" : num(hh.target, 2)) + cell(pkr(hh.value)) +
           calcCells(hh.calc, true) + cell(brokers, "l") + cell(esc(hh.first_buy), "l") + "</tr>";
       }).join("");
@@ -837,6 +859,10 @@
     if (held && c.vs_cost_now != null) n.vs_cost_now = c.vs_cost_now + k * (px - c.price);
     return n;
   }
+  function stOf(v) { return v == null ? null : v > 0.005 ? "GREEN" : v < -0.005 ? "RED" : "FLAT"; }
+  function stBadge(s) { return s ? "<span class='st " + s + "'>" + (s === "GREEN" ? "▲ GREEN" : s === "RED" ? "▼ RED" : "= FLAT") + "</span>" : "–"; }
+  function when(d, t) { return d ? esc(d) + (t ? " " + esc(t) : "") : "–"; }
+  function plTxt(v, p) { return v == null ? "–" : "<span class='" + sgn(v) + "'>" + (v >= 0 ? "+" : "−") + num(Math.abs(v)) + (p == null ? "" : " (" + pct(p) + ")") + "</span>"; }
   function liveHold(hh) {
     var x = quote(hh.symbol);
     if (!x || hh.price == null) return hh;
@@ -844,6 +870,14 @@
     n.value = hh.qty * px;
     n.unrealised_pct = hh.cost ? n.value / hh.cost - 1 : null;
     n.calc = liveCalc(hh.calc, px, true);
+    var d = px - hh.price;
+    if (hh.net_pl != null) {
+      n.net_pl = hh.net_pl + hh.qty * d; n.net_pl_pct = hh.cost ? n.net_pl / hh.cost : null; n.status = stOf(n.net_pl);
+      n.lots = (hh.lots || []).map(function (l) {
+        var m = Object.assign({}, l); if (l.net_pl != null) { m.net_pl = l.net_pl + l.qty * d; m.status = stOf(m.net_pl); } return m;
+      });
+    }
+    n.price_source = "live"; n.price_date = LV.date; n.price_time = (LV.fetched || "").slice(11, 16);
     if (hh.stop != null && px <= hh.stop && hh.action !== "SELL") {
       n.action = "SELL"; n.why = "live price " + num(px, 2) + " is at or below the stop " + num(hh.stop, 2) + " (end-of-day advice: " + (hh.action || "–") + ")";
     }

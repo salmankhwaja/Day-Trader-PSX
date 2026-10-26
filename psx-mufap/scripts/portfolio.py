@@ -87,6 +87,20 @@ def today():
     return dt.date.today().isoformat()
 
 
+def check_time(t):
+    """HH:MM (24-hour, Pakistan time) or None."""
+    if t in (None, ""):
+        return None
+    try:
+        return dt.datetime.strptime(str(t).strip(), "%H:%M").strftime("%H:%M")
+    except ValueError:
+        raise ValueError("time must be HH:MM (24-hour), got %r" % t)
+
+
+def pk_now():
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) + dt.timedelta(hours=5)
+
+
 def check_date(s):
     try:
         return dt.date.fromisoformat(s).isoformat()
@@ -164,10 +178,13 @@ def resolve_broker(lg, name):
 
 
 def record_trade(lg, side, symbol, qty, price, broker, date=None, commission=None, taxes=None, other=None, note="",
-                 stop=None):
+                 stop=None, time=None):
     symbol = symbol.upper()
     broker = resolve_broker(lg, broker)
     date = check_date(date or today())
+    time = check_time(time)
+    if time is None and date == pk_now().date().isoformat():
+        time = pk_now().strftime("%H:%M")  # recorded today without a time: the time you recorded it
     qty, price = int(qty), float(price)
     if qty <= 0 or price <= 0:
         raise ValueError("quantity and price must be positive")
@@ -177,7 +194,7 @@ def record_trade(lg, side, symbol, qty, price, broker, date=None, commission=Non
         est_t = round(float(commission) * float(b.get("sales_tax_pct") or 0) / 100.0 +
                       (qty * price * float(b.get("cvt_pct") or 0) / 100.0 if side == "buy" else 0), 2)
     estimated = [k for k, v in (("commission", commission), ("taxes", taxes), ("other", other)) if v is None]
-    e = {"type": side, "date": date, "symbol": symbol, "qty": qty, "price": price, "broker": broker,
+    e = {"type": side, "date": date, "time": time, "symbol": symbol, "qty": qty, "price": price, "broker": broker,
          "commission": round(float(est_c if commission is None else commission), 2),
          "taxes": round(float(est_t if taxes is None else taxes), 2),
          "other": round(float(est_o if other is None else other), 2),
@@ -202,7 +219,7 @@ def record_trade(lg, side, symbol, qty, price, broker, date=None, commission=Non
 # ------------------------------------------------------------------ lots and P/L
 
 def ordered(entries):
-    return sorted(entries, key=lambda e: (e["date"], e["id"]))
+    return sorted(entries, key=lambda e: (e["date"], e.get("time") or "", e["id"]))
 
 
 def lots(lg):
@@ -212,8 +229,8 @@ def lots(lg):
         if e["type"] == "buy":
             fees = e["commission"] + e["taxes"] + e["other"]
             book.setdefault((e["symbol"], e["broker"]), []).append({
-                "qty": e["qty"], "date": e["date"], "unit_cost": (e["qty"] * e["price"] + fees) / e["qty"],
-                "price": e["price"], "id": e["id"]})
+                "qty": e["qty"], "date": e["date"], "time": e.get("time"),
+                "unit_cost": (e["qty"] * e["price"] + fees) / e["qty"], "price": e["price"], "id": e["id"]})
         elif e["type"] == "sell":
             q = book.get((e["symbol"], e["broker"]), [])
             fees = e["commission"] + e["taxes"] + e["other"]
@@ -237,7 +254,16 @@ def lots(lg):
     return book, sales
 
 
+def status_of(net):
+    """GREEN: selling now would make money after every charge. RED: it would lose. FLAT: neither."""
+    if net is None:
+        return None
+    return "GREEN" if net > 0.005 else "RED" if net < -0.005 else "FLAT"
+
+
 def holdings(h, lg):
+    """Open positions, each compared with what you paid: when you bought (date and time) against the
+    price now (live, or the last close) and when that price is from, after selling charges."""
     book, _ = lots(lg)
     divs = {}
     for e in lg["entries"]:
@@ -249,21 +275,40 @@ def holdings(h, lg):
             if l["qty"] <= 0:
                 continue
             p = by_sym.setdefault(sym, {"symbol": sym, "qty": 0, "cost": 0.0, "brokers": {}, "first_buy": l["date"],
-                                        "lots": []})
+                                        "first_buy_time": l.get("time"), "lots": []})
             p["qty"] += l["qty"]
             p["cost"] += l["qty"] * l["unit_cost"]
             p["brokers"][broker] = p["brokers"].get(broker, 0) + l["qty"]
-            p["first_buy"] = min(p["first_buy"], l["date"])
+            if (l["date"], l.get("time") or "") < (p["first_buy"], p["first_buy_time"] or ""):
+                p["first_buy"], p["first_buy_time"] = l["date"], l.get("time")
             p["lots"].append(dict(l, broker=broker))
     out = []
     for sym, p in sorted(by_sym.items()):
         rows = C.read_prices(C.price_path(h, sym)) if os.path.exists(C.price_path(h, sym)) else []
         px = rows[-1]["close"] if rows else None
+        live = bool(rows and rows[-1].get("live"))
         p["avg_cost"] = p["cost"] / p["qty"]
         p["price"], p["price_date"] = px, (rows[-1]["date"] if rows else None)
+        p["price_source"] = "live" if live else ("close" if rows else None)
+        p["price_time"] = ((C.LIVE.get("fetched") or "")[11:16] or None) if live else (C.CLOSE_TIME if rows else None)
         p["value"] = p["qty"] * px if px else None
         p["unrealised"] = p["value"] - p["cost"] if px else None
         p["unrealised_pct"] = (p["value"] / p["cost"] - 1) if px and p["cost"] else None
+        net = 0.0 if px else None
+        for l in p["lots"]:
+            l["cost"] = round(l["qty"] * l["unit_cost"], 2)
+            if px:
+                sell = sum(estimate_charges(lg["brokers"].get(l["broker"]), l["qty"], px, "sell"))
+                l["net_pl"] = round(l["qty"] * px - sell - l["cost"], 2)
+                l["net_pl_pct"] = l["net_pl"] / l["cost"] if l["cost"] else None
+                net += l["net_pl"]
+            else:
+                l["net_pl"] = l["net_pl_pct"] = None
+            l["status"] = status_of(l["net_pl"])
+        p["lots"].sort(key=lambda l: (l["date"], l.get("time") or ""))
+        p["net_pl"] = round(net, 2) if net is not None else None
+        p["net_pl_pct"] = p["net_pl"] / p["cost"] if net is not None and p["cost"] else None
+        p["status"] = status_of(p["net_pl"])
         p["dividends"] = round(divs.get(sym, 0), 2)
         p["days_held"] = (dt.date.today() - dt.date.fromisoformat(p["first_buy"])).days
         out.append(p)
@@ -451,7 +496,7 @@ def describe(e):
         fees = e["commission"] + e["taxes"] + e["other"]
         est = e.get("estimated") or (["commission"] if e.get("commission_estimated") else [])
         return "#%d %s %s %s %d @ %.2f via %s, charges PKR %s (commission %s, taxes %s, other %s)%s" % (
-            e["id"], e["date"], e["type"].upper(), e["symbol"], e["qty"], e["price"], e["broker"],
+            e["id"], e["date"] + (" " + e["time"] if e.get("time") else ""), e["type"].upper(), e["symbol"], e["qty"], e["price"], e["broker"],
             "{:,.2f}".format(fees), "{:,.2f}".format(e["commission"]), "{:,.2f}".format(e["taxes"]),
             "{:,.2f}".format(e["other"]), " [estimated: %s]" % ", ".join(est) if est else "")
     if e["type"] in ("fund_buy", "fund_sell"):
@@ -474,7 +519,7 @@ def cmd_trade(a, h, cfg):
             if not qty:
                 raise ValueError("no %s held at %s" % (a.symbol.upper(), broker))
         e = record_trade(lg, a.cmd, a.symbol, qty, a.price, a.broker, a.date, a.commission, a.taxes, a.other, a.note,
-                         getattr(a, "stop", None))
+                         getattr(a, "stop", None), a.time)
     except ValueError as err:
         sys.exit(str(err))
     save(h, lg)
@@ -614,9 +659,27 @@ def cmd_cash(a, h, cfg):
     return 0
 
 
+def paint(word, ok_tty=None):
+    """GREEN / RED in colour on a terminal, with an arrow so it reads without colour too."""
+    if not word:
+        return "n/a"
+    tty = sys.stdout.isatty() if ok_tty is None else ok_tty
+    mark = {"GREEN": "\u25b2 GREEN", "RED": "\u25bc RED", "FLAT": "= FLAT"}[word]
+    if tty and os.environ.get("NO_COLOR") is None:
+        code = {"GREEN": "32", "RED": "31", "FLAT": "33"}[word]
+        return "\033[1;%sm%s\033[0m" % (code, mark)
+    return mark
+
+
+def when(date, time):
+    return date + (" " + time if time else "") if date else "n/a"
+
+
 def cmd_holdings(a, h, cfg):
     import advice as A
     lg = load(h)
+    if any(e["type"] == "buy" for e in lg["entries"]):
+        F.decide(a, h, cfg, sorted({e["symbol"] for e in lg["entries"] if e["type"] == "buy"}), payouts=False)
     s = summary(h, lg)
     if not s["holdings"] and not s["funds"]:
         print("no holdings recorded. Start with: portfolio.py buy SYMBOL QTY PRICE --broker NAME --date YYYY-MM-DD")
@@ -625,22 +688,39 @@ def cmd_holdings(a, h, cfg):
     rows = []
     for p in s["holdings"]:
         st = stops.get(p["symbol"], {})
-        rows.append([p["symbol"], p["qty"], "%.2f" % p["avg_cost"], "n/a" if p["price"] is None else "%.2f" % p["price"],
-                     C.fmt_pkr(p["value"]), C.fmt_pkr(p["unrealised"]), C.fmt_pct(p["unrealised_pct"]),
+        rows.append([p["symbol"], paint(p["status"]),
+                     "%.2f on %s" % (p["avg_cost"], when(p["first_buy"], p["first_buy_time"])) + (" (%d buys)" % len(p["lots"]) if len(p["lots"]) > 1 else ""),
+                     "n/a" if p["price"] is None else "%.2f %s %s" % (p["price"], "live at" if p["price_source"] == "live" else "close of",
+                                                                       when(p["price_date"], p["price_time"])),
+                     p["qty"], C.fmt_pkr(p["value"]),
+                     "n/a" if p["net_pl"] is None else "%s%s (%s)" % ("+" if p["net_pl"] >= 0 else "-", C.fmt_pkr(abs(p["net_pl"])), C.fmt_pct(p["net_pl_pct"])),
                      "n/a" if st.get("stop") is None else "%.2f%s" % (st["stop"], "*" if st.get("stop_source") == "yours" else ""),
-                     ", ".join("%s %d" % kv for kv in sorted(p["brokers"].items())), p["first_buy"]])
+                     ", ".join("%s %d" % kv for kv in sorted(p["brokers"].items()))])
     if rows:
-        print(C.md_table(["Stock", "Qty", "Avg cost", "Price", "Value", "Unrealised", "%", "Stop", "Broker", "Since"], rows))
+        print(C.md_table(["Stock", "Status", "Bought (avg cost incl. charges, first buy)", "Now", "Qty", "Value",
+                          "P/L if sold now", "Stop", "Broker"], rows))
+        g = sum(1 for p in s["holdings"] if p["status"] == "GREEN")
+        r = sum(1 for p in s["holdings"] if p["status"] == "RED")
+        print("%d in profit (GREEN), %d at a loss (RED), after buying and selling charges." % (g, r))
+    if a.lots and s["holdings"]:
+        print("\nEACH PURCHASE vs NOW")
+        print(C.md_table(["Stock", "Bought on", "Broker", "Qty", "Paid (incl. charges)", "Now", "P/L if sold now", "Status"],
+                         [[p["symbol"], when(l["date"], l.get("time")), l["broker"], l["qty"], "%.2f" % l["unit_cost"],
+                           "n/a" if p["price"] is None else "%.2f" % p["price"],
+                           "n/a" if l["net_pl"] is None else "%s%s (%s)" % ("+" if l["net_pl"] >= 0 else "-", C.fmt_pkr(abs(l["net_pl"])), C.fmt_pct(l["net_pl_pct"])),
+                           paint(l["status"])] for p in s["holdings"] for l in p["lots"]]))
     if s["funds"]:
         print("\nMUTUAL FUNDS")
-        print(C.md_table(["Fund", "Category", "Units", "Avg NAV", "NAV", "Value", "Unrealised", "%"],
-                         [[f["fund"], f.get("category") or "", "%.4f" % f["units"], "%.4f" % f["avg_nav"],
+        print(C.md_table(["Fund", "Status", "Category", "Units", "Avg NAV", "NAV", "Value", "Unrealised", "%"],
+                         [[f["fund"], paint(status_of(f["unrealised"])), f.get("category") or "", "%.4f" % f["units"], "%.4f" % f["avg_nav"],
                            "n/a" if f["nav"] is None else "%.4f (%s)" % (f["nav"], f["nav_date"]), C.fmt_pkr(f["value"]),
                            C.fmt_pkr(f["unrealised"]), C.fmt_pct(f["unrealised_pct"])] for f in s["funds"]]))
     print("\nInvested %s | Value %s | Unrealised %s | Realised %s | Dividends %s | Fees paid %s%s" % (
         C.fmt_pkr(s["cost"]), C.fmt_pkr(s["value"]), C.fmt_pkr(s["unrealised"]), C.fmt_pkr(s["realised"]),
         C.fmt_pkr(s["dividends"]), C.fmt_pkr(s["fees"]), "" if s["cash"] is None else " | Cash " + C.fmt_pkr(s["cash"])))
-    print("Average cost includes commission, taxes and fees. * = a stop you set yourself.")
+    print("GREEN / RED: what selling everything at the price now would make or lose against what you paid, "
+          "after the charges on both sides. Times are Pakistan time; an end-of-day price is stamped %s, the close. "
+          "* = a stop you set yourself. --lots shows every purchase." % C.CLOSE_TIME)
     return 0
 
 
@@ -747,7 +827,7 @@ def cmd_stop(a, h, cfg):
     return 0
 
 
-FIELDS = ["date", "side", "symbol", "qty", "price", "broker", "commission", "taxes", "other", "note", "stop"]
+FIELDS = ["date", "side", "symbol", "qty", "price", "broker", "commission", "taxes", "other", "note", "stop", "time"]
 
 
 def cmd_import(a, h, cfg):
@@ -765,7 +845,7 @@ def cmd_import(a, h, cfg):
             num = lambda k: float(r[k].replace(",", "")) if r.get(k) else None  # noqa: E731
             record_trade(lg, side, r["symbol"], int(float(r["qty"].replace(",", ""))), num("price"), r.get("broker"),
                          r.get("date"), num("commission"), num("taxes"), num("other"), r.get("note", ""),
-                         num("stop") if side == "buy" else None)
+                         num("stop") if side == "buy" else None, r.get("time") or None)
             n += 1
         except (KeyError, ValueError) as e:
             errors.append("line %d: %s" % (i, e))
@@ -784,7 +864,7 @@ def cmd_export(a, h, cfg):
         for e in ordered(lg["entries"]):
             if e["type"] in ("buy", "sell"):
                 w.writerow([e["date"], e["type"], e["symbol"], e["qty"], e["price"], e["broker"], e["commission"],
-                            e["taxes"], e["other"], e.get("note", ""), ""])
+                            e["taxes"], e["other"], e.get("note", ""), "", e.get("time") or ""])
     print("wrote " + a.file)
     return 0
 
@@ -823,6 +903,7 @@ def main(argv=None):
         p.add_argument("price", type=float)
         p.add_argument("--broker")
         p.add_argument("--date")
+        p.add_argument("--time", help="HH:MM, Pakistan time (default: now, when the date is today)")
         p.add_argument("--commission", type=float)
         p.add_argument("--taxes", type=float, help="taxes on the contract note (sales tax on commission, CVT, CGT)")
         p.add_argument("--other", type=float, help="other charges (CDC, NCCPL, exchange and regulator levies)")
@@ -852,7 +933,9 @@ def main(argv=None):
     p.add_argument("--broker")
     p.add_argument("--date")
     p.add_argument("--note")
-    sub.add_parser("holdings")
+    p = sub.add_parser("holdings", help="each holding: bought (date, time, price) vs now (live or close): GREEN or RED")
+    p.add_argument("--lots", action="store_true", help="also every purchase on its own")
+    F.add_args(p)
     p = sub.add_parser("pnl")
     p.add_argument("--year", type=int)
     sub.add_parser("fees")

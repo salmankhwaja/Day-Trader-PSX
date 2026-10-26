@@ -1026,6 +1026,49 @@ class TestLive(Market):
             srv.server_close()
 
 
+class TestGreenRed(Market):
+    """Each holding: bought (date, time, price) against now (live or close), GREEN or RED after charges."""
+
+    def test_status_lots_and_times(self):
+        run(PF.main, ["--home", self.h, "broker", "add", "AKD", "--preset", "akd", "--default"])
+        rows = C.read_prices(C.price_path(self.h, "SYN07"))
+        px = rows[-1]["close"]
+        run(PF.main, ["--home", self.h, "buy", "SYN07", "100", "%.2f" % (px * 0.8), "--date", rows[-40]["date"], "--time", "10:05"])
+        run(PF.main, ["--home", self.h, "buy", "SYN07", "100", "%.2f" % (px * 1.2), "--date", rows[-20]["date"], "--time", "14:30"])
+        with self.assertRaises(SystemExit):
+            PF.main(["--home", self.h, "buy", "SYN07", "1", "100", "--time", "25:99"])
+        p = PF.holdings(self.h, PF.load(self.h))[0]
+        self.assertEqual(p["first_buy_time"], "10:05")
+        self.assertEqual([l["status"] for l in p["lots"]], ["GREEN", "RED"])
+        self.assertEqual(p["price_source"], "close")
+        self.assertEqual(p["price_time"], C.CLOSE_TIME)
+        sell = sum(PF.estimate_charges(PF.load(self.h)["brokers"]["AKD"], 100, px, "sell"))
+        self.assertAlmostEqual(p["lots"][0]["net_pl"], round(100 * px - sell - p["lots"][0]["cost"], 2), places=1)
+        self.assertEqual(p["status"], PF.status_of(p["net_pl"]))
+        self.assertEqual(PF.status_of(0.0), "FLAT")
+        rc, out = run(PF.main, ["--home", self.h, "holdings", "--no-fetch", "--lots"])
+        self.assertIn("GREEN", out)
+        self.assertIn("RED", out)
+        self.assertIn(rows[-40]["date"] + " 10:05", out)
+        self.assertIn("close of " + rows[-1]["date"] + " 15:30", out)
+        self.assertNotIn("\033[", out)  # no colour codes when it isn't a terminal
+        FR.use_live({"date": "2099-01-02", "fetched": "2099-01-02 11:42:00", "quotes": {"SYN07": {"current": px * 2}}})
+        try:
+            p = PF.holdings(self.h, PF.load(self.h))[0]
+            self.assertEqual((p["price_source"], p["price_time"], p["status"]), ("live", "11:42", "GREEN"))
+        finally:
+            FR.use_live(None)
+        data = dashboard.build_data(self.h, self.cfg)
+        hh = data["mine"]["holdings"][0]
+        self.assertEqual(len(hh["lots"]), 2)
+        self.assertIn(hh["status"], ("GREEN", "RED", "FLAT"))
+        self.assertEqual(hh["first_buy_time"], "10:05")
+        exp = os.path.join(self.h, "t.csv")
+        run(PF.main, ["--home", self.h, "export", exp])
+        with open(exp) as f:
+            self.assertIn("10:05", f.read())
+
+
 class TestDocs(unittest.TestCase):
     """The README must keep up with the code: every tool and every setting is documented."""
 
