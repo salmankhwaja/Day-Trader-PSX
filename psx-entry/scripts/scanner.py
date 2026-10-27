@@ -175,7 +175,9 @@ def cmd_orb(a, h, cfg):
                                               else []) or shortlist(h, cfg)
     syms = list(dict.fromkeys(syms))[:a.max]
     rows, failed = [], []
+    prog = C.Progress("PSX intraday trades", 0 if (a.cached or a.from_dir) else len(syms))
     for s in syms:
+        prog.step(s)
         try:
             ff = None
             if a.from_dir:

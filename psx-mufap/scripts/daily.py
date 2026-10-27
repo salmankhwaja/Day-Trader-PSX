@@ -25,6 +25,7 @@ import io
 import os
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -48,11 +49,14 @@ class Tee(io.TextIOBase):
 def step(name, module, argv, home):
     """Run `module.main(argv)` in this process; report and swallow any failure."""
     print("-- %s" % name, flush=True)
+    t0 = time.time()
     try:
         mod = __import__(module)
         rc = mod.main(["--home", home] + argv)
         if rc:
             print("   (%s finished with warnings)" % name)
+        if time.time() - t0 > 30:
+            print("   took %s" % C._mins(time.time() - t0), flush=True)
         return True
     except SystemExit as e:
         if e.code not in (None, 0):

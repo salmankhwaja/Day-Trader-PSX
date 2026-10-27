@@ -48,6 +48,7 @@ import psxinfo as P  # noqa: E402
 
 PSX_EOD = "https://dps.psx.com.pk/timeseries/eod/%s"
 MUFAP_URL = "https://www.mufap.com.pk/Industry/IndustryStatDaily?tab=1"
+MUFAP_TIMEOUT = 90  # seconds: the page is about 1 MB of HTML and the site can be slow to build it
 PKT = dt.timedelta(hours=5)  # Pakistan Standard Time, no daylight saving
 
 MUFAP_PERIODS = ["ytd", "mtd", "d1", "d15", "d30", "d90", "d180", "d270", "d365", "y2", "y3"]
@@ -113,6 +114,8 @@ def cmd_psx(a, h, cfg):
     if a.from_file and len(symbols) != 1:
         sys.exit("--from-file takes exactly one symbol")
     failed = []
+    many = len(symbols) > 20  # then a counter instead of a line per share
+    prog = C.Progress("PSX daily prices", 0 if a.from_file else len(symbols))
     for s in symbols:
         try:
             if a.from_file:
@@ -127,16 +130,23 @@ def cmd_psx(a, h, cfg):
             if os.path.exists(path):  # merge with what we already have
                 rows = C.read_prices(path, live=False) + rows
             rows = C.write_prices(path, rows)
-            print("%-8s %5d days  %s .. %s  last close %.2f" % (
-                s, len(rows), rows[0]["date"], rows[-1]["date"], rows[-1]["close"]))
+            if not many:
+                print("%-8s %5d days  %s .. %s  last close %.2f" % (
+                    s, len(rows), rows[0]["date"], rows[-1]["date"], rows[-1]["close"]))
             jumps = [rows[i]["date"] for i in range(1, len(rows))
                      if rows[i - 1]["close"] and rows[i]["close"] / rows[i - 1]["close"] < 0.7]
             if jumps:  # PSX circuit breakers cap a normal day well above this
-                print("         warning: fell 30%%+ in one day on %s; likely a bonus issue, split "
-                      "or rights adjustment, which distorts returns" % ", ".join(jumps[-3:]))
+                prog.clear()
+                print("%-8s warning: fell 30%%+ in one day on %s; likely a bonus issue, split "
+                      "or rights adjustment, which distorts returns" % (s, ", ".join(jumps[-3:])))
+            prog.step(s)
         except Exception as e:  # keep going through the list
             failed.append(s)
-            print("%-8s FAILED: %s" % (s, e))
+            prog.clear()
+            print("%-8s FAILED: %s" % (s, C.why(e) if not isinstance(e, ValueError) else e))
+            prog.step(s, ok=False)
+    if many:
+        print("prices: %d shares updated, %d failed" % (len(symbols) - len(failed), len(failed)))
     if failed:
         print("\n%d failed: %s. If the site is blocked here, open https://dps.psx.com.pk/company/<SYMBOL> in a "
               "browser, find the request to %s in the developer tools' Network tab, save its response, "
@@ -284,11 +294,13 @@ def cmd_mufap(a, h, cfg):
         with open(a.from_file, encoding="utf-8", errors="replace") as f:
             text = f.read()
     else:
+        C.say("MUFAP: downloading today's fund report (a large page; up to a minute on a slow line)...")
         try:
-            text = C.http_get(MUFAP_URL)
+            text = C.http_get(MUFAP_URL, timeout=MUFAP_TIMEOUT)
         except Exception as e:
-            sys.exit("MUFAP download failed (%s). Fetch %s with a web tool, save it, "
-                     "and rerun with --from-file." % (e, MUFAP_URL))
+            sys.exit("MUFAP download failed: %s.\nThe fund data isn't essential for shares. To load it by hand: "
+                     "open %s in your browser, wait for the table, save the page (Ctrl+S, 'Webpage, HTML only'), "
+                     "then run: pkdata.py mufap --from-file <the saved file>" % (C.why(e), MUFAP_URL))
     report_date, funds = parse_mufap(text)
     if not funds:
         sys.exit("found no fund rows. The page may be rendered by JavaScript here: save a rendered "
@@ -312,6 +324,8 @@ def _read_or_get(path, url):
 
 
 def cmd_universe(a, h, cfg):
+    if not a.allshr_file:
+        C.say("universe: downloading the list of listed shares and the Shariah (KMI) list...")
     try:
         allshr = _read_or_get(a.allshr_file, P.INDEX_URL % "ALLSHR")
         kmi = _read_or_get(a.kmi_file, P.INDEX_URL % "KMIALLSHR")
@@ -342,13 +356,16 @@ def cmd_company(a, h, cfg):
     if not symbols:
         sys.exit("name symbols, or use --watchlist / --all (after `pkdata.py universe`)")
     fresh = (dt.date.today() - dt.timedelta(days=a.max_age)).isoformat()
-    done = skipped = 0
+    done = 0
     failed = []
-    for s in symbols:
-        old = P.load_company(h, s)
-        if old and not a.from_file and not a.refresh and (old.get("fetched") or "") >= fresh:
-            skipped += 1
-            continue
+    todo = [s for s in symbols if a.from_file or a.refresh
+            or ((P.load_company(h, s) or {}).get("fetched") or "") < fresh]
+    skipped = len(symbols) - len(todo)
+    if skipped and len(symbols) > 20:
+        print("companies: %d of %d pages are less than %d days old; fetching the other %d" % (
+            skipped, len(symbols), a.max_age, len(todo)))
+    prog = C.Progress("PSX company pages", 0 if a.from_file else len(todo))
+    for s in todo:
         try:
             text = _read_or_get(a.from_file, P.COMPANY_URL % s)
             c = P.parse_company(text, s)
@@ -358,9 +375,12 @@ def cmd_company(a, h, cfg):
             done += 1
             if len(symbols) <= 20:
                 print("%-8s %s | %s | %d payouts" % (s, c["name"], c["sector"], len(c["payouts"])))
+            prog.step(s)
         except Exception as e:
             failed.append(s)
-            print("%-8s FAILED: %s" % (s, e))
+            prog.clear()
+            print("%-8s FAILED: %s" % (s, C.why(e) if not isinstance(e, ValueError) else e))
+            prog.step(s, ok=False)
     print("companies: %d updated, %d still fresh (< %d days), %d failed" % (done, skipped, a.max_age, len(failed)))
     return 1 if failed else 0
 

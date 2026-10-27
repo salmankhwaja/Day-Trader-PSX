@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIX = os.path.join(ROOT, "tests", "fixtures")
@@ -957,6 +958,92 @@ class TestPSXSession(unittest.TestCase):
             self.assertEqual(C.psx_key('x window.__ps = {"_k":"FROMPAGE"} y'), "FROMPAGE")
         finally:
             C._fetch, C._PSX["key"] = orig, None
+
+
+class TestDownloads(unittest.TestCase):
+    """Slow sites, compressed pages and long runs: retries, gzip, a progress counter."""
+
+    def test_gzip_page_is_decompressed(self):
+        import gzip as gz
+
+        class Resp:
+            headers = {"Content-Encoding": "gzip"}
+
+            def read(self):
+                return gz.compress("Report Date: Oct 27, 2026 \u2013 funds".encode("utf-8"))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        class Opener:
+            def open(self, req, timeout=None):
+                self.req = req
+                return Resp()
+        orig, op = C._OPENER, Opener()
+        C._OPENER = op
+        try:
+            with unittest.mock.patch("time.sleep"):
+                self.assertIn("Report Date", C._fetch("https://www.mufap.com.pk/x", 5, None, None))
+            self.assertEqual(op.req.get_header("Accept-encoding"), "gzip")
+        finally:
+            C._OPENER = orig
+
+    def test_retries_a_timeout_but_not_a_404_or_certificate(self):
+        import ssl
+        import urllib.error
+        tries = []
+
+        def flaky(url, timeout, data, headers):
+            tries.append(url)
+            if len(tries) < 3:
+                raise urllib.error.URLError(TimeoutError("timed out"))
+            return "ok"
+        orig = C._fetch
+        C._fetch = flaky
+        err = io.StringIO()
+        try:
+            with unittest.mock.patch("time.sleep"), contextlib.redirect_stderr(err):
+                self.assertEqual(C.http_get("https://www.mufap.com.pk/x"), "ok")
+            self.assertEqual(len(tries), 3)
+            self.assertIn("trying again", err.getvalue())
+            for e in (urllib.error.HTTPError("u", 404, "Not Found", {}, None),
+                      urllib.error.URLError(ssl.SSLCertVerificationError("unable to get local issuer certificate"))):
+                tries.clear()
+                C._fetch = lambda *a, e=e: (tries.append(1), (_ for _ in ()).throw(e))
+                with unittest.mock.patch("time.sleep"), self.assertRaises(urllib.error.URLError):
+                    C.http_get("https://www.mufap.com.pk/x")
+                self.assertEqual(len(tries), 1)
+            self.assertIn("certificate", C.why(urllib.error.URLError(ssl.SSLCertVerificationError("x"))))
+            self.assertIn("in time", C.why(urllib.error.URLError(TimeoutError("timed out"))))
+        finally:
+            C._fetch = orig
+
+    def test_progress_counts_on_stderr(self):
+        log = io.StringIO()  # not a terminal: a line every 50, and the last
+        p = C.Progress("PSX daily prices", 120, every=50, stream=log)
+        for i in range(120):
+            p.step("S%03d" % i, ok=i != 7)
+        lines = log.getvalue().splitlines()
+        self.assertIn("120 to fetch", lines[0])
+        self.assertEqual([l.split()[0] for l in lines[1:]], ["[50/120]", "[100/120]", "[120/120]"])
+        self.assertIn("1 failed", lines[-1])
+        quiet = io.StringIO()
+        C.Progress("small", 5, stream=quiet).step("X")
+        self.assertEqual(quiet.getvalue(), "")  # short lists stay quiet in logs
+
+        class Tty(io.StringIO):
+            def isatty(self):
+                return True
+        tty = Tty()
+        p = C.Progress("PSX company pages", 3, stream=tty)
+        for s in ("A", "B", "C"):
+            p.step(s)
+        out = tty.getvalue()
+        self.assertIn("\r  [2/3] B", out)
+        self.assertTrue(out.endswith("\n"))
 
 
 class TestLive(Market):

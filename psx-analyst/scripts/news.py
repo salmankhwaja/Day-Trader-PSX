@@ -43,6 +43,7 @@ FLAG = {"results": "!", "payout": "$", "board": "!", "insider": "*", "deal": "!"
 def refresh(h, symbols, from_file=None):
     """Download each company page again (announcements change daily). Returns failures."""
     failed = []
+    prog = C.Progress("PSX company pages", 0 if from_file else len(symbols))
     for s in symbols:
         try:
             if from_file:
@@ -54,8 +55,10 @@ def refresh(h, symbols, from_file=None):
             if not c.get("name") and not c.get("announcements"):
                 raise ValueError("no company data on the page")
             P.save_company(h, c)
+            prog.step(s)
         except Exception as e:  # noqa: BLE001
-            failed.append("%s (%s)" % (s, str(e)[:60]))
+            failed.append("%s (%s)" % (s, (str(e) if isinstance(e, ValueError) else C.why(e))[:80]))
+            prog.step(s, ok=False)
     return failed
 
 

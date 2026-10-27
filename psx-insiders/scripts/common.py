@@ -18,7 +18,11 @@ import json
 import math
 import os
 import http.cookiejar
+import gzip
+import http.client
 import re
+import socket
+import ssl
 import sys
 import time
 import urllib.error
@@ -124,11 +128,122 @@ _KEY_RE = re.compile(r'window\.__ps\s*=\s*\{[^}]*?"_k"\s*:\s*"([^"]+)"')
 
 def _fetch(url, timeout, data, headers):
     time.sleep(1.0)
-    h = {"User-Agent": UA, "Accept": "*/*"}
+    h = {"User-Agent": UA, "Accept": "*/*", "Accept-Encoding": "gzip"}
     h.update(headers or {})
     req = urllib.request.Request(url, data=data, headers=h)
     with _OPENER.open(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+        body = r.read()
+        if (r.headers.get("Content-Encoding") or "").lower() == "gzip":
+            body = gzip.decompress(body)  # MUFAP's page is ~1 MB of HTML, ~10x smaller compressed
+        return body.decode("utf-8", "replace")
+
+
+RETRY_WAITS = (3, 10)  # seconds before the second and third tries
+
+
+def _transient(e):
+    """A slow or briefly unavailable site: worth another try. A 404 or a bad certificate isn't."""
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code in (429, 500, 502, 503, 504)
+    if isinstance(e, urllib.error.URLError):
+        return not isinstance(getattr(e, "reason", None), ssl.SSLError)
+    return isinstance(e, (TimeoutError, ConnectionError, socket.timeout, http.client.IncompleteRead,
+                          http.client.RemoteDisconnected))
+
+
+def _fetch_retry(url, timeout, data, headers):
+    for i, wait in enumerate(RETRY_WAITS + (None,)):
+        try:
+            return _fetch(url, timeout, data, headers)
+        except Exception as e:  # noqa: BLE001
+            if wait is None or not _transient(e):
+                raise
+            say("  %s: %s; trying again in %d s" % (url.split("/")[2], why(e), wait))
+            time.sleep(wait)
+
+
+def why(e):
+    """A download error in words, with what to do for the common ones."""
+    reason = getattr(e, "reason", None)
+    if isinstance(reason, ssl.SSLError) or isinstance(e, ssl.SSLError):
+        return ("the site's security certificate couldn't be checked (%s). On Windows or macOS, "
+                "updating Python usually fixes this; on macOS run 'Install Certificates.command' in the "
+                "Python folder" % (reason or e))
+    if isinstance(e, urllib.error.HTTPError):
+        return "the site answered %d %s" % (e.code, e.reason)
+    if isinstance(e, (TimeoutError, socket.timeout)) or "timed out" in str(e):
+        return "no answer in time (slow connection or a busy site)"
+    if isinstance(e, urllib.error.URLError):
+        return "couldn't reach the site (%s)" % reason
+    return "%s: %s" % (type(e).__name__, e)
+
+
+def say(text):
+    """A progress note on stderr: it shows even when a tool's normal output is captured."""
+    try:
+        sys.stderr.write(text + "\n")
+        sys.stderr.flush()
+    except (OSError, ValueError):
+        pass
+
+
+def _mins(sec):
+    return "under a minute" if sec < 60 else "about %d min" % round(sec / 60.0)
+
+
+class Progress:
+    """Counts through a long download on one line: '[123/512] OGDC · 2 failed · about 6 min left'.
+    Written to stderr, so it shows even when the tool's own output is captured (rank --fetch, the
+    menu). In a terminal the line updates in place; in a log, a line every `every` items."""
+
+    def __init__(self, label, total, every=50, stream=None):
+        self.label, self.total, self.every = label, total, every
+        self.s = stream or sys.stderr
+        try:
+            self.tty = self.s.isatty()
+        except (AttributeError, ValueError):
+            self.tty = False
+        self.on = total > 1 and (self.tty or total > 20)
+        self.n = self.bad = self.width = 0
+        self.t0 = time.time()
+        if self.on:
+            self._line("%s: %d to fetch%s" % (label, total, ", %s at one a second" % _mins(total * 1.2)
+                                               if total > 20 else ""), final=True)
+
+    def _line(self, text, final=False):
+        try:
+            if self.tty:
+                self.s.write("\r" + text + " " * max(0, self.width - len(text)) + ("\n" if final else ""))
+                self.width = 0 if final else len(text)
+            else:
+                self.s.write(text + "\n")
+            self.s.flush()
+        except (OSError, ValueError):
+            pass
+
+    def clear(self):
+        """Call before printing a normal line, so it doesn't land on top of the counter."""
+        if self.on and self.tty and self.width:
+            try:
+                self.s.write("\r" + " " * self.width + "\r")
+                self.s.flush()
+            except (OSError, ValueError):
+                pass
+            self.width = 0
+
+    def step(self, item, ok=True):
+        self.n += 1
+        self.bad += 0 if ok else 1
+        if not self.on:
+            return
+        left = (time.time() - self.t0) / self.n * (self.total - self.n)
+        text = "  [%d/%d] %-8s%s%s" % (self.n, self.total, item, " · %d failed" % self.bad if self.bad else "",
+                                       " · %s left" % _mins(left) if self.n >= 3 and self.n < self.total else "")
+        last = self.n == self.total
+        if self.tty:
+            self._line(text, final=last)
+        elif self.n % self.every == 0 or last:
+            self._line(text)
 
 
 def psx_key(text=None, refresh=False):
@@ -153,7 +268,7 @@ def http_get(url, timeout=30, data=None):
     """GET (or POST when data is given) with a polite user agent and a 1 request/second throttle.
     Requests to the PSX data portal carry its session cookie and key, like its own pages do."""
     if not url.startswith(PSX_HOST) or "/company/" in url:
-        text = _fetch(url, timeout, data, None)
+        text = _fetch_retry(url, timeout, data, None)
         if url.startswith(PSX_HOST):
             psx_key(text)
         return text
@@ -164,7 +279,7 @@ def http_get(url, timeout=30, data=None):
         if key:
             hdr["X-Req-Id"] = key
         try:
-            return _fetch(url, timeout, data, hdr)
+            return _fetch_retry(url, timeout, data, hdr)
         except urllib.error.HTTPError as e:
             if attempt == 1 or e.code not in (401, 403, 404, 419):
                 raise
