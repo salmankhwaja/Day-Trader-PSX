@@ -856,9 +856,16 @@ told otherwise:
 
 ### Step 4: your watchlist and broker
 
+Open a new Termux session (so it picks up the settings the script added) and type:
+
 ```bash
-cd ~/Day-Trader-PSX/psx-mufap/scripts && python pkm.py
+pkm
 ```
+
+That's a shortcut the script made for `cd ~/Day-Trader-PSX/psx-mufap/scripts && python pkm.py`,
+with `PKM_HOME` set to Internal storage › pkmarket, the same data the timer and the home-screen
+buttons use. (Running `python pkm.py` in a session without `PKM_HOME` would use a separate, empty
+`~/pkmarket` inside Termux.)
 
 1. **13 Watchlist and settings** › **c** (replace the list), e.g. `OGDC PPL MARI HUBC LUCK MCB MEBL ENGRO FFC SYS`.
 2. **10 Brokers** › answer **y** to add yours: e.g. name `AKD`, preset `akd`, make it the default.

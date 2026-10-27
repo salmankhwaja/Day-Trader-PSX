@@ -42,6 +42,12 @@ echo "data folder: $DATA"
 say "3/7 config"
 export PKM_HOME="$DATA"
 "$PY" "$HERE/pkdata.py" init
+# Every new Termux session uses the same data folder as the timer and the home-screen buttons,
+# and `pkm` opens the menu from anywhere.
+touch "$HOME/.bashrc"
+{ grep -v '# pkm-env' "$HOME/.bashrc" || true
+  echo "export PKM_HOME=$DATA  # pkm-env"
+  echo "alias pkm='cd $HERE && $PY pkm.py'  # pkm-env"; } > "$HOME/.bashrc.pkm" && mv "$HOME/.bashrc.pkm" "$HOME/.bashrc"
 
 say "4/7 schedule ($PKM_SCHEDULE, $PKM_DAYS)"
 case "$PKM_DAYS" in
@@ -105,6 +111,6 @@ cat <<EOF
 Next:
   - Fetch your first data now:   PKM_HOME=$DATA $PY $HERE/daily.py
   - Open the dashboard in Chrome: http://127.0.0.1:8787  (Chrome menu > Add to Home screen)
-  - The menu for everything else: cd $HERE && $PY pkm.py
+  - The menu for everything else: type  pkm  (in a new Termux session; or: source ~/.bashrc)
   - Settings > Apps > Termux > Battery > Unrestricted, so the timer fires on time.
 EOF
