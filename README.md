@@ -28,7 +28,16 @@ courage, the judgement and the final tap on your broker's app stay with you.
    - [ChatGPT](#chatgpt)
    - [iPhone and iPad](#iphone-and-ipad)
    - [Just the tools, no AI](#just-the-tools-no-ai)
-4. [Talk to it: what to ask](#talk-to-it-what-to-ask)
+4. [Chat commands: everything you can ask](#chat-commands-everything-you-can-ask)
+   - [Calling a skill in each app](#calling-a-skill-in-each-app)
+   - [psx-mufap: data and your watchlist](#psx-mufap-data-and-your-watchlist)
+   - [psx-mufap: the market](#psx-mufap-the-market)
+   - [psx-mufap: mutual funds](#psx-mufap-mutual-funds)
+   - [psx-mufap: your portfolio](#psx-mufap-your-portfolio)
+   - [psx-mufap: what to do next](#psx-mufap-what-to-do-next)
+   - [psx-mufap: risk, plans and practice](#psx-mufap-risk-plans-and-practice)
+   - [The day-trading desk](#the-day-trading-desk)
+   - [Things a chat can't do (and what to do instead)](#things-a-chat-cant-do-and-what-to-do-instead)
 5. [Your data: where it lives, backups and moving between chats](#your-data-where-it-lives-backups-and-moving-between-chats)
 6. [Where the data comes from](#where-the-data-comes-from)
 7. [How it fits together](#how-it-fits-together)
@@ -103,7 +112,8 @@ files survive until tomorrow?
 
 So the best set-up is **both**: the tools (or Claude Code) on a computer or Android phone fetch
 and keep everything, on a timer; the chat apps on your phone are where you ask questions,
-carrying your data in one backup zip. Details in [Your data](#your-data-where-it-lives-backups-and-moving-between-chats).
+carrying your data in one backup zip. Every chat command is listed in
+[Chat commands](#chat-commands-everything-you-can-ask). Data details in [Your data](#your-data-where-it-lives-backups-and-moving-between-chats).
 
 ---
 
@@ -248,23 +258,154 @@ The [command cheat sheet](#command-cheat-sheet) lists every command, and `--help
 
 ---
 
-## Talk to it: what to ask
+## Chat commands: everything you can ask
 
-Once the skills are added, ask in plain words. Claude asks first whether to use the last
-download, fetch fresh data or use live prices, says which date it used, and reads every trade back
-before recording it.
+Every job the twelve skills do, as something you can say. The words are only examples: ask in
+your own words (English, Urdu or Roman Urdu all work) and the assistant picks the right skill and
+command. The **Runs** column is what it runs for you, handy if you want to run it yourself.
 
-| To… | Ask |
-|---|---|
-| **Get the market** | *"How is the market today?"*, *"Top 10 Shariah shares by 3-month return"*, *"Compare LUCK, DGKC and MLCF with dividends"*, *"Live prices for my holdings"* |
-| **Get the news** | *"Any news on OGDC this week?"*, *"Which of my shares have board meetings coming?"*, *"How were MARI's results?"*, *"Are insiders buying HUBC?"* |
-| **Keep the portfolio** | *"My broker is Finqalab"*, *"I bought 500 OGDC at 298 today at 10:42, stop at 280"*, *"Sold 200 at 315"*, *"Record the dividend"*, *"How am I doing: green or red?"*, *"What have my brokers cost me this year?"* |
-| **Decide** | *"What should I sell, hold or buy, with stop-losses?"*, *"Should I buy MEBL at 250? What do I lose at the stop?"*, *"Give me the order tickets for my app"* |
-| **Funds and plans** | *"Which money market funds should I hold?"*, *"25,000 a month for 10 years, rising 10% a year?"*, *"Ask me the risk questions"* |
-| **Trade the day** | *"Scan for breakouts"*, *"Has LUCK triggered?"*, *"Plan it with the stop at the range middle"*, *"What are the odds?"*, *"Size it for a 2,500 rupee max loss"*, *"Risk check"*, *"It filled at 301.6"*, *"Alert me at the stop"* |
-| **Keep your data** | *"Here's my backup"* (attach it), *"Give me my backup"* |
+### Calling a skill in each app
+
+| App | How to call a skill | Example |
+|---|---|---|
+| **Claude Code** (terminal, or the desktop app's Code section) | Type `/` and the skill name, then your request; or just ask | `/psx-mufap what should I sell today?` |
+| Claude Code, installed as a plugin | Plugin skills are namespaced: `/psx-mufap:` + the skill | `/psx-mufap:psx-scanner breakouts this morning` |
+| **Claude app** (web, desktop, iPhone, Android) | Just ask: Claude picks the skill from its description. Name it to be sure | *"Use psx-news: anything on OGDC this week?"* |
+| **Gemini app** | Type `/` and the skill's name, or just ask (Gemini applies a skill when it fits) | `/psx-mufap how is my portfolio doing?` |
+| **Gemini CLI** | Just ask; `/skills list` shows what's installed, `/skills enable NAME` / `disable` | *"scan PSX for breakouts"* |
+| **ChatGPT** (Business, Enterprise, Edu) | Just ask, or name the skill | *"Use psx-mufap: rank my watchlist"* |
+| **Codex** | Mention the skill with `$` | `$psx-mufap record a buy of 500 OGDC at 298` |
+
+> [!TIP]
+> In every app the assistant first asks **which prices to use** (the last download, a fresh
+> download, or live prices), then says which date or time it used. It **reads every trade back**
+> before recording it. In a chat app, **attach your backup zip** at the start and **ask for the new
+> one** at the end ([Your data](#your-data-where-it-lives-backups-and-moving-between-chats)).
+
+### psx-mufap: data and your watchlist
+
+| Say | It does | Runs |
+|---|---|---|
+| *"Get today's prices for my watchlist"* | downloads daily prices for the watchlist and the KSE-100 | `pkdata.py psx --watchlist` |
+| *"Download the whole market"* | every listed share, Shariah flags, company pages (slow the first time) | `pkdata.py universe`, `company --all`, `psx --all` |
+| *"Get the MUFAP table"* | every fund's NAV and returns today | `pkdata.py mufap` |
+| *"Any new dividend announcements?"* | the market-wide payouts and book closures | `pkdata.py payouts` |
+| *"Live prices for my holdings"*, *"What's OGDC at right now?"* | the PSX market watch, one request for every share | `pkdata.py live` |
+| *"How fresh is my data?"* | what's on file and its dates | `pkdata.py status` |
+| *"Show my watchlist"* | name, sector, Shariah, last price, 1-month move, held? | `watchlist.py` |
+| *"Add LUCK and DGKC to my watchlist"*, *"…and download them"* | adds (checked against listed shares) | `watchlist.py add LUCK DGKC [--fetch]` |
+| *"Drop TRG from my watchlist"* | removes | `watchlist.py remove TRG` |
+| *"Make my watchlist OGDC, PPL, MARI, HUBC"* | replaces the list | `watchlist.py set …` |
+| *"Add the top 5 Shariah cement shares"* | best-ranked of a sector | `watchlist.py add --top 5 --sector cement --shariah` |
+| *"Add everything I own to the watchlist"* | holdings in | `watchlist.py add --holdings` |
+| *"Give me my backup"*, *"Here's my backup"* (attached) | one zip with everything; or puts it back | `pkdata.py backup` / `restore FILE.zip` |
+
+### psx-mufap: the market
+
+| Say | It does | Runs |
+|---|---|---|
+| *"Rank my watchlist"*, *"What's doing well?"* | ranked on returns, Sharpe, trend, vs the KSE-100, dividend yield | `rank.py stocks` |
+| *"Top 20 shares in the whole market"* | the same, every liquid share | `rank.py stocks --all --top 20` |
+| *"Best Shariah-compliant cement shares"* | filters by sector and KMI | `rank.py stocks --all --shariah --sector cement` |
+| *"Highest dividend yields"* | sorted by yield | `rank.py stocks --all --sort div_yield` |
+| *"Which sectors are leading?"* | the sector league table | `rank.py sectors` |
+| *"Compare LUCK, DGKC and MLCF"* | side by side: returns, risk, valuation, dividends (or the dashboard's Compare tab) | `rank.py stocks --symbols LUCK DGKC MLCF` |
+| *"How did a moving-average strategy do on OGDC?"* | each strategy's backtest, costs included, out-of-sample | `backtest.py compare OGDC` |
+| *"Backtest a breakout strategy on LUCK, optimised"* | one strategy, tuned and tested | `backtest.py run LUCK --strategy breakout --optimize` |
+
+### psx-mufap: mutual funds
+
+| Say | It does | Runs |
+|---|---|---|
+| *"Which funds for low risk?"* (*medium*, *high*) | money market / income and balanced / equity funds, ranked inside each category | `funds.py advise --risk low` |
+| *"Shariah equity funds"* | Shariah-compliant only | `funds.py advise --risk high --shariah` |
+| *"How are my funds doing against their category?"* | HOLD or REVIEW for each fund you hold | `funds.py review` |
+| *"List the MUFAP categories"*, *"Top 10 money market funds"* | categories; a ranking within one | `rank.py categories`, `rank.py funds --category "Money Market" --top 10` |
+
+### psx-mufap: your portfolio
+
+| Say | It does | Runs |
+|---|---|---|
+| *"What broker presets are there?"* | published PSX tariffs (AKD, Finqalab, JS Global, KTrade…) | `portfolio.py broker presets` |
+| *"My broker is AKD"*, *"I use Finqalab"* | adds it with its charges, as your default | `portfolio.py broker add AKD --preset akd --default` |
+| *"Add my broker: 0.12% or 3 paisa a share, Sindh tax"* | your own commission sheet | `portfolio.py broker add MyBroker --commission-pct 0.12 --per-share 0.03 --sales-tax-pct 13` |
+| *"I bought 500 OGDC at 298 through AKD today"* | records the buy with estimated charges and a computed stop | `portfolio.py buy OGDC 500 298 --broker AKD` |
+| *"…at 10:42, stop at 280, commission 223.50"* | with your time, your stop and the contract note's charges | `… --time 10:42 --stop 280 --commission 223.5` |
+| *"Sold 200 OGDC at 315"*, *"Sold all my OGDC at 320"* | records the sale against the oldest shares at that broker | `portfolio.py sell OGDC 200 315` / `sell OGDC all 320` |
+| *"Move my OGDC stop to 285"*, *"Back to the automatic stop"* | your own stop / the trailing one | `portfolio.py stop OGDC 285` / `stop OGDC auto` |
+| *"I put 200,000 in Alfalah Cash Fund at NAV 106.73"*, *"Redeem all of it"* | mutual fund buys and redemptions | `portfolio.py fund-buy "…" 200000 --nav 106.73` / `fund-sell "…" all` |
+| *"Any dividends due on my shares?"*, *"Record them"* | dividends from book closures, then recorded | `portfolio.py dividends` / `dividends --apply` |
+| *"I received 3,825 from OGDC"* | a dividend, exact net amount | `portfolio.py dividend OGDC 3825` |
+| *"I deposited 500,000 with my broker"* | cash, so buy ideas fit what you have | `portfolio.py cash deposit 500000` |
+| *"Import my trades"* (attach a CSV), *"Export my trades"* | bulk in and out | `portfolio.py import FILE.csv` / `export FILE.csv` |
+| *"Show my trades"*, *"Delete entry 7"* | the ledger with ids; fix a mistake | `portfolio.py trades` / `delete 7` |
+| *"How is my portfolio doing?"*, *"Green or red?"* | each holding: bought (date, time, price) vs now, GREEN or RED after charges | `portfolio.py holdings` |
+| *"…each purchase separately"*, *"…at live prices"* | per purchase; live | `portfolio.py holdings --lots` / `--live` |
+| *"What's my realised profit this year?"* | P/L per sale, after every charge | `portfolio.py pnl --year 2026` |
+| *"What have my brokers cost me?"* | commission, taxes and fees by broker | `portfolio.py fees` |
+
+### psx-mufap: what to do next
+
+| Say | It does | Runs |
+|---|---|---|
+| *"What should I sell, hold or buy?"* | SELL / TRIM / REVIEW / HOLD with stops, plus buy ideas sized to your cash, with the price calculator | `portfolio.py advise` |
+| *"Buy ideas from the whole market, Shariah only, give me 5"* | the same, wider | `portfolio.py advise --all --shariah --buy 5` |
+| *"Should I buy MEBL at 250?"*, *"…with my stop at 232"* | one share: verdict, backtest, stop, target, size, rupees at the stop and the target | `portfolio.py check MEBL --entry 250 [--stop 232]` |
+| *"Give me the order tickets for my app"* | stop-losses, buys, trims, take-profits to type into your broker's app | `portfolio.py orders` |
+| *"Show the dashboard"* | builds the one-file dashboard (or serves it on your computer) | `dashboard.py build --standalone pkm.html` / `serve` |
+
+### psx-mufap: risk, plans and practice
+
+| Say | It does | Runs |
+|---|---|---|
+| *"Ask me the risk questions"* | the 8-question quiz; your style (conservative … very aggressive) | `risk.py quiz` |
+| *"Compare the risk styles"*, *"Make me aggressive"* | the four styles; switch | `risk.py profile` / `profile aggressive` |
+| *"What settings drive the advice?"*, *"No more than 6 shares"* | every variable and where it came from; change one | `risk.py settings` / `set max_holdings 6` |
+| *"How many shares if I buy at 300 with a stop at 282?"* | position size, rupees at risk and at the target | `risk.py position --entry 300 --stop 282` |
+| *"How much am I risking right now?"* | money at risk to your stops, value-at-risk, volatility, beta, concentration | `risk.py portfolio` |
+| *"25,000 a month for 10 years, up 10% a year?"* | SIP projection with ±3-point scenarios | `sip.py plan --monthly 25000 --years 10 --step-up 10` |
+| *"How much a month to reach 50 lakh in 8 years?"* | the monthly amount for a goal | `sip.py goal --target 5000000 --years 8` |
+| *"Start a paper account with 10 lakh"*, *"Propose and buy a paper portfolio"* | practice money, a proposal from backtests | `paper.py init --cash 1000000`, `propose.py run --all --apply` |
+| *"How's my paper account?"*, *"Review the paper holdings"* | value, P/L; HOLD or SELL | `paper.py status`, `propose.py review` |
+| *"What does PakistaniBulls say?"* (attach their saved page) | their signals beside this tool's advice | `signals.py pakistanibulls --from-file FILE` |
+
+### The day-trading desk
+
+| Skill | Say | It does | Runs |
+|---|---|---|---|
+| `psx-scanner` | *"What's setting up today?"*, *"Scan the whole market"* | daily setups: breakouts, flags, bounces, 52-week highs, gaps, surges | `scanner.py daily [--all]` |
+| | *"Any opening-range breakouts?"*, *"…as of 10:30"* | the first 15 minutes' range and who broke it | `scanner.py orb [--at 10:30]` |
+| | *"Top gainers and losers right now"* | movers, with price-limit warnings | `scanner.py movers` |
+| `psx-news` | *"Any news on my shares?"*, *"…on OGDC this month"* | announcements, tagged, with PDFs; board meetings and book closures ahead | `news.py [--days 30 OGDC]` |
+| | *"News on today's setups, with today's moves"* | the scanner's names | `news.py --setups --live` |
+| `psx-entry` | *"Has LUCK triggered?"*, *"Tell me when OGDC breaks 305"* | waiting / triggered / expired; or watches | `entry.py check LUCK`, `entry.py watch OGDC --level 305` |
+| `psx-exit` | *"Plan a day trade in OGDC, stop at the range middle, 2R target"* | stop, target, flat-by, price limits, reward-to-risk after charges | `exitplan.py plan OGDC --stop or-mid --target 2R --style day --write` |
+| | *"Plan a swing trade in MEBL for two weeks"* | volatility stop, your style's target | `exitplan.py plan MEBL --style swing --stop vol --days 10 --write` |
+| `psx-timemachine` | *"What are the odds?"*, *"Replay it 20,000 times"* | simulated futures plus every past time the setup fired | `timemachine.py run [--sims 20000] --write` |
+| `psx-budget` | *"How many shares?"*, *"Size it for a 2,500 rupee max loss"* | the size and the bracket (buy, stop-loss, take-profit) | `budget.py [--max-loss 2500] --write` |
+| `psx-risk` | *"Risk check"*, *"Can I take this trade?"* | PASS or BLOCK per order, with reasons | `risk.py check [--live]` |
+| `psx-broker` | *"Give me the tickets"* | READY tickets to type into your app | `broker.py show` |
+| | *"E1 filled at 301.60"*, *"…only 300 shares, at 10:41"* | records the fill in your portfolio, with the stop | `broker.py filled E1 --price 301.6 [--qty 300 --time 10:41]` |
+| | *"What did I trade today?"*, *"Get me flat"* | today's fills; the sell tickets before the close | `broker.py today`, `broker.py flatten` |
+| `psx-alerts` | *"Alert me if OGDC goes above 310"*, *"…moves 4%"* | price and move alerts, each rings once | `alerts.py add OGDC --above 310`, `--move 4` |
+| | *"Alert me at my stop and target"*, *"…my holdings' stops"* | from the plan; from your portfolio | `alerts.py add --from-plan`, `--from-holdings` |
+| | *"Remind me at 15:20"*, *"Ring the bells"* | clock alerts; the open and 10 minutes before the close | `alerts.py add --at 15:20`, `--bells` |
+| | *"Check my alerts"*, *"Watch them"*, *"List / clear them"* | rings what hit; keeps watching; manages | `alerts.py check`, `watch`, `list`, `clear` |
+| `psx-analyst` | *"How were OGDC's results?"*, *"Compare MARI and PPL's earnings"* | latest quarter and year, growth, margins, P/E, payout, the results PDF | `analyst.py OGDC [MARI PPL]` |
+| `psx-insiders` | *"Are insiders buying HUBC?"*, *"Director dealings in my shares this quarter"* | directors', executives' and sponsors' dealings, with PDFs | `insiders.py [--days 90 HUBC]` |
+| | *"Anything new from insiders since last time?"* | only new notices | `insiders.py --new` |
+
+### Things a chat can't do (and what to do instead)
+
+| You'd like… | In a chat app | Instead |
+|---|---|---|
+| Prices downloaded every morning at 07:00 | no timers in a chat | `./install_services.sh` on a computer, `android_setup.sh` on Android ([schedule](#run-it-on-a-schedule)) |
+| Alerts that ring while you're away | a chat only checks when you ask | `alerts.py watch` on your computer, or cron on Android |
+| An order placed for you | never, by design | the tickets: you type them into your broker's app |
+| The live dashboard | the chat can build the one-file version | `dashboard.py serve` on your computer or phone |
 
 ---
+
 ## Your data: where it lives, backups and moving between chats
 
 The code repo holds **no market data and no portfolio**. Everything goes to your data folder:
