@@ -38,14 +38,14 @@ def path(h, name):
 
 def read(h, name, default=None):
     try:
-        with open(path(h, name)) as f:
+        with open(path(h, name), encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
         return default
 
 
 def write(h, name, data):
-    with open(path(h, name), "w") as f:
+    with open(path(h, name), "w", encoding="utf-8") as f:
         json.dump(data, f, indent=1, default=str)
     return path(h, name)
 

@@ -217,7 +217,7 @@ def build_data(h, cfg, all_=None, days=500):
         if os.path.isdir(adir):
             files = sorted(f for f in os.listdir(adir) if f.endswith(".json"))
             if files:
-                with open(os.path.join(adir, files[-1])) as f:
+                with open(os.path.join(adir, files[-1]), encoding="utf-8") as f:
                     adv = json.load(f)
         import funds as FU
         try:
@@ -242,7 +242,7 @@ def build_data(h, cfg, all_=None, days=500):
     if os.path.isdir(pdir):
         files = sorted(f for f in os.listdir(pdir) if f.endswith(".json"))
         if files:
-            with open(os.path.join(pdir, files[-1])) as f:
+            with open(os.path.join(pdir, files[-1]), encoding="utf-8") as f:
                 proposal = json.load(f)
 
     funds = None
@@ -357,14 +357,14 @@ def cmd_build(a, h, cfg):
     data = build_data(h, cfg, True if a.all else None, a.days)
     blob = json.dumps(data, separators=(",", ":"), default=str)
     if a.standalone:
-        with open(os.path.join(UI_DIR, "index.html")) as f:
+        with open(os.path.join(UI_DIR, "index.html"), encoding="utf-8") as f:
             page = f.read()
-        with open(os.path.join(UI_DIR, "app.js")) as f:
+        with open(os.path.join(UI_DIR, "app.js"), encoding="utf-8") as f:
             js = f.read()
         inline = "<script>window.PKM_DATA=%s;</script>\n<script>%s</script>" % (
             blob.replace("</", "<\\/"), js)
         page = page.replace('<script src="app.js"></script>', inline)
-        with open(a.standalone, "w") as f:
+        with open(a.standalone, "w", encoding="utf-8") as f:
             f.write(page)
         print("standalone dashboard: %s (%.1f MB, %d shares)" % (a.standalone, len(page) / 1e6, len(data["stocks"])))
         return 0
@@ -372,7 +372,7 @@ def cmd_build(a, h, cfg):
     os.makedirs(out, exist_ok=True)
     for fn in ("index.html", "app.js"):
         shutil.copyfile(os.path.join(UI_DIR, fn), os.path.join(out, fn))
-    with open(os.path.join(out, "data.json"), "w") as f:
+    with open(os.path.join(out, "data.json"), "w", encoding="utf-8") as f:
         f.write(blob)
     print("dashboard built in %s: %d shares, %d dates, %.1f MB of data" % (
         out, len(data["stocks"]), len(data["calendar"]), len(blob) / 1e6))
@@ -400,7 +400,7 @@ def run_refresh(home, scope):
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=3600)
         out = p.stdout.decode("utf-8", "replace").splitlines()
         ok = p.returncode == 0
-        with open(os.path.join(log, "refresh.log"), "w") as f:  # the last run only
+        with open(os.path.join(log, "refresh.log"), "w", encoding="utf-8") as f:  # the last run only
             f.write("\n".join(out) + "\n")
     except (OSError, subprocess.SubprocessError) as e:
         out = ["refresh failed: %s" % e]

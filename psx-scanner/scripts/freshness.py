@@ -122,7 +122,7 @@ def fetch_live(h):
     now = pk_now()
     snap = {"fetched": now.strftime("%Y-%m-%d %H:%M:%S"), "date": last_session(now),
             "market_open": market_open(now), "quotes": quotes}
-    with open(live_path(h), "w") as f:
+    with open(live_path(h), "w", encoding="utf-8") as f:
         json.dump(snap, f)
     write_log(h, ["live"])
     return snap
@@ -130,7 +130,7 @@ def fetch_live(h):
 
 def load_live(h):
     try:
-        with open(live_path(h)) as f:
+        with open(live_path(h), encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
         return None
@@ -149,7 +149,7 @@ def log_path(h):
 
 def read_log(h):
     try:
-        with open(log_path(h)) as f:
+        with open(log_path(h), encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
         return {}
@@ -160,7 +160,7 @@ def write_log(h, what):
     now = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     for w in what:
         log[w] = now
-    with open(log_path(h), "w") as f:
+    with open(log_path(h), "w", encoding="utf-8") as f:
         json.dump(log, f, indent=1)
 
 
@@ -252,7 +252,7 @@ def held_symbols(h):
     pp = os.path.join(h, "paper", "portfolio.json")
     if os.path.exists(pp):
         try:
-            with open(pp) as fh:
+            with open(pp, encoding="utf-8") as fh:
                 out += list(json.load(fh).get("positions") or {})
         except (OSError, ValueError):
             pass

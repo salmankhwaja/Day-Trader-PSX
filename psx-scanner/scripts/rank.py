@@ -190,7 +190,7 @@ def fund_rows(h):
     if not snap:
         sys.exit("no MUFAP data yet: run pkdata.py mufap first")
     out = []
-    with open(snap, newline="") as f:
+    with open(snap, newline="", encoding="utf-8") as f:
         for r in csv.DictReader(f):
             for k in ["nav"] + MUFAP_PERIODS:
                 r[k] = float(r[k]) if r[k] not in ("", None) else None

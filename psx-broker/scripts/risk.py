@@ -537,7 +537,7 @@ def cmd_check(a, h, cfg):
     import desk
     doc = desk.read(h, a.file if a.file else "orders.json") if not (a.file and os.path.isabs(a.file)) else None
     if a.file and os.path.isabs(a.file):
-        with open(a.file) as f:
+        with open(a.file, encoding="utf-8") as f:
             doc = json.load(f)
     if not doc or not doc.get("orders"):
         sys.exit("no orders to check: psx-budget writes them (budget.py --write)")

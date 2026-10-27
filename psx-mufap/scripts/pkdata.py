@@ -248,7 +248,7 @@ def save_mufap(h, report_date, funds):
     report_date = report_date or dt.date.today().isoformat()
     snap = os.path.join(d, report_date + ".csv")
     cols = ["category", "return_type", "fund", "rating", "validity_date", "nav"] + MUFAP_PERIODS
-    with open(snap, "w", newline="") as f:
+    with open(snap, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         for r in funds:
@@ -256,13 +256,13 @@ def save_mufap(h, report_date, funds):
     hist = os.path.join(d, "nav_history.csv")
     seen = {}
     if os.path.exists(hist):
-        with open(hist, newline="") as f:
+        with open(hist, newline="", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 seen[(r["date"], r["fund"])] = r
     for r in funds:
         seen[(r["validity_date"], r["fund"])] = {"date": r["validity_date"], "fund": r["fund"],
                                                  "category": r["category"], "nav": r["nav"]}
-    with open(hist, "w", newline="") as f:
+    with open(hist, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["date", "fund", "category", "nav"])
         w.writeheader()
         for k in sorted(seen):
@@ -323,7 +323,7 @@ def cmd_universe(a, h, cfg):
         sys.exit("no shares parsed: the page format may have changed")
     if len(uni) < 100:
         print("warning: only %d shares parsed (PSX lists about 500); check the saved pages" % len(uni))
-    with open(os.path.join(h, "universe.json"), "w") as f:
+    with open(os.path.join(h, "universe.json"), "w", encoding="utf-8") as f:
         json.dump(uni, f, indent=0)
     print("universe: %d listed shares, %d Shariah-compliant (KMI All Share)" % (
         len(uni), sum(1 for v in uni.values() if v["shariah"])))
@@ -374,7 +374,7 @@ def cmd_payouts(a, h, cfg):
     old = P.load_payouts(h)
     keep = {(r["symbol"], r.get("announced"), r["details"]): r for r in old + rows}
     rows = sorted(keep.values(), key=lambda r: r.get("announced") or "", reverse=True)[:1000]
-    with open(os.path.join(h, "payouts.json"), "w") as f:
+    with open(os.path.join(h, "payouts.json"), "w", encoding="utf-8") as f:
         json.dump(rows, f, indent=0)
     today = dt.date.today().isoformat()
     up = [r for r in rows if (r.get("bc_to") or "") >= today]
@@ -389,7 +389,7 @@ def cmd_init(a, h, cfg):
     if os.path.exists(p) and not a.force:
         print("%s already exists; edit it, or use --force to reset it" % p)
         return 0
-    with open(p, "w") as f:
+    with open(p, "w", encoding="utf-8") as f:
         json.dump(C.DEFAULT_CONFIG, f, indent=2)
     print("created %s\nEdit the watchlist, costs and tax rate in it, then run: pkdata.py psx --watchlist" % p)
     return 0
@@ -404,7 +404,7 @@ def cmd_live(a, h, cfg):
             now = F.pk_now()
             snap = {"fetched": now.strftime("%Y-%m-%d %H:%M:%S"), "date": F.last_session(now),
                     "market_open": F.market_open(now), "quotes": quotes}
-            with open(F.live_path(h), "w") as f:
+            with open(F.live_path(h), "w", encoding="utf-8") as f:
                 json.dump(snap, f)
         else:
             snap = F.fetch_live(h)

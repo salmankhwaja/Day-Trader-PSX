@@ -19,9 +19,19 @@ import math
 import os
 import http.cookiejar
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
+
+# Windows: output piped to a log or a scheduled task defaults to the old code page, which can't
+# print the arrows and rupee tables; write UTF-8 there and never crash on a character.
+if os.name == "nt":
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) pk-market-skill/1.0 (personal research)"
 TRADING_DAYS = 245  # PSX trades Mon-Fri less public holidays; ~245 sessions a year
@@ -78,7 +88,7 @@ def home(arg=None):
 def read_user_config(h):
     p = os.path.join(h, "config.json")
     if os.path.exists(p):
-        with open(p) as f:
+        with open(p, encoding="utf-8") as f:
             return json.load(f)
     return {}
 
@@ -96,7 +106,7 @@ def write_user_config(h, updates, remove=()):
     raw.update(updates)
     for k in remove:
         raw.pop(k, None)
-    with open(os.path.join(h, "config.json"), "w") as f:
+    with open(os.path.join(h, "config.json"), "w", encoding="utf-8") as f:
         json.dump(raw, f, indent=2)
     return raw
 
@@ -243,7 +253,7 @@ def read_prices(path, live=True):
 
 def _read_csv_prices(path):
     out = []
-    with open(path, newline="") as f:
+    with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             try:
                 close = float(row["close"])
@@ -263,7 +273,7 @@ def _read_csv_prices(path):
 def write_prices(path, rows):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     rows = sorted({r["date"]: r for r in rows}.values(), key=lambda r: r["date"])
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["date", "open", "close", "volume"])
         for r in rows:
@@ -280,7 +290,7 @@ def nav_series(h, fund):
     p = os.path.join(h, "mufap", "nav_history.csv")
     rows = {}
     if os.path.exists(p):
-        with open(p, newline="") as f:
+        with open(p, newline="", encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 if r["fund"].lower() == fund.lower():
                     v = float(r["nav"])

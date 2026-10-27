@@ -192,9 +192,10 @@ def dashboard():
     if C.is_android():
         print("(Files app > Internal storage > pkmarket > dashboard.html > open with Chrome)")
     try:
+        import pathlib
         import webbrowser
         if yes("Try to open it now"):
-            webbrowser.open("file://" + out)
+            webbrowser.open(pathlib.Path(out).resolve().as_uri())
     except Exception:
         pass
 

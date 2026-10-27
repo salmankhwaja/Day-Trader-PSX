@@ -126,7 +126,7 @@ def main(argv=None):
     h = C.home(a.home)
     git = os.environ.get("PKM_GIT_PUSH") == "1"
     if a.log:
-        with open(a.log, "a") as f, contextlib.redirect_stdout(Tee(sys.stdout, f)):
+        with open(a.log, "a", encoding="utf-8") as f, contextlib.redirect_stdout(Tee(sys.stdout, f)):
             run(h, a.scope, not a.no_download, git)
     else:
         run(h, a.scope, not a.no_download, git)

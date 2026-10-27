@@ -420,7 +420,7 @@ def advise(h, cfg, args):
     res["tickets"] = order_tickets(res, lg, cfg)
     d = os.path.join(h, "advice")
     os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, res["date"] + ".json"), "w") as f:
+    with open(os.path.join(d, res["date"] + ".json"), "w", encoding="utf-8") as f:
         json.dump(res, f, indent=1, default=str)
     return res
 

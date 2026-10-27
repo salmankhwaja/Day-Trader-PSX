@@ -122,7 +122,7 @@ def path(h):
 
 def load(h):
     try:
-        with open(path(h)) as f:
+        with open(path(h), encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
         return None
@@ -136,7 +136,7 @@ def save(h, rows, origin):
         snap["signals"][sym] = dict(r, read_at=now, origin=origin)
     snap["updated"] = now
     os.makedirs(os.path.dirname(path(h)), exist_ok=True)
-    with open(path(h), "w") as f:
+    with open(path(h), "w", encoding="utf-8") as f:
         json.dump(snap, f, indent=1)
     return snap
 

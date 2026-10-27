@@ -146,7 +146,7 @@ def cmd_run(a, h, cfg):
     d = os.path.join(h, "proposals")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, prop["date"] + ".json")
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(prop, f, indent=1, default=str)
     print("Screened %d stocks, backtested the top %d. Out-of-sample = the last 30%% of history, "
           "untouched by tuning." % (prop["screened"], len(prop["candidates"])))

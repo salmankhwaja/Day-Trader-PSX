@@ -168,14 +168,14 @@ def cmd_reset(a, h, cfg):
 
 
 def cmd_export(a, h, cfg):
-    with open(a.file, "w") as f:
+    with open(a.file, "w", encoding="utf-8") as f:
         f.write("\n".join(current(h)) + "\n")
     print("wrote %s" % a.file)
     return 0
 
 
 def cmd_import(a, h, cfg):
-    with open(a.file) as f:
+    with open(a.file, encoding="utf-8") as f:
         syms = [s for line in f for s in line.replace(",", " ").split() if not s.startswith("#")]
     a.symbols = syms
     return cmd_set(a, h, cfg) if a.replace else cmd_add(argparse.Namespace(symbols=syms, top=None, holdings=False,

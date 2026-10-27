@@ -44,7 +44,7 @@ def load(h):
     p = ppath(h)
     if not os.path.exists(p):
         sys.exit("no paper account yet: run `paper.py init` (or put your saved portfolio.json at %s)" % p)
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -52,7 +52,7 @@ def save(h, pf):
     p = ppath(h)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     tmp = p + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(pf, f, indent=1)
     os.replace(tmp, p)
 

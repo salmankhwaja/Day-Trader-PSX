@@ -753,6 +753,27 @@ It installs two systemd *user* services (no root needed):
 | `pkm-dashboard.service` | The dashboard server on `127.0.0.1:8787`. It can run a fetch when the page asks (`PKM_DASH_REFRESH`) and show live prices (`PKM_DASH_LIVE`), both on by default when it listens on localhost only; otherwise it's read-only |
 
 <details>
+<summary><b>Windows (Command Prompt)</b></summary>
+
+Install Python 3 from [python.org](https://www.python.org/downloads/) (tick **Add python.exe to
+PATH**), then in Command Prompt:
+
+```bat
+cd Day-Trader-PSX\psx-mufap\scripts
+install_windows.bat                 &rem data folder + "PSX daily update" at 07:00, Monday to Friday
+install_windows.bat 08:30           &rem another time (the computer's clock)
+py pkm.py                           &rem the menu (or: python pkm.py)
+```
+
+`install_windows.bat` finds Python, creates `%USERPROFILE%\pkmarket` and adds a Task Scheduler
+task that runs `daily.py` on weekdays, and catches up as soon as the laptop wakes if it was asleep
+at that time. Each run rebuilds `%USERPROFILE%\pkmarket\dashboard.html`; for live prices run
+`py dashboard.py serve --allow-live` and open http://127.0.0.1:8787. Remove the task with
+`schtasks /Delete /TN "PSX daily update" /F`.
+
+</details>
+
+<details>
 <summary><b>No systemd? Use cron</b></summary>
 
 With the computer's clock on Pakistan time, for 04:00 and 07:00 on weekdays:
@@ -862,10 +883,9 @@ Open a new Termux session (so it picks up the settings the script added) and typ
 pkm
 ```
 
-That's a shortcut the script made for `cd ~/Day-Trader-PSX/psx-mufap/scripts && python pkm.py`,
-with `PKM_HOME` set to Internal storage › pkmarket, the same data the timer and the home-screen
-buttons use. (Running `python pkm.py` in a session without `PKM_HOME` would use a separate, empty
-`~/pkmarket` inside Termux.)
+That's a shortcut the script made for `cd ~/Day-Trader-PSX/psx-mufap/scripts && python pkm.py`.
+Either way the tools use Internal storage › pkmarket, the same data the timer and the
+home-screen buttons use.
 
 1. **13 Watchlist and settings** › **c** (replace the list), e.g. `OGDC PPL MARI HUBC LUCK MCB MEBL ENGRO FFC SYS`.
 2. **10 Brokers** › answer **y** to add yours: e.g. name `AKD`, preset `akd`, make it the default.
@@ -1207,6 +1227,7 @@ psx-mufap/                      the skill and the tools
 │   ├── sip.py                  SIP calculator: plan, goal, step-up, inflation
 │   ├── dashboard.py            build and serve the dashboard
 │   ├── daily.py                the daily pipeline, pure Python (Linux, macOS, Windows, Android)
+│   ├── install_windows.bat     Windows: data folder + the weekday update in Task Scheduler
 │   ├── daily_sync.sh           shell wrapper for cron and systemd
 │   ├── install_services.sh     systemd timer (your schedule) and dashboard service
 │   └── android_setup.sh        one-command setup in Termux

@@ -90,14 +90,14 @@ def save(h, symbol, ticks):
     day = ticks[-1][0].date().isoformat()
     p = cache_path(h, symbol, day)
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    with open(p, "w") as f:
+    with open(p, "w", encoding="utf-8") as f:
         json.dump([[w.isoformat(timespec="seconds"), pr, v] for w, pr, v in ticks], f)
     return day
 
 
 def load(h, symbol, day):
     try:
-        with open(cache_path(h, symbol, day)) as f:
+        with open(cache_path(h, symbol, day), encoding="utf-8") as f:
             return [(dt.datetime.fromisoformat(w), pr, v) for w, pr, v in json.load(f)]
     except (OSError, ValueError):
         return []

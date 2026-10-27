@@ -62,7 +62,7 @@ def load(h):
     p = lpath(h)
     if not os.path.exists(p):
         return {"version": 1, "brokers": {}, "default_broker": None, "entries": [], "stops": {}, "next_id": 1}
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -70,7 +70,7 @@ def save(h, lg):
     p = lpath(h)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     tmp = p + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(lg, f, indent=1)
     os.replace(tmp, p)
 
@@ -114,7 +114,7 @@ PRESETS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 
 
 def load_presets(path=None):
-    with open(path or PRESETS_FILE) as f:
+    with open(path or PRESETS_FILE, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -845,7 +845,7 @@ FIELDS = ["date", "side", "symbol", "qty", "price", "broker", "commission", "tax
 def cmd_import(a, h, cfg):
     lg = load(h)
     n, errors = 0, []
-    with open(a.file, newline="") as f:
+    with open(a.file, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     rows.sort(key=lambda r: (r.get("date") or "", 0 if (r.get("side") or "").lower() == "buy" else 1))
     for i, r in enumerate(rows, 2):
@@ -870,7 +870,7 @@ def cmd_import(a, h, cfg):
 
 def cmd_export(a, h, cfg):
     lg = load(h)
-    with open(a.file, "w", newline="") as f:
+    with open(a.file, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(FIELDS)
         for e in ordered(lg["entries"]):

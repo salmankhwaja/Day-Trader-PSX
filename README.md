@@ -200,7 +200,7 @@ everything.
 ## On your computer
 
 For the full thing: downloads straight from PSX, files that stay put, a morning update at 07:00,
-alerts that ring, and a dashboard. Linux, macOS, or Windows with WSL.
+alerts that ring, and a dashboard. Linux, macOS or Windows.
 
 ```bash
 git clone https://github.com/salmankhwaja/Day-Trader-PSX.git && cd Day-Trader-PSX
@@ -209,9 +209,19 @@ python3 psx-mufap/scripts/watchlist.py set OGDC PPL MARI HUBC LUCK MEBL --fetch
 (cd psx-mufap/scripts && ./install_services.sh)                # 07:00 update + dashboard
 ```
 
+**Windows, in Command Prompt:** install [Python 3](https://www.python.org/downloads/) (tick *Add
+python.exe to PATH*), then:
+
+```bat
+cd Day-Trader-PSX\psx-mufap\scripts
+install_windows.bat                                            &rem data folder + 07:00 weekday update
+py watchlist.py set OGDC PPL MARI HUBC LUCK MEBL --fetch
+py pkm.py                                                      &rem the menu
+```
+
 Then pick how to talk to it:
 
-- **Claude Code:** `cp -r psx-* ~/.claude/skills/`, run `claude`, and ask. Or install as a plugin
+- **Claude Code:** `cp -r psx-* ~/.claude/skills/` (Windows: `for /d %d in (psx-*) do xcopy /E /I /Y %d "%USERPROFILE%\.claude\skills\%d"`), run `claude`, and ask. Or install as a plugin
   from inside Claude Code: `/plugin marketplace add salmankhwaja/Day-Trader-PSX`, then
   `/plugin install psx-mufap@pk-market-skill`.
 - **Gemini CLI or Codex:** copy to `~/.agents/skills/` (table above).

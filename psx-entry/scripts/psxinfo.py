@@ -116,7 +116,7 @@ def load_universe(h):
     p = os.path.join(h, "universe.json")
     if not os.path.exists(p):
         return {}
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -287,14 +287,14 @@ def load_company(h, symbol):
     p = company_path(h, symbol)
     if not os.path.exists(p):
         return None
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_company(h, c):
     p = company_path(h, c["symbol"])
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    with open(p, "w") as f:
+    with open(p, "w", encoding="utf-8") as f:
         json.dump(c, f, indent=1)
 
 
@@ -321,7 +321,7 @@ def load_payouts(h):
     p = os.path.join(h, "payouts.json")
     if not os.path.exists(p):
         return []
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 

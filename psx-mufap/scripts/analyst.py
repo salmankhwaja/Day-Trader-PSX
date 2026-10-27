@@ -175,7 +175,7 @@ def main(argv=None):
         results.append(r)
         d = os.path.join(desk.folder(h), "financials")
         os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, s + ".json"), "w") as f:
+        with open(os.path.join(d, s + ".json"), "w", encoding="utf-8") as f:
             json.dump(r, f, indent=1)
     if a.json:
         print(json.dumps(results, indent=1))

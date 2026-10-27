@@ -191,7 +191,7 @@ def optimize(rows, strat, cost, rf, split=0.7):
 
 
 def write_equity(path, s):
-    with open(path, "w", newline="") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["date", "equity"])
         for e in s["equity"]:
