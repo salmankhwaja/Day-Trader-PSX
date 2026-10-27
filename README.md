@@ -71,8 +71,8 @@ commission, sales tax, CDC and exchange levies, in rupees.
 
 The least friction: no installs, works on the web, the desktop app, iPhone and Android.
 
-1. **Download the skills:** [`psx-mufap.zip`](https://github.com/salmankhwaja/Day-Trader-PSX/releases/latest/download/psx-mufap.zip)
-   and, if you want the desk, any of the [other eleven](https://github.com/salmankhwaja/Day-Trader-PSX/releases/latest).
+1. **Download the skills:** [`psx-mufap.zip`](https://github.com/salmankhwaja/Day-Trader-PSX/raw/main/zips/psx-mufap.zip)
+   and, if you want the desk, any of the [other eleven](https://github.com/salmankhwaja/Day-Trader-PSX/tree/main/zips) (all in the `zips` folder; on a phone, open the file and tap Download).
 2. **Turn on code execution** in Claude's settings (skills need it; Free, Pro, Max, Team and
    Enterprise plans all have skills).
 3. **Add them:** on claude.ai or the desktop app, open **Customize › Skills**, upload each zip and

@@ -24,6 +24,6 @@
 - Nothing may place a real order (PSX retail apps have no order API; tickets are typed by the user). Suggestions are labelled as rule-based, not
   investment advice.
 - This repo is PSX-only. The 11 desk skills (`psx-scanner/` … `psx-insiders/`) carry copies of the
-  code: edit `psx-mufap/scripts/` only, then run `python3 tools/sync_skills.py` (the tests fail if
-  a copy is stale). A new desk tool goes in `tools/sync_skills.py` SKILLS and gets its SKILL.md.
+  code: edit `psx-mufap/scripts/` only, then run `python3 tools/sync_skills.py`, which also rebuilds `zips/` (the tests fail if
+  a copy or a zip is stale). A new desk tool goes in `tools/sync_skills.py` SKILLS and gets its SKILL.md.
 - README voice: plain, friendly, a little humour, never at the expense of a safety note.

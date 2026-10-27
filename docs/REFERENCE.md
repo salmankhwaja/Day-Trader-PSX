@@ -623,8 +623,8 @@ Their limits are part of your risk style (`risk.py settings`, `risk.py set KEY V
 # Claude Code: copy the skill folders (or install the plugin: all twelve skills come with it)
 cp -r Day-Trader-PSX/psx-* ~/.claude/skills/
 
-# Claude app: one zip per skill (from the releases page, or make them), each uploaded under Customize › Skills
-cd Day-Trader-PSX && for d in psx-*; do zip -r "$d.zip" "$d" -x '*__pycache__*'; done
+# Claude app: one zip per skill, ready in zips/ (python3 tools/sync_skills.py rebuilds them),
+# each uploaded under Customize › Skills
 ```
 
 > [!NOTE]
@@ -1207,6 +1207,7 @@ psx-scanner/ … psx-insiders/   the 11 desk skills: SKILL.md + scripts/ (a sync
                                 each needs) + brokers.json
 tools/sync_skills.py            copies the shared code into each desk skill (and checks it)
 tests/                          offline tests on synthetic data and trimmed page samples
+zips/                           one zip per skill, to add in the Claude app (built by tools/sync_skills.py)
 docs/REFERENCE.md               this manual (README.md is the short front door)
 ci/                             GitHub Actions workflows, ready to enable (see ci/README.md)
 ```

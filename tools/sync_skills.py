@@ -7,8 +7,11 @@ folder. This script works out those modules (following every import, including o
 functions) and copies them into <skill>/scripts/, plus brokers.json when the broker charges are
 needed. Run it after changing any code, before committing:
 
-  python3 tools/sync_skills.py          copy
-  python3 tools/sync_skills.py --check  only report skills whose copies are out of date (tests use this)
+  python3 tools/sync_skills.py          copy, and rebuild zips/<skill>.zip for the Claude app
+  python3 tools/sync_skills.py --check  only report skills whose copies or zips are out of date (tests use this)
+
+The zips in zips/ are what people download and add in Claude (Customize > Skills): one per skill,
+the skill's folder inside. They're rebuilt byte-for-byte the same from the same files.
 """
 import argparse
 import filecmp
@@ -16,6 +19,7 @@ import os
 import re
 import shutil
 import sys
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "psx-mufap", "scripts")
@@ -36,6 +40,47 @@ SKILLS = {
 }
 COMMON = ["pkdata.py", "watchlist.py"]
 IMPORT_RE = re.compile(r"^\s*(?:import\s+([\w, ]+?)(?:\s+as\s+\w+)?\s*(?:#.*)?$|from\s+(\w+)\s+import\b)", re.M)
+
+
+ZIPS = os.path.join(ROOT, "zips")
+ALL = ["psx-mufap"] + list(SKILLS)
+
+
+def skill_files(skill):
+    out = []
+    for d, dirs, files in os.walk(os.path.join(ROOT, skill)):
+        dirs[:] = sorted(x for x in dirs if x != "__pycache__")
+        for f in sorted(files):
+            if not f.endswith(".pyc"):
+                p = os.path.join(d, f)
+                out.append((os.path.relpath(p, ROOT).replace(os.sep, "/"), p))
+    return out
+
+
+def build_zip(skill):
+    path = os.path.join(ZIPS, skill + ".zip")
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, p in skill_files(skill):
+            info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+            info.external_attr = (0o755 if p.endswith(".sh") else 0o644) << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            with open(p, "rb") as f:
+                z.writestr(info, f.read())
+
+
+def zip_stale(skill):
+    path = os.path.join(ZIPS, skill + ".zip")
+    if not os.path.exists(path):
+        return True
+    with zipfile.ZipFile(path) as z:
+        want = skill_files(skill)
+        if sorted(z.namelist()) != sorted(n for n, _ in want):
+            return True
+        for n, p in want:
+            with open(p, "rb") as f:
+                if z.read(n) != f.read():
+                    return True
+    return False
 
 
 def modules():
@@ -99,6 +144,13 @@ def main(argv=None):
         for f in extra:
             shutil.copy2(os.path.join(ROOT, "psx-mufap", f), os.path.join(ROOT, skill, f))
         print("%-16s %2d modules%s" % (skill, len(files), " + brokers.json" if extra else ""))
+    if a.check:
+        stale += ["zips/%s.zip" % s for s in ALL if zip_stale(s)]
+    else:
+        os.makedirs(ZIPS, exist_ok=True)
+        for s in ALL:
+            build_zip(s)
+        print("zips/: %d skill zips rebuilt" % len(ALL))
     if a.check:
         if stale:
             print("out of date (run python3 tools/sync_skills.py):\n  " + "\n  ".join(stale))
