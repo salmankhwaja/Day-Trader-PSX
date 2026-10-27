@@ -1373,6 +1373,38 @@ class TestDesk(Market):
         self.assertIn("None filed since the last run", out)
 
 
+class TestBackup(Market):
+    def test_backup_restore_round_trip_and_safety(self):
+        import zipfile
+        run(PF.main, ["--home", self.h, "broker", "add", "AKD", "--preset", "akd", "--default"])
+        run(PF.main, ["--home", self.h, "buy", "SYN05", "100", "90", "--date", "2026-03-01", "--time", "10:05"])
+        out = os.path.join(self.h, "..", os.path.basename(self.h) + "-b.zip")
+        run(pkdata.main, ["--home", self.h, "backup", out])
+        small = out.replace(".zip", "-s.zip")
+        run(pkdata.main, ["--home", self.h, "backup", small, "--small"])
+        with zipfile.ZipFile(small) as z:
+            names = z.namelist()
+        self.assertIn("pkmarket/portfolio/ledger.json", names)
+        self.assertFalse(any(n.startswith("pkmarket/psx/") for n in names))
+        h2 = tempfile.mkdtemp()
+        try:
+            run(pkdata.main, ["--home", h2, "restore", out])
+            self.assertEqual(PF.holdings(h2, PF.load(h2))[0]["first_buy_time"], "10:05")
+            self.assertTrue(os.path.exists(C.price_path(h2, "SYN05")))
+            evil = os.path.join(h2, "evil.zip")
+            with zipfile.ZipFile(evil, "w") as z:
+                z.writestr("pkmarket/../escaped.txt", "x")
+                z.writestr("pkmarket/config.json", "{}")
+            rc, msg = run(pkdata.main, ["--home", h2, "restore", evil])
+            self.assertIn("skipped unsafe path", msg)
+            self.assertFalse(os.path.exists(os.path.join(os.path.dirname(h2), "escaped.txt")))
+            self.assertTrue(os.path.exists(os.path.join(h2, "config.json.before-restore")))
+        finally:
+            shutil.rmtree(h2)
+            for f in (out, small):
+                os.remove(f)
+
+
 class TestDocs(unittest.TestCase):
     """The README must keep up with the code: every tool and every setting is documented."""
 

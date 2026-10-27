@@ -10,6 +10,13 @@ commands from that folder. Data lives in the user's data folder (`~/pkmarket`, o
 on Android `/storage/emulated/0/pkmarket`), shared with the psx-mufap skill and the other desk
 skills: prices, the portfolio ledger, and the desk files in `trader/`.
 
+**In a chat sandbox** (Claude app, Gemini, ChatGPT), the data folder starts empty in each chat: if
+it is (`python3 scripts/pkdata.py status`), ask for the user's backup zip and
+`python3 scripts/pkdata.py restore FILE.zip`; after recording anything, `python3 scripts/pkdata.py
+backup` and send the zip back. PSX prices can't be fetched from most sandboxes: use the backup's
+and say their date.
+
+
 ```bash
 python3 scripts/exitplan.py plan SYN07 --write                     # from today's setup: its trigger and stop
 python3 scripts/exitplan.py plan OGDC --entry 301.5 --stop or-mid --target 2R --style day --write

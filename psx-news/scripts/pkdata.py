@@ -5,6 +5,8 @@
   pkdata.py psx --watchlist                  ... for every symbol in config.json, plus the benchmark
   pkdata.py psx SYMBOL --from-file raw.json  parse a response you saved yourself (or a CSV)
   pkdata.py live [--watchlist|SYMBOL ...]    live prices for every share (one request) -> live.json
+  pkdata.py backup [FILE.zip] [--small]      everything you've recorded and downloaded, in one zip
+  pkdata.py restore FILE.zip                 put a backup back (another device, or a new Claude chat)
   pkdata.py mufap                            download today's MUFAP performance summary
   pkdata.py mufap --from-file page.md        parse a saved copy (HTML or Markdown)
   pkdata.py universe                         every listed share + Shariah (KMI) flags -> universe.json
@@ -422,6 +424,70 @@ def cmd_live(a, h, cfg):
     return 0
 
 
+# What a backup holds: everything you entered, and the data that's slow or impossible to fetch again
+# from a chat sandbox. Left out: rebuildable things (dashboard, logs) and, unless asked, intraday caches.
+BACKUP_SKIP = {"dashboard", "dashboard.html", "logs", "__pycache__"}
+
+
+def cmd_backup(a, h, cfg):
+    import zipfile
+    out = a.file or "pkmarket-backup-%s.zip" % dt.date.today().isoformat()
+    skip = set(BACKUP_SKIP) | ({"psx", "intraday", "companies", "mufap"} if a.small else set()) | \
+        (set() if a.with_intraday else {"intraday"})
+    n = 0
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for base, dirs, files in os.walk(h):
+            rel = os.path.relpath(base, h)
+            top = rel.split(os.sep)[0]
+            if top in skip:
+                dirs[:] = []
+                continue
+            dirs[:] = [d for d in dirs if d not in skip or rel != "."]
+            for f in files:
+                if rel == "." and f in skip:
+                    continue
+                p = os.path.join(base, f)
+                if os.path.abspath(p) == os.path.abspath(out):
+                    continue
+                z.write(p, os.path.join("pkmarket", os.path.relpath(p, h)))
+                n += 1
+    print("backup: %s (%d files, %.1f MB)%s" % (out, n, os.path.getsize(out) / 1e6,
+                                               " without prices (--small)" if a.small else ""))
+    print("It holds your portfolio ledger, brokers, watchlist and settings: keep it private.")
+    return 0
+
+
+def cmd_restore(a, h, cfg):
+    import zipfile
+    try:
+        z = zipfile.ZipFile(a.file)
+    except (OSError, zipfile.BadZipFile) as e:
+        sys.exit("not a backup zip: %s" % e)
+    n = 0
+    root = os.path.realpath(h)
+    with z:
+        for m in z.infolist():
+            name = m.filename.replace("\\", "/")
+            if m.is_dir() or not name.startswith("pkmarket/"):
+                continue
+            rel = name[len("pkmarket/"):]
+            dest = os.path.realpath(os.path.join(h, rel))
+            # never write outside the data folder (no absolute paths, no "..", no symlink tricks)
+            if not (dest == root or dest.startswith(root + os.sep)) or os.path.isabs(rel) or ".." in rel.split("/"):
+                print("skipped unsafe path in the zip: %s" % m.filename)
+                continue
+            if os.path.exists(dest) and not a.replace and rel in ("config.json", "portfolio/ledger.json"):
+                keep = dest + ".before-restore"
+                os.replace(dest, keep)
+                print("kept your current %s as %s" % (rel, os.path.basename(keep)))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with z.open(m) as src, open(dest, "wb") as f:
+                f.write(src.read())
+            n += 1
+    print("restored %d files into %s" % (n, h))
+    return 0
+
+
 def cmd_status(a, h, cfg):
     print("home: %s" % h)
     uni = P.load_universe(h)
@@ -473,6 +539,13 @@ def main(argv=None):
     p.add_argument("--from-file")
     p = sub.add_parser("mufap")
     p.add_argument("--from-file")
+    p = sub.add_parser("backup", help="everything you've recorded and downloaded, in one zip")
+    p.add_argument("file", nargs="?")
+    p.add_argument("--small", action="store_true", help="leave out prices and company pages (just your records)")
+    p.add_argument("--with-intraday", action="store_true", help="include cached intraday sessions")
+    p = sub.add_parser("restore", help="put a backup zip back into the data folder")
+    p.add_argument("file")
+    p.add_argument("--replace", action="store_true", help="overwrite config and ledger without keeping a copy")
     p = sub.add_parser("live", help="live prices for every share in one request (saved to live.json)")
     p.add_argument("symbols", nargs="*")
     p.add_argument("--watchlist", action="store_true", help="show the watchlist and holdings (the default)")
@@ -484,7 +557,8 @@ def main(argv=None):
     h = C.home(a.home)
     cfg = C.load_config(h)
     rc = {"psx": cmd_psx, "mufap": cmd_mufap, "status": cmd_status, "universe": cmd_universe,
-          "company": cmd_company, "payouts": cmd_payouts, "init": cmd_init, "live": cmd_live}[a.cmd](a, h, cfg)
+          "company": cmd_company, "payouts": cmd_payouts, "init": cmd_init, "live": cmd_live,
+          "backup": cmd_backup, "restore": cmd_restore}[a.cmd](a, h, cfg)
     if a.cmd in ("psx", "mufap", "payouts") and not rc:
         import freshness
         freshness.write_log(h, [a.cmd])  # so advice can say when the data was last fetched

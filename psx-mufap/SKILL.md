@@ -94,6 +94,24 @@ disagreements. To add one:
 - If you fetch their page with your own web tool, ask for the full HTML or Markdown, save it, and
   import it with `--from-file` (personal use only, same rule).
 
+## In a chat sandbox: carry the data between chats
+
+In the Claude app (web, desktop upload, phone), the Gemini app or ChatGPT, the skill runs in a
+sandbox that starts empty in every new chat and usually can't reach the PSX portal. So:
+
+1. **Start of a chat:** if the data folder is empty (`pkdata.py status`), ask the user to attach
+   their latest backup zip (made by `pkdata.py backup` on their computer, phone or a previous
+   chat), then `python3 scripts/pkdata.py restore FILE.zip`. No backup yet: start fresh
+   (`pkdata.py init`) and say their records will live in the zip you give them.
+2. **Market data:** try the normal fetch first. If PSX is blocked, use what came in the backup
+   (say its date), fetch company pages (`/company/<SYMBOL>`: announcements, results, payouts) and
+   the MUFAP table with your own web tool and import them with `--from-file`. PSX prices can't be
+   fetched with a web tool (the portal needs its session key): suggest the user runs the daily
+   update on their computer or phone and brings the backup.
+3. **End of any change** (a trade recorded, a broker, the watchlist, settings, the risk style):
+   run `python3 scripts/pkdata.py backup` and send the zip, saying "keep this and attach it next
+   time; it holds your portfolio". Use `--small` (records only) if the full zip is too large.
+
 ## Step 1: get fresh data
 
 First check what is already there: `python3 scripts/pkdata.py status`.

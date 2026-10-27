@@ -1,9 +1,10 @@
 # Day-Trader-PSX
 
-**Rank, compare, backtest and track Pakistan Stock Exchange shares and MUFAP mutual funds:
-from a laptop, from your phone, or by simply asking Claude.**
+**Rank, compare, backtest and track Pakistan Stock Exchange shares and MUFAP mutual funds, keep
+your real portfolio, and plan trades: by asking Claude (or Gemini, or ChatGPT) in plain words,
+from a laptop, or from the phone in your pocket.**
 
-![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue) ![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen) ![Licence: MIT](https://img.shields.io/badge/licence-MIT-lightgrey) ![Orders placed: 0](https://img.shields.io/badge/real%20orders%20placed-0%2C%20on%20purpose-orange)
+![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue) ![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen) ![Licence: MIT](https://img.shields.io/badge/licence-MIT-lightgrey) ![Skills: 12](https://img.shields.io/badge/Claude%20skills-12-purple) ![Orders placed: 0](https://img.shields.io/badge/real%20orders%20placed-0%2C%20on%20purpose-orange)
 
 Buy low, sell high. This project does the arithmetic, the record-keeping and the charts. The
 courage, the judgement and the final tap on your broker's app stay with you.
@@ -17,12 +18,21 @@ courage, the judgement and the final tap on your broker's app stay with you.
 
 ## Table of contents
 
-1. [The 30-second tour](#the-30-second-tour)
-2. [Where the data comes from](#where-the-data-comes-from)
-3. [How it fits together](#how-it-fits-together)
-4. [Pick your path](#pick-your-path)
-5. [Quick start on a computer](#quick-start-on-a-computer)
-6. [Command cheat sheet](#command-cheat-sheet)
+1. [What it does](#what-it-does)
+2. [Can an AI assistant do all of it?](#can-an-ai-assistant-do-all-of-it)
+3. [Set it up](#set-it-up)
+   - [Claude Code on your computer (recommended)](#claude-code-on-your-computer-recommended)
+   - [Claude desktop app](#claude-desktop-app)
+   - [Claude on the web, iPhone and Android](#claude-on-the-web-iphone-and-android)
+   - [Gemini](#gemini)
+   - [ChatGPT](#chatgpt)
+   - [iPhone and iPad](#iphone-and-ipad)
+   - [Just the tools, no AI](#just-the-tools-no-ai)
+4. [Talk to it: what to ask](#talk-to-it-what-to-ask)
+5. [Your data: where it lives, backups and moving between chats](#your-data-where-it-lives-backups-and-moving-between-chats)
+6. [Where the data comes from](#where-the-data-comes-from)
+7. [How it fits together](#how-it-fits-together)
+8. [Command cheat sheet](#command-cheat-sheet)
    - [Your watchlist](#1-your-watchlist)
    - [Fetch data](#2-fetch-data)
    - [Set the schedule](#3-set-the-schedule)
@@ -36,15 +46,13 @@ courage, the judgement and the final tap on your broker's app stay with you.
    - [Plan a SIP](#11-plan-a-sip)
    - [Last fetch, fresh fetch or live?](#12-last-fetch-fresh-fetch-or-live)
    - [A second opinion: PakistaniBulls](#13-a-second-opinion-pakistanibulls)
-7. [Your risk style](#your-risk-style)
-8. [How the suggestions work](#how-the-suggestions-work)
-9. [Run it on a schedule](#run-it-on-a-schedule)
-10. [Run it on your Android phone](#run-it-on-your-android-phone)
-11. [Use it with Claude](#use-it-with-claude)
-12. [The day-trading desk: 11 PSX skills](#the-day-trading-desk-11-psx-skills)
-13. [Settings](#settings)
-14. [Brokers and their charges](#brokers-and-their-charges)
-15. [Your data and privacy](#your-data-and-privacy)
+9. [The day-trading desk: 11 PSX skills](#the-day-trading-desk-11-psx-skills)
+10. [Your risk style](#your-risk-style)
+11. [How the suggestions work](#how-the-suggestions-work)
+12. [Run it on a schedule](#run-it-on-a-schedule)
+13. [Run it on your Android phone](#run-it-on-your-android-phone)
+14. [Settings](#settings)
+15. [Brokers and their charges](#brokers-and-their-charges)
 16. [Troubleshooting](#troubleshooting)
 17. [FAQ](#faq)
 18. [Data terms](#data-terms)
@@ -54,29 +62,259 @@ courage, the judgement and the final tap on your broker's app stay with you.
 
 ---
 
-## The 30-second tour
+## What it does
 
-| You want to… | It gives you… |
-|---|---|
-| Know what's doing well | Your watchlist or **every listed share**, ranked on 1-week to 1-year returns, risk, trend and lead or lag against the KSE-100, with sector, **Shariah status** (KMI All Share) and **dividend yield** |
-| Pick a mutual fund | MUFAP funds ranked **inside their own category**, and suggestions by risk appetite: low, medium or high, Shariah or conventional |
-| Track your real portfolio | Every trade with date, time, broker and actual charges; each holding **GREEN or RED** against what you paid, at live prices or the last close; first-in-first-out lots per broker; mutual funds; realised and unrealised P/L after costs; dividends; what each broker has cost you |
-| Decide during market hours | **Live prices** from PSX on the dashboard and in any advice (`--live`), alongside "last fetch" and "fresh fetch" |
-| Know what to do next | **SELL / TRIM / REVIEW / HOLD** for each holding, with a trailing **stop-loss** and target. **Buy ideas**, each with entry, stop-loss, target and a sensible quantity. A **price calculator** on every one: rupees lost at the stop and made at the target, after charges |
-| Ask about one share | `portfolio.py check OGDC`: a verdict for your style, the backtest, stop, target, size and the price calculator in one go |
-| Test an idea first | Backtests of moving-average, breakout, RSI and momentum strategies, with costs, next-day fills and an honest out-of-sample test |
-| Practise | A paper account in pretend PKR: all of the drama, none of the margin calls |
-| Match it to your nerves | A **risk quiz** that sets your style (conservative to very aggressive); every buy/sell variable follows it, and you can override any one |
-| Know what's at stake | A **risk calculator**: position sizing, money at risk to your stops, value-at-risk, volatility, beta, concentration, allocation vs target |
-| Plan ahead | A **SIP calculator**: monthly investing with yearly step-ups, inflation, and "how much a month for my goal?" |
-| Day-trade (or swing-trade) PSX shares | [The day-trading desk](#the-day-trading-desk-11-psx-skills): 11 skills, from the scanner (breakouts, flags, opening-range breakouts) through news, entry timing, exit plans, a 10,000-replay time machine, sizing, a risk gate and broker tickets, to alerts, results and insiders' dealings |
-| See it all | A dashboard (overview, screener, compare up to 6 companies, your portfolio, dividends, funds, risk and SIP) that works on a phone, in light and dark |
+Twelve Claude skills and the plain Python tools behind them. The skills teach an AI assistant
+to run the tools for you; you can also run the tools yourself.
+
+| You want to… | It gives you… | Skill |
+|---|---|---|
+| Know what's doing well | your watchlist or **every listed share**, ranked on 1-week to 1-year returns, risk, trend and lead or lag against the KSE-100, with sector, **Shariah status** (KMI) and **dividend yield** | `psx-mufap` |
+| Pick a mutual fund | MUFAP funds ranked **inside their own category**, and suggestions by risk appetite, Shariah or conventional | `psx-mufap` |
+| Keep your real portfolio | every trade with date, time, broker and actual charges; each holding **GREEN or RED** against what you paid, at live prices or the last close; P/L after costs; dividends; what each broker has cost you | `psx-mufap` |
+| Know what to do next | **SELL / TRIM / REVIEW / HOLD** per holding with a trailing **stop-loss**; **buy ideas** with entry, stop, target and quantity; a **price calculator** in rupees on every one; order tickets for your broker's app | `psx-mufap` |
+| Get the market and the news | end-of-day and **live** PSX prices; each company's **announcements** (results, dividends, board meetings, material information) with the PDF; results summaries; insiders' dealings | `psx-mufap`, `psx-news`, `psx-analyst`, `psx-insiders` |
+| Practise and plan | backtests with an honest out-of-sample test; a paper account in pretend PKR; a **risk quiz** that sets every variable; a **risk calculator**; a **SIP calculator** | `psx-mufap` |
+| Trade by the day or the week | [the desk](#the-day-trading-desk-11-psx-skills): scanner, news, entry timer, exit plan, a 10,000-replay time machine, sizing, a risk gate, broker tickets, alerts | the 11 `psx-*` desk skills |
+| See it all | a dashboard (overview, screener, compare, your portfolio, dividends, funds, risk and SIP) that works on a phone, in light and dark | `psx-mufap` |
 
 Plain Python 3.8+ with the standard library only: nothing to `pip install`, nothing to break.
 
+## Can an AI assistant do all of it?
+
+**Yes, the portfolio is in the skills.** Tell Claude *"I bought 500 OGDC at 298 through AKD
+today at 10:42, stop at 280"* and it reads the trade back, records it in your ledger with the
+broker's charges, and from then on shows it GREEN or RED, advises on it, and puts it on the
+dashboard. Sales, dividends, mutual funds, cash and broker costs work the same way.
+
+**Doing everything (getting the market, the news, and keeping the portfolio) depends on where
+the skills run**, because two things matter: can the tools reach the PSX website, and do your
+files survive until tomorrow?
+
+| | Claude Code (or Gemini CLI, Codex) on your computer | Claude app: web, desktop, iPhone, Android | Gemini app | ChatGPT (Business, Enterprise, Edu) |
+|---|---|---|---|---|
+| Daily PSX prices, 5 years of history | ✅ downloads them | ⚠️ from your backup (sandboxes usually can't reach PSX) | ⚠️ from your backup | ⚠️ from your backup |
+| Live prices during market hours | ✅ | ⚠️ only if your plan allows the PSX site | ❌ | ⚠️ as Claude app |
+| Company news, results, insiders | ✅ | ✅ via the assistant's web fetch | ⚠️ paste or attach the page | ⚠️ as Claude app |
+| MUFAP funds | ✅ | ✅ via web fetch | ⚠️ attach the page | ✅ via web fetch |
+| Record trades, portfolio, GREEN/RED, advice | ✅ kept on your computer | ✅ kept in a **backup zip** you carry from chat to chat | ✅ same | ✅ same |
+| Day-trading desk | ✅ all of it | ✅ planning, sizing, risk, tickets; ⚠️ intraday needs PSX | ⚠️ planning only | ⚠️ as Claude app |
+| Every morning on a timer, alerts that ring | ✅ | ❌ (run them on your computer or phone) | ❌ | ❌ |
+
+So the best set-up is **both**: the tools (or Claude Code) on a computer or Android phone fetch
+and keep everything, on a timer; the chat apps on your phone are where you ask questions,
+carrying your data in one backup zip. Details in [Your data](#your-data-where-it-lives-backups-and-moving-between-chats).
+
+---
+
+## Set it up
+
+| You have… | Go to | Time | Gets you |
+|---|---|---|---|
+| A computer (Linux, macOS, Windows with WSL) | [Claude Code on your computer](#claude-code-on-your-computer-recommended) | 10 min | everything |
+| The Claude desktop app | [Claude desktop app](#claude-desktop-app) | 5 min | everything (Code) or chat |
+| Claude on the web or your phone | [Claude on the web, iPhone and Android](#claude-on-the-web-iphone-and-android) | 5 min | ask anything; data via backup |
+| Gemini | [Gemini](#gemini) | 5 min | the app, or the CLI on a computer |
+| ChatGPT | [ChatGPT](#chatgpt) | 5 min | Business plans, or Codex on a computer |
+| An Android phone and no computer | [Android, on its own](#run-it-on-your-android-phone) | 20 min | everything, on the phone |
+| An iPhone or iPad | [iPhone and iPad](#iphone-and-ipad) | 5 min | the chat apps, and your dashboard |
+| No appetite for AI | [Just the tools](#just-the-tools-no-ai) | 5 min | a numbered menu |
+
+Every route starts from this repo:
+
+```bash
+git clone https://github.com/salmankhwaja/Day-Trader-PSX.git
+```
+
+…or, for the chat apps, the **zips**: one per skill on the
+[releases page](https://github.com/salmankhwaja/Day-Trader-PSX/releases) (`psx-mufap.zip` plus
+`psx-scanner.zip` … `psx-insiders.zip`), or make them yourself:
+
+```bash
+cd Day-Trader-PSX && for d in psx-*; do zip -r "$d.zip" "$d" -x '*__pycache__*'; done
+```
+
+> [!TIP]
+> Start with `psx-mufap` alone: it does the market, funds, portfolio and advice. Add the 11 desk
+> skills when you want to plan trades by the day or the week.
+
+### Claude Code on your computer (recommended)
+
+Claude Code runs the skills on your own machine, so they download from PSX, keep your files, and
+run on a timer. Install Claude Code ([docs](https://docs.claude.com/en/docs/claude-code)), then:
+
+```bash
+cd Day-Trader-PSX
+cp -r psx-* ~/.claude/skills/                       # all twelve skills (or just psx-mufap)
+python3 psx-mufap/scripts/pkdata.py init            # your data folder: ~/pkmarket
+python3 psx-mufap/scripts/watchlist.py set OGDC PPL MARI HUBC LUCK MEBL ENGRO SYS --fetch
+cd psx-mufap/scripts && ./install_services.sh       # the daily update at 07:00, and the dashboard
+claude                                              # then just ask
+```
+
+Or as a plugin, inside Claude Code (all twelve come together):
+
+```
+/plugin marketplace add salmankhwaja/Day-Trader-PSX
+/plugin install psx-mufap@pk-market-skill
+```
+
+Then ask: *"set up my broker as AKD"*, *"record my trades from this contract note"*, *"what should
+I sell or buy today?"*, *"scan for breakouts"*. The timer and the dashboard are explained in
+[Run it on a schedule](#run-it-on-a-schedule).
+
+### Claude desktop app
+
+Two ways, depending on what you want:
+
+- **The full set-up:** if your desktop app has Claude Code (its Code section), open the
+  `Day-Trader-PSX` folder there and follow [Claude Code on your computer](#claude-code-on-your-computer-recommended):
+  it runs on your machine, with downloads, files and timers.
+- **Chat with the skills:** add them the way the web app does (next section). They then run in
+  Claude's sandbox, with the same limits as the web and phone apps.
+
+### Claude on the web, iPhone and Android
+
+1. In Claude's settings, turn on **code execution** (skills need it). Skills work on the Free,
+   Pro, Max, Team and Enterprise plans.
+2. On the web or desktop app, open **Customize › Skills** (claude.ai/customize/skills) and add
+   `psx-mufap.zip`, then any desk skills you want, one zip each. Switch each one on.
+3. That's it on the phone too: skills belong to your account, so the iPhone and Android apps
+   use them once they're added.
+4. **Your data:** each new chat starts with an empty sandbox. Attach your latest
+   `pkmarket-backup-….zip` when you start, and Claude restores it; whenever you record something,
+   Claude hands you an updated zip: keep it (Files on iPhone, Downloads on Android) and attach it
+   next time. Make the first one on your computer or phone with `python3 pkdata.py backup`, or let
+   Claude start an empty one.
+5. **Prices:** the sandbox usually can't reach the PSX website. Company news, results and MUFAP
+   come in through Claude's web fetch; daily prices come from the backup made where the daily
+   update runs (your computer or Android phone). On Team and Enterprise plans an owner can allow
+   extra sites for code execution (Admin settings › Capabilities): adding `dps.psx.com.pk` and
+   `www.mufap.com.pk` lets the tools download directly.
+
+### Gemini
+
+- **Gemini app** (Skills, rolling out since 30 September 2026, free; Gems move to Skills): upload
+  the `psx-mufap` folder's files with `SKILL.md` at the top (100 MB limit, no .docx or .xlsx),
+  then type `/psx-mufap` or just ask. Its scripts can't reach websites, so bring your data the same
+  way as in the Claude app: attach your backup (or at least `portfolio/ledger.json` and
+  `config.json` from it) and paste or attach company pages for news.
+- **Gemini CLI on a computer** (runs locally: downloads and files work): install it
+  ([geminicli.com](https://geminicli.com/docs/cli/skills/)), then put the skills where it looks:
+
+  ```bash
+  mkdir -p ~/.agents/skills && cp -r Day-Trader-PSX/psx-* ~/.agents/skills/
+  gemini                                             # then ask, or /skills to see them
+  ```
+
+  (`~/.gemini/skills/` works too; `gemini skills install <git-url>` installs from a repo.)
+
+### ChatGPT
+
+- **ChatGPT Business, Enterprise, Healthcare and Edu:** sidebar › **Plugins › Skills › Create ›
+  Upload from your computer**, one skill at a time (`psx-mufap` first). ChatGPT scans uploaded
+  skills before they can be used, and admins can turn uploading off. Data: as in the Claude app,
+  carry your backup zip.
+- **ChatGPT Plus and Free:** no uploaded skills. Two good routes instead:
+  - **Codex** (OpenAI's coding agent, on your computer): it reads the same `SKILL.md` format from
+    `~/.agents/skills/`, so `mkdir -p ~/.agents/skills && cp -r Day-Trader-PSX/psx-* ~/.agents/skills/`,
+    then run `codex` in any folder and ask. Runs locally, so everything works.
+  - Or run the tools yourself (`python3 pkm.py`) and paste the output into a chat to talk it through.
+
+> [!NOTE]
+> These skills are written and tested with Claude. Gemini and ChatGPT read the same `SKILL.md`
+> files but may follow them differently; the Python tools behave the same everywhere.
+
+### iPhone and iPad
+
+iOS can't run the Python tools in the background, so the iPhone is for **asking and looking**:
+
+- **Ask:** the Claude app (or Gemini, ChatGPT) with the skills added, carrying your backup zip in
+  the Files app ([Claude on the web, iPhone and Android](#claude-on-the-web-iphone-and-android)).
+- **Look:** open your computer's dashboard from anywhere over a private network such as Tailscale
+  ([see the computer's dashboard from your phone](#run-it-on-a-schedule)), or open the one-file
+  `dashboard.html` your computer makes each morning (send it to yourself).
+
+### Just the tools, no AI
+
+Everything the skills do is a command you can run:
+
+```bash
+cd Day-Trader-PSX/psx-mufap/scripts
+python3 pkdata.py init && python3 pkm.py            # a numbered menu asks you questions
+```
+
+The [command cheat sheet](#command-cheat-sheet) lists every command, and `--help` works on all of them.
+
+---
+
+## Talk to it: what to ask
+
+Once the skills are added, ask in plain words. Claude asks first whether to use the last
+download, fetch fresh data or use live prices, says which date it used, and reads every trade back
+before recording it.
+
+| To… | Ask |
+|---|---|
+| **Get the market** | *"How is the market today?"*, *"Top 10 Shariah shares by 3-month return"*, *"Compare LUCK, DGKC and MLCF with dividends"*, *"Live prices for my holdings"* |
+| **Get the news** | *"Any news on OGDC this week?"*, *"Which of my shares have board meetings coming?"*, *"How were MARI's results?"*, *"Are insiders buying HUBC?"* |
+| **Keep the portfolio** | *"My broker is Finqalab"*, *"I bought 500 OGDC at 298 today at 10:42, stop at 280"*, *"Sold 200 at 315"*, *"Record the dividend"*, *"How am I doing: green or red?"*, *"What have my brokers cost me this year?"* |
+| **Decide** | *"What should I sell, hold or buy, with stop-losses?"*, *"Should I buy MEBL at 250? What do I lose at the stop?"*, *"Give me the order tickets for my app"* |
+| **Funds and plans** | *"Which money market funds should I hold?"*, *"25,000 a month for 10 years, rising 10% a year?"*, *"Ask me the risk questions"* |
+| **Trade the day** | *"Scan for breakouts"*, *"Has LUCK triggered?"*, *"Plan it with the stop at the range middle"*, *"What are the odds?"*, *"Size it for a 2,500 rupee max loss"*, *"Risk check"*, *"It filled at 301.6"*, *"Alert me at the stop"* |
+| **Keep your data** | *"Here's my backup"* (attach it), *"Give me my backup"* |
+
+---
+## Your data: where it lives, backups and moving between chats
+
+The code repo holds **no market data and no portfolio**. Everything goes to your data folder:
+`~/pkmarket` on a computer, **Internal storage › pkmarket** on Android, a fresh folder in each
+chat sandbox. Change it with `PKM_HOME=/path` or `--home /path`.
+
+```text
+pkmarket/
+├── config.json            your settings, watchlist and risk style
+├── portfolio/ledger.json  your real trades, funds, brokers, charges and stops   ← precious
+├── psx/<SYMBOL>.csv       daily prices
+├── live.json              the last live prices
+├── companies/             each company's page: announcements, results, payouts
+├── universe.json          every listed share + Shariah flags
+├── payouts.json           latest dividend announcements
+├── mufap/                 daily fund snapshots + NAV history
+├── advice/                daily sell / hold / buy suggestions and order tickets
+├── trader/                the desk: setups, plan, orders, risk verdicts, tickets, alerts
+├── intraday/              today's trades per share, kept day by day (for the time machine)
+├── signals/               a second opinion you imported (PakistaniBulls)
+├── paper/                 your paper account
+├── dashboard/, dashboard.html   the dashboard
+└── daily.log              what the last update did
+```
+
+**One zip carries all of it**, between devices and between chats:
+
+```bash
+python3 pkdata.py backup                     # pkmarket-backup-2026-10-27.zip: records + prices
+python3 pkdata.py backup --small             # just your records (ledger, settings, desk files): tiny
+python3 pkdata.py restore pkmarket-backup-2026-10-27.zip   # on another device, or in a new chat
+```
+
+- **Chat apps** (Claude, Gemini, ChatGPT): attach the latest zip when you start a chat; the
+  assistant restores it, and after you record anything it gives you the new zip. Keep the newest.
+- **Computer and phone together:** make the backup on the machine that runs the daily update, and
+  attach that in the chat apps, so they work with today's prices.
+- **Restore is careful:** it only writes inside the data folder (paths that try to escape it are
+  skipped), and keeps your current `config.json` and ledger as `*.before-restore` unless you say
+  `--replace`.
+
+> [!CAUTION]
+> The backup and the data folder are private: your trades, your brokers, PSX's data. Never commit
+> them to a public repo or share them (PSX doesn't allow its market data to be republished, and your
+> ledger is between you, your broker and the FBR). `.gitignore` already excludes `pkmarket/`.
+
+
 ## Where the data comes from
 
-Straight from the source, end of day, no middlemen, no paid feed:
+Straight from the source, no middlemen, no paid feed:
 
 | What | Where it's downloaded from | Used for |
 |---|---|---|
@@ -88,6 +326,8 @@ Straight from the source, end of day, no middlemen, no paid feed:
 | New dividends and book closures | PSX Data Portal, `/payouts` | dividend calendar, dividends due |
 | Mutual funds: every fund's NAV and returns | MUFAP, `mufap.com.pk` daily performance summary | fund rankings, fund advice, SIP rates |
 | Broker tariffs | Published rate sheets, listed in [`brokers.json`](psx-mufap/brokers.json) | estimating charges |
+| Company announcements, results, insiders' dealings | PSX Data Portal, `/company/<SYMBOL>` (Announcements, Financials, Ratios) | psx-news, psx-analyst, psx-insiders |
+| Today's trades, minute by minute | PSX Data Portal, `/timeseries/int/<SYMBOL>` | opening-range breakouts, psx-entry, the time machine |
 | A second opinion (optional) | PakistaniBulls' PSX signal list: a page you save, or their public list after you accept their terms | the "PakistaniBulls says" column beside the advice |
 
 `pkdata.py` downloads these politely: one page a second. The PSX price page is undocumented,
@@ -99,10 +339,10 @@ so every download is checked before it's saved.
 > its own page's session: a cookie plus a key that every portal page carries (`window.__ps._k`),
 > sent back as an `X-Req-Id` header. The tools do exactly what the portal's own chart does: open
 > a normal page, read the key, then ask for the data. Company pages (`/company/<SYMBOL>`) still
-> open normally. Prices are **end of day**, not live: this is a
-planning tool, not a ticker. Format details are in
-[`references/data-sources.md`](psx-mufap/references/data-sources.md); terms of use are under
-[Data terms](#data-terms).
+> open normally.
+
+Format details are in [`references/data-sources.md`](psx-mufap/references/data-sources.md);
+terms of use are under [Data terms](#data-terms).
 
 ## How it fits together
 
@@ -113,46 +353,27 @@ flowchart LR
     D --> R["rank.py · backtest.py"]
     D --> A["portfolio.py advise<br/>funds.py advise"]
     D --> W["dashboard.py<br/>http://127.0.0.1:8787"]
-    U["You · pkm.py menu · Claude"] --> A
+    D --> K["the desk: scanner, news, entry, exit,<br/>time machine, budget, risk, broker, alerts"]
+    U["You · pkm.py menu · Claude · Gemini · ChatGPT"] --> A
+    U --> K
     U -->|record trades| D
 ```
 
-**One repo, two jobs.** The `psx-mufap/` folder is both:
-
-- a **Claude skill**: `SKILL.md` teaches Claude to use the tools, so you can ask in plain English;
-- a set of **command-line tools** in `psx-mufap/scripts/` that you run yourself.
-
-Claude runs the very same scripts you do. One codebase, no "works on my machine" excuses.
+**One codebase, twelve skills.** The tools live in `psx-mufap/scripts/`. `psx-mufap/` is the main
+skill (its `SKILL.md` teaches the assistant to use them); the 11 desk skills (`psx-scanner/` …
+`psx-insiders/`) each carry a synced copy of the tools they need, so each installs on its own.
+The assistant runs the very same scripts you do: no "works on my machine" excuses.
 
 **Your data never lives in the repo.** Everything downloaded or recorded goes to your own data
-folder (see [Your data and privacy](#your-data-and-privacy)).
-
-## Pick your path
-
-| I have… | Go to | Time |
-|---|---|---|
-| A Linux, macOS or Windows (WSL) computer | [Quick start on a computer](#quick-start-on-a-computer) | 5 minutes |
-| Just an Android phone | [Run it on your Android phone](#run-it-on-your-android-phone) | 20 minutes |
-| The Claude app and a question | [Use it with Claude](#use-it-with-claude) | 1 minute |
-
-## Quick start on a computer
-
-```bash
-git clone https://github.com/salmankhwaja/Day-Trader-PSX.git
-cd Day-Trader-PSX/psx-mufap/scripts
-python3 pkdata.py init             # creates ~/pkmarket/config.json with a starter watchlist
-python3 watchlist.py set OGDC PPL MARI HUBC LUCK MEBL ENGRO SYS   # make it yours
-python3 pkdata.py psx --watchlist  # your first prices
-python3 rank.py stocks             # your first ranking
-```
-
-> [!TIP]
-> Every command below runs from `psx-mufap/scripts`, and `--help` works on all of them.
-> Not a fan of typing? `python3 pkm.py` opens a numbered menu and asks you questions instead.
+folder (see [Your data and privacy](#your-data-where-it-lives-backups-and-moving-between-chats)).
 
 ---
 
 ## Command cheat sheet
+
+> [!TIP]
+> Every command runs from `psx-mufap/scripts` (or a desk skill's `scripts/` folder), and `--help`
+> works on all of them. Not a fan of typing? `python3 pkm.py` opens a numbered menu.
 
 ### 1. Your watchlist
 
@@ -547,6 +768,97 @@ python3 signals.py show MCB OGDC              # or any shares
 
 ---
 
+## The day-trading desk: 11 PSX skills
+
+Eleven more Claude skills, one job each, for trading PSX shares by the day or the week. Each is
+its own folder (`psx-scanner/`, `psx-news/`, …) with its own copy of the code, so each installs on
+its own; they share your data folder, and each one picks up where the last left off (the files in
+`trader/` inside it).
+
+| Skill | Job | What it does |
+|---|---|---|
+| `psx-scanner` | Chart scanner | before the open: breakouts, flags, oversold bounces, 52-week highs, gaps and volume surges in the daily charts; during the session: opening-range breakouts from today's trades; any time: gainers, losers, most traded |
+| `psx-news` | News monitor | each company's PSX announcements (results, dividends and book closures, board meetings, material information, deals, insiders), tagged, with the PDF; warns about board meetings and book closures ahead |
+| `psx-entry` | Entry timer | watches a setup bar by bar: waiting, triggered (a 5-minute close above the level) or expired (fell back, ran too far, too close to the close) |
+| `psx-exit` | Exit planner | the stop, the target and the flat-by time before you enter; checks PSX's daily price limits and reward-to-risk *after charges* |
+| `psx-timemachine` | Time machine | replays the plan 10,000 times from the share's own past (daily moves for swings, 5-minute bars for day trades) and every past day the same setup fired: target first, stop first, or neither |
+| `psx-budget` | Budget manager | how many shares, so a stop-out costs no more than you chose (charges both ways), as a bracket: limit buy, stop-loss, take-profit |
+| `psx-risk` | Risk manager | PASS or BLOCK for each order: stop attached, max loss, reward-to-risk, daily loss limit, trades per day, entry cutoff, size, cash, holdings cap, price limits, no short selling |
+| `psx-broker` | Order tickets | READY tickets to type into your app (only orders that passed psx-risk, unchanged), the fill recorded into your ledger, and the sell tickets to get flat by the close |
+| `psx-alerts` | Price alerts | rings once at a price, a stop, a target, a % move or a time; one live request covers every share; phone notifications in Termux |
+| `psx-analyst` | Results analyst | latest quarter and year from the company's PSX page: sales, profit, EPS, margins, growth, P/E, payout ratio, and the results PDF |
+| `psx-insiders` | Insider tracker | directors', executives' and sponsors' dealings in their own company's shares, from the disclosure notices on PSX |
+
+**One trade, start to finish:**
+
+```mermaid
+flowchart LR
+    A[psx-scanner] --> B[psx-news] --> C[psx-entry] --> D[psx-exit] --> E[psx-timemachine] --> F[psx-budget] --> G[psx-risk] --> H[psx-broker]
+    H --> I[psx-alerts]
+```
+
+```bash
+cd psx-mufap/scripts                                  # the same tools, all in one place
+python3 scanner.py daily --live                       # 09:00: what's setting up
+python3 news.py --setups                              # anything announced on those?
+python3 scanner.py orb                                # 09:50: opening-range breakouts so far
+python3 entry.py watch OGDC                           # rings when it triggers
+python3 exitplan.py plan OGDC --stop or-mid --target 2R --write   # stop, target, flat by 15:20
+python3 timemachine.py run --write                    # the honest odds
+python3 budget.py --max-loss 2500 --write             # how many shares, as a bracket
+python3 risk.py check --live                          # PASS or BLOCK
+python3 broker.py show                                # the tickets; you type them into your app
+python3 broker.py filled E1 --price 301.60            # it filled: into your portfolio ledger
+python3 alerts.py add --from-plan && python3 alerts.py watch   # stop, target and 15:20
+python3 broker.py flatten                             # near the close: get flat
+python3 analyst.py OGDC MARI                          # results, any time
+python3 insiders.py --days 90                         # insiders' dealings, any time
+python3 intraday.py OGDC                              # today's 5-minute bars
+```
+
+Or ask Claude in plain words: *"scan for breakouts"*, *"has LUCK triggered?"*, *"plan a day
+trade in OGDC with the stop at the range middle"*, *"what are the odds?"*, *"size it for a 2,500
+rupee max loss"*, *"risk check"*, *"give me the tickets for Finqalab"*, *"it filled at 301.6"*,
+*"alert me at the stop"*, *"how were MARI's results?"*, *"are insiders selling HUBC?"*. In the
+menu: `pkm.py` › **18 Day-trading desk**.
+
+**PSX realities built in:**
+
+| PSX fact | How the desk uses it |
+|---|---|
+| Sessions: Mon-Thu 09:32-15:30 (pre-open 09:15); Fri 09:17-12:00 and 14:32-16:30 | the opening range starts at the open; flat-by is `flat_by_min` before the close; no day-trade entries in the last `entry_cutoff_min`; Friday's lunch break is "break", not "open" |
+| Daily price limit: 10% (or Rs 1) from yesterday's close | targets beyond it can't fill today; orders outside it are blocked; the scanner flags shares locked at a limit |
+| Charges both ways (commission, sales tax, CDC, levies) | every reward-to-risk is shown after charges; tight day trades often fail here |
+| T+1 settlement, no retail short selling | cash must be there; sells only of shares you hold |
+| No public order API on retail apps | tickets you type; Finqalab's stop-losses last one day, so they're re-listed each morning |
+| Free data: daily closes without highs/lows; intraday trades for today only | swing replays use closes (said so); each day's intraday trades are cached, so day-trade replays grow with use (10 sessions needed) |
+
+Their limits are part of your risk style (`risk.py settings`, `risk.py set KEY VALUE`):
+`orb_minutes`, `max_trades_per_day`, `daily_loss_limit_pct`, `min_reward_risk`,
+`entry_cutoff_min`, `flat_by_min`, `scan_min_value_traded` (see [Settings](#settings)).
+
+**Install them:**
+
+```bash
+# Claude Code: copy the skill folders (or install the plugin: all twelve skills come with it)
+cp -r Day-Trader-PSX/psx-* ~/.claude/skills/
+
+# Claude app: one zip per skill (from the releases page, or make them), each uploaded under Customize › Skills
+cd Day-Trader-PSX && for d in psx-*; do zip -r "$d.zip" "$d" -x '*__pycache__*'; done
+```
+
+> [!NOTE]
+> The code lives once, in `psx-mufap/scripts/`. `python3 tools/sync_skills.py` copies what each
+> desk skill needs into its folder (the tests fail if a copy is out of date), so edit the code in
+> `psx-mufap/scripts/` only.
+
+**Credits.** The desk's shape (eleven single-job skills, from scanner to broker, with a time
+machine and a risk gate) comes from [Jake Schincariol's day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill)
+(MIT), built for US stocks. These are new tools written for PSX: its data portal, sessions, price
+limits, charges, announcements and brokers. Thank you, Jake.
+
+---
+
 ## Your risk style
 
 **Wanting maximum profit is natural. Wanting it without risk is a different hobby.** Every
@@ -855,144 +1167,6 @@ No timer, no background dashboard, but very easy:
 
 ---
 
-## Use it with Claude
-
-**Claude app (phone, web, desktop):** download `psx-mufap.zip` from the
-[releases page](https://github.com/salmankhwaja/Day-Trader-PSX/releases), or make it yourself:
-
-```bash
-zip -r psx-mufap.zip psx-mufap
-```
-
-Then add it as a custom skill in Claude's settings, and just ask:
-
-- *"Top 5 Shariah-compliant stocks by 3-month return"*
-- *"Compare LUCK, DGKC and MLCF, including dividends"*
-- *"I bought 500 OGDC at 298 through AKD today, commission 223.50, stop-loss at 280"*
-- *"What should I sell, and what could I buy, with stop-losses?"* (Claude asks whether to fetch fresh data first, then says which date the advice is based on)
-- *"Should I buy MEBL at 250? What do I lose if it hits the stop?"*
-- *"Add LUCK and DGKC to my watchlist and drop TRG"*, *"Put the top 5 Shariah cement shares on my watchlist"*
-- *"Here's the PakistaniBulls signal page I saved: does it agree with your advice?"*
-- *"Which Shariah money market funds should I consider, and how do mine compare?"*
-- *"How much have I paid each broker this year, and what's my realised profit?"*
-- *"Add my broker: 0.12% or 3 paisa a share, whichever is higher, Sindh sales tax"*
-- *"Ask me the risk questions and set my style"*, *"Make me more aggressive, but no more than 6 shares"*
-- *"How much am I risking right now if every stop is hit?"*
-- *"If I invest 25,000 a month for 10 years, raising it 10% a year, what could I have?"*
-
-Claude reads a trade back to you before recording it, and asks for anything important you left
-out.
-
-> [!NOTE]
-> Claude's phone sandbox blocks most websites. It fetches pages with its own web tools instead,
-> which works for MUFAP; PSX pages may stay out of reach. For full PSX data in the Claude app, run
-> the daily update on a computer and keep the data folder in **your own private** git repo: set
-> `PKM_HOME` to it and `PKM_GIT_PUSH=1`. Claude can then read your data from there.
-
-**Claude Code:**
-
-```bash
-cp -r Day-Trader-PSX/psx-mufap ~/.claude/skills/
-```
-
-Or install it as a plugin: `/plugin marketplace add salmankhwaja/Day-Trader-PSX`, then
-`/plugin install psx-mufap@pk-market-skill`.
-
-Want the 11 day-trading desk skills too? See the next section.
-
----
-
-## The day-trading desk: 11 PSX skills
-
-Eleven more Claude skills, one job each, for trading PSX shares by the day or the week. Each is
-its own folder (`psx-scanner/`, `psx-news/`, …) with its own copy of the code, so each installs on
-its own; they share your data folder, and each one picks up where the last left off (the files in
-`trader/` inside it).
-
-| Skill | Job | What it does |
-|---|---|---|
-| `psx-scanner` | Chart scanner | before the open: breakouts, flags, oversold bounces, 52-week highs, gaps and volume surges in the daily charts; during the session: opening-range breakouts from today's trades; any time: gainers, losers, most traded |
-| `psx-news` | News monitor | each company's PSX announcements (results, dividends and book closures, board meetings, material information, deals, insiders), tagged, with the PDF; warns about board meetings and book closures ahead |
-| `psx-entry` | Entry timer | watches a setup bar by bar: waiting, triggered (a 5-minute close above the level) or expired (fell back, ran too far, too close to the close) |
-| `psx-exit` | Exit planner | the stop, the target and the flat-by time before you enter; checks PSX's daily price limits and reward-to-risk *after charges* |
-| `psx-timemachine` | Time machine | replays the plan 10,000 times from the share's own past (daily moves for swings, 5-minute bars for day trades) and every past day the same setup fired: target first, stop first, or neither |
-| `psx-budget` | Budget manager | how many shares, so a stop-out costs no more than you chose (charges both ways), as a bracket: limit buy, stop-loss, take-profit |
-| `psx-risk` | Risk manager | PASS or BLOCK for each order: stop attached, max loss, reward-to-risk, daily loss limit, trades per day, entry cutoff, size, cash, holdings cap, price limits, no short selling |
-| `psx-broker` | Order tickets | READY tickets to type into your app (only orders that passed psx-risk, unchanged), the fill recorded into your ledger, and the sell tickets to get flat by the close |
-| `psx-alerts` | Price alerts | rings once at a price, a stop, a target, a % move or a time; one live request covers every share; phone notifications in Termux |
-| `psx-analyst` | Results analyst | latest quarter and year from the company's PSX page: sales, profit, EPS, margins, growth, P/E, payout ratio, and the results PDF |
-| `psx-insiders` | Insider tracker | directors', executives' and sponsors' dealings in their own company's shares, from the disclosure notices on PSX |
-
-**One trade, start to finish:**
-
-```mermaid
-flowchart LR
-    A[psx-scanner] --> B[psx-news] --> C[psx-entry] --> D[psx-exit] --> E[psx-timemachine] --> F[psx-budget] --> G[psx-risk] --> H[psx-broker]
-    H --> I[psx-alerts]
-```
-
-```bash
-cd psx-mufap/scripts                                  # the same tools, all in one place
-python3 scanner.py daily --live                       # 09:00: what's setting up
-python3 news.py --setups                              # anything announced on those?
-python3 scanner.py orb                                # 09:50: opening-range breakouts so far
-python3 entry.py watch OGDC                           # rings when it triggers
-python3 exitplan.py plan OGDC --stop or-mid --target 2R --write   # stop, target, flat by 15:20
-python3 timemachine.py run --write                    # the honest odds
-python3 budget.py --max-loss 2500 --write             # how many shares, as a bracket
-python3 risk.py check --live                          # PASS or BLOCK
-python3 broker.py show                                # the tickets; you type them into your app
-python3 broker.py filled E1 --price 301.60            # it filled: into your portfolio ledger
-python3 alerts.py add --from-plan && python3 alerts.py watch   # stop, target and 15:20
-python3 broker.py flatten                             # near the close: get flat
-python3 analyst.py OGDC MARI                          # results, any time
-python3 insiders.py --days 90                         # insiders' dealings, any time
-python3 intraday.py OGDC                              # today's 5-minute bars
-```
-
-Or ask Claude in plain words: *"scan for breakouts"*, *"has LUCK triggered?"*, *"plan a day
-trade in OGDC with the stop at the range middle"*, *"what are the odds?"*, *"size it for a 2,500
-rupee max loss"*, *"risk check"*, *"give me the tickets for Finqalab"*, *"it filled at 301.6"*,
-*"alert me at the stop"*, *"how were MARI's results?"*, *"are insiders selling HUBC?"*. In the
-menu: `pkm.py` › **18 Day-trading desk**.
-
-**PSX realities built in:**
-
-| PSX fact | How the desk uses it |
-|---|---|
-| Sessions: Mon-Thu 09:32-15:30 (pre-open 09:15); Fri 09:17-12:00 and 14:32-16:30 | the opening range starts at the open; flat-by is `flat_by_min` before the close; no day-trade entries in the last `entry_cutoff_min`; Friday's lunch break is "break", not "open" |
-| Daily price limit: 10% (or Rs 1) from yesterday's close | targets beyond it can't fill today; orders outside it are blocked; the scanner flags shares locked at a limit |
-| Charges both ways (commission, sales tax, CDC, levies) | every reward-to-risk is shown after charges; tight day trades often fail here |
-| T+1 settlement, no retail short selling | cash must be there; sells only of shares you hold |
-| No public order API on retail apps | tickets you type; Finqalab's stop-losses last one day, so they're re-listed each morning |
-| Free data: daily closes without highs/lows; intraday trades for today only | swing replays use closes (said so); each day's intraday trades are cached, so day-trade replays grow with use (10 sessions needed) |
-
-Their limits are part of your risk style (`risk.py settings`, `risk.py set KEY VALUE`):
-`orb_minutes`, `max_trades_per_day`, `daily_loss_limit_pct`, `min_reward_risk`,
-`entry_cutoff_min`, `flat_by_min`, `scan_min_value_traded` (see [Settings](#settings)).
-
-**Install them:**
-
-```bash
-# Claude Code: copy the skill folders (or install the plugin: all twelve skills come with it)
-cp -r Day-Trader-PSX/psx-* ~/.claude/skills/
-
-# Claude app: one zip per skill (from the releases page, or make them), each uploaded under Customize › Skills
-cd Day-Trader-PSX && for d in psx-*; do zip -r "$d.zip" "$d" -x '*__pycache__*'; done
-```
-
-> [!NOTE]
-> The code lives once, in `psx-mufap/scripts/`. `python3 tools/sync_skills.py` copies what each
-> desk skill needs into its folder (the tests fail if a copy is out of date), so edit the code in
-> `psx-mufap/scripts/` only.
-
-**Credits.** The desk's shape (eleven single-job skills, from scanner to broker, with a time
-machine and a risk gate) comes from [Jake Schincariol's day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill)
-(MIT), built for US stocks. These are new tools written for PSX: its data portal, sessions, price
-limits, charges, announcements and brokers. Thank you, Jake.
-
----
-
 ## Settings
 
 `config.json` in your data folder. `pkdata.py init` creates it; anything you leave out comes from
@@ -1071,6 +1245,8 @@ in `config.json`); `risk.py settings` shows what's in effect and where it came f
 Real brokers' charges don't live here; they live with each broker in your ledger. See
 [Brokers and their charges](#brokers-and-their-charges).
 
+---
+
 ## Brokers and their charges
 
 Commissions are negotiable. The tax man, less so. The presets in
@@ -1110,40 +1286,14 @@ trading morning". The 07:00 daily run refreshes them, ready to copy before the 0
 > (`--commission-pct`, `--per-share`, `--sales-tax-pct`) or edit the file. Charges you type in
 > from a contract note always override the estimate.
 
-## Your data and privacy
-
-The code repo holds **no market data and no portfolio**. Everything goes to your data folder:
-`~/pkmarket` on a computer, **Internal storage › pkmarket** on Android. Change it with
-`PKM_HOME=/path` or `--home /path`.
-
-```text
-pkmarket/
-├── config.json            your settings
-├── universe.json          every listed share + Shariah flags
-├── psx/<SYMBOL>.csv       daily prices
-├── companies/             sector, P/E, dividend history per company
-├── payouts.json           latest dividend announcements
-├── mufap/                 daily fund snapshots + NAV history
-├── portfolio/ledger.json  your real trades, funds, brokers and charges  ← back this up
-├── advice/                daily sell / hold / buy suggestions
-├── paper/portfolio.json   your paper account
-├── proposals/             paper portfolio proposals
-├── dashboard/             the dashboard (served at 127.0.0.1:8787)
-├── dashboard.html         the one-file dashboard
-└── daily.log              what the last update did
-```
-
-> [!CAUTION]
-> Never commit this folder to a public repo. PSX doesn't allow its market data to be
-> republished, and your ledger is between you, your broker and the FBR. (`.gitignore` already
-> excludes `pkmarket/`.)
-
 ---
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
+| A new chat doesn't know my portfolio | Chat sandboxes start empty | Attach your latest `pkmarket-backup-….zip`; ask for a new one after recording anything |
+| "I can't reach the PSX website" in a chat app | The sandbox's network is limited | Use the backup from the machine that runs the daily update; news and MUFAP still come in through the assistant's web fetch |
 | A download says `FAILED` | PSX or MUFAP busy, down, or blocked on this network | Try later. One failed share doesn't stop the rest. Or save the page and use `--from-file` |
 | `timeseries/eod/<SYMBOL>` gives 404 in a browser | The portal now wants its own page's session key | Normal: the tools send it. If the tools fail too, update the repo; to save a price file by hand, open the company page, find the `eod` request in the browser's developer tools (Network tab) and save its response for `--from-file` |
 | Advice is on old prices | You chose the last fetch, or it ran unattended | Run it again with `--fetch` or `--live`; the "Based on" line always shows what was used |
@@ -1159,7 +1309,13 @@ pkmarket/
 | Charts are blank | No internet for the chart library | The charts load Chart.js from cdnjs; get online |
 | Termux: "Permission denied" on storage | Storage not granted | `termux-setup-storage`, Allow, rerun `android_setup.sh` |
 
+---
+
 ## FAQ
+
+**Do I need Claude?** No. Claude Code is the smoothest, the Claude app is the handiest on a
+phone, Gemini and ChatGPT read the same skills, and every tool also runs on its own
+(`python3 pkm.py`). See [Set it up](#set-it-up).
 
 **Will it make me rich?** It will make you *informed*, which is cheaper and more reliable.
 
@@ -1194,6 +1350,8 @@ dashboard's charts need the internet.
 dividends, so heavy payers look weaker on price returns. The dividend yield column evens the
 score.
 
+---
+
 ## Data terms
 
 What's downloaded, from where, is in [Where the data comes from](#where-the-data-comes-from).
@@ -1208,6 +1366,8 @@ What's downloaded, from where, is in [Where the data comes from](#where-the-data
 - The PSX endpoints are undocumented and can change; the parsers fail loudly when they do.
   Details are in [`psx-mufap/references/data-sources.md`](psx-mufap/references/data-sources.md).
 
+---
+
 ## Honest limits
 
 - Prices exclude dividends, so buy-and-hold returns of high payers are understated.
@@ -1218,6 +1378,8 @@ What's downloaded, from where, is in [Where the data comes from](#where-the-data
   with `--taxes` on a sale if you want it in your P/L.
 - Broker presets come from published tariffs and summaries that can go out of date; your
   contract note is the truth.
+
+---
 
 ## Repo layout
 
@@ -1273,6 +1435,8 @@ Run the tests with no network needed:
 ```bash
 python3 -m unittest discover tests
 ```
+
+---
 
 ## Contributing
 
