@@ -202,6 +202,8 @@ python3 pkdata.py psx LUCK DGKC MLCF              # just these symbols
 python3 pkdata.py psx OGDC --from-file ogdc.json  # import a page you saved yourself
 python3 pkdata.py status                          # what's on disk, and how fresh
 python3 pkdata.py live                            # live prices: your watchlist and holdings, one request
+                                                  # (the daily update runs it too: every share's last trade
+                                                  #  feeds the dashboard's All shares by sector view)
 ```
 
 > [!NOTE]
@@ -889,7 +891,7 @@ Congratulations: you now have a trading terminal that cost less than a samosa.
 | Tab | Shows |
 |---|---|
 | Overview | KSE-100, sectors, top-ranked shares, dividends coming up |
-| Screener | every ranked share; filter by sector, Shariah, yield; tick to compare |
+| Screener | **Ranked**: every ranked share (price history on file, liquid enough); **All shares by sector**: every listed share grouped by sector, best day first, with price, change, volume and a **Mover** column (▲ top-10 gainer, ▼ top-10 loser, ◆ top-10 most traded among shares trading at least Rs 5 million that day, ★ the sector's best gainer); filter by sector, Shariah, yield, watchlist, holdings or *Movers only*; tick to compare |
 | Compare | up to 6 companies side by side, dividends included |
 | My portfolio | **order tickets** for your broker's app; **bought vs now**: each holding (and each purchase) GREEN or RED, with when you bought and when the price is from; what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; the price calculator (rupees at the stop and at the target, reward-to-risk); your funds; costs by broker; realised P/L |
 | Paper · Dividends · Funds | practice account, dividend calendar, MUFAP rankings |

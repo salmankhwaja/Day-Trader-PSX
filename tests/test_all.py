@@ -365,6 +365,25 @@ class TestDashboard(Market):
         self.assertNotIn('<script src="app.js">', page)
         self.assertNotIn("</script><script>alert", page)
 
+    def test_all_shares_by_sector(self):
+        # Before a market-watch snapshot: every share on file, change from its last two closes.
+        m = dashboard.build_data(self.h, self.cfg)["market"]
+        rows = {r["symbol"]: r for r in m["rows"]}
+        self.assertTrue({"SYN00", "SYN07"} <= set(rows))
+        self.assertTrue(rows["SYN07"]["source"].startswith("close "))
+        self.assertIsNotNone(rows["SYN07"]["change"])
+        self.assertTrue(all(r["sector"] == r["sector"].upper() for r in m["rows"]))
+        self.assertEqual((m["movers_max"], m["movers_min_value"]), (SC.MOVERS_MAX, SC.MOVERS_MIN_VALUE))
+        # After one: every quoted share, ranked or not, with the day's change, volume and sector.
+        run(pkdata.main, ["--home", self.h, "live", "--from-file", os.path.join(FIX, "psx-market-watch.html")])
+        m = dashboard.build_data(self.h, self.cfg)["market"]
+        rows = {r["symbol"]: r for r in m["rows"]}
+        self.assertEqual(rows["SYN00"]["source"], "market watch")
+        self.assertAlmostEqual(rows["SYN00"]["change"], 0.02)
+        self.assertEqual(rows["SYN00"]["volume"], 125000)
+        self.assertTrue(m["as_of"])
+        self.assertGreaterEqual(len(m["rows"]), len([r for r in m["rows"] if r["ranked"]]))
+
     def test_server_is_read_only_and_needs_password_off_loopback(self):
         import threading
         import urllib.error

@@ -30,7 +30,7 @@
 
   var D = null, bySym = {}, charts = {}, rendered = {};
   var SLOTS = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
-  var state = { compare: [], slots: {}, cRange: 250, ovRange: 250, sort: { key: "score", dir: -1 } };
+  var state = { compare: [], slots: {}, cRange: 250, ovRange: 250, sort: { key: "score", dir: -1 }, scMode: store("scMode") || "ranked" };
 
   function chart(id, cfg) {
     if (charts[id]) charts[id].destroy();
@@ -178,23 +178,74 @@
   var SC_COLS = [
     ["sel", "", null], ["symbol", "Stock", "l"], ["name", "Name", "l hide-m"], ["sector", "Sector", "l"], ["close", "Close / live"],
     ["r1m", "1M"], ["r3m", "3M"], ["r1y", "1Y"], ["vs_idx_3m", "3M vs idx"], ["vol", "Volatility"], ["sharpe", "Sharpe"],
-    ["yield", "Div yield"], ["pe", "P/E"], ["trend", "Trend"], ["score", "Score"]
+    ["yield", "Div yield"], ["pe", "P/E"], ["trend", "Trend"], ["score", "Score"], ["mover", "Mover", "l"]
   ];
-  function val(s, k) { return k === "yield" ? (s.div || {}).yield : s[k]; }
+  function val(s, k) {
+    if (k === "mover") { var t = (MV || {})[s.symbol]; return t ? t.length : null; }
+    return k === "yield" ? (s.div || {}).yield : s[k];
+  }
+
+  // Movers: every listed share's day (market.rows, from the last market-watch snapshot or the last
+  // two closes), with live quotes laid over when Live is on. Top N gainers, losers and most traded
+  // among shares trading at least movers_min_value rupees, and each sector's best gainer.
+  var MV = null;
+  function marketRows() {
+    return ((D.market || {}).rows || []).map(function (r) {
+      var x = quote(r.symbol);
+      if (!x) return r;
+      return Object.assign({}, r, { price: x.current, change: x.change_pct == null ? r.change : x.change_pct / 100,
+        volume: x.volume, value: x.current && x.volume ? x.current * x.volume : null, source: "live" });
+    });
+  }
+  function moverTags(rows) {
+    var M = D.market || {}, n = M.movers_max || 10, floor = M.movers_min_value || 5e6, out = {}, best = {};
+    function add(s, t) { (out[s] = out[s] || []).push(t); }
+    var liq = rows.filter(function (r) { return r.change != null && (r.value || 0) >= floor; });
+    liq.slice().sort(function (a, b) { return b.change - a.change; }).slice(0, n).forEach(function (r, i) {
+      if (r.change > 0) add(r.symbol, ["up", "▲ Gainer #" + (i + 1)]);
+    });
+    liq.slice().sort(function (a, b) { return a.change - b.change; }).slice(0, n).forEach(function (r, i) {
+      if (r.change < 0) add(r.symbol, ["down", "▼ Loser #" + (i + 1)]);
+    });
+    liq.slice().sort(function (a, b) { return (b.volume || 0) - (a.volume || 0); }).slice(0, n).forEach(function (r, i) {
+      add(r.symbol, ["act", "◆ Most traded #" + (i + 1)]);
+    });
+    liq.forEach(function (r) { if (r.change > 0 && (!best[r.sector] || r.change > best[r.sector].change)) best[r.sector] = r; });
+    Object.keys(best).forEach(function (k) { add(best[k].symbol, ["sec", "★ Sector best"]); });
+    return out;
+  }
+  function moverHtml(sym) {
+    var t = (MV || {})[sym];
+    return t ? t.map(function (x) { return "<span class='mv " + x[0] + "'>" + esc(x[1]) + "</span>"; }).join(" ") : "<span class='muted'>–</span>";
+  }
   function renderScreener() {
     if (!rendered.screener) {
       var secs = Array.from(new Set(D.stocks.map(function (s) { return s.sector; }).filter(Boolean))).sort();
       $("f-sector").innerHTML = '<option value="">All sectors</option>' + secs.map(function (s) { return "<option>" + esc(s) + "</option>"; }).join("");
-      ["f-q", "f-sector", "f-sh", "f-watch", "f-held", "f-yield"].forEach(function (id) { $(id).oninput = drawScreener; $(id).onchange = drawScreener; });
+      var secs2 = Array.from(new Set(secs.concat(((D.market || {}).rows || []).map(function (r) { return r.sector; }))
+        .map(function (s) { return String(s).toUpperCase(); }))).sort();
+      $("f-sector").innerHTML = '<option value="">All sectors</option>' + secs2.map(function (s) { return "<option>" + esc(s) + "</option>"; }).join("");
+      ["f-q", "f-sector", "f-sh", "f-watch", "f-held", "f-yield", "f-mov"].forEach(function (id) { $(id).oninput = drawScreener; $(id).onchange = drawScreener; });
+      $("f-mode").onclick = function (e) {
+        var m = e.target.getAttribute("data-m");
+        if (!m) return;
+        state.scMode = m; store("scMode", m); drawScreener();
+      };
       $("f-compare").onclick = function () { show("compare"); };
     }
     drawScreener();
   }
   function drawScreener() {
+    MV = moverTags(marketRows());
+    Array.prototype.forEach.call($("f-mode").querySelectorAll("button"), function (b) {
+      b.classList.toggle("on", b.getAttribute("data-m") === state.scMode);
+    });
+    if (state.scMode === "sector") return drawSectors();
     var q = $("f-q").value.trim().toLowerCase(), sec = $("f-sector").value, my = parseFloat($("f-yield").value);
     var rows = D.stocks.filter(function (s) {
       if (q && s.symbol.toLowerCase().indexOf(q) < 0 && (s.name || "").toLowerCase().indexOf(q) < 0) return false;
-      if (sec && s.sector !== sec) return false;
+      if (sec && (s.sector || "").toUpperCase() !== sec.toUpperCase()) return false;
+      if ($("f-mov").checked && !MV[s.symbol]) return false;
       if ($("f-sh").checked && !s.shariah) return false;
       if ($("f-watch").checked && !s.watch) return false;
       if ($("f-held").checked && !s.owned && !s.held) return false;
@@ -218,12 +269,61 @@
         cell(quote(s.symbol) ? "<b>" + num(quote(s.symbol).current, 2) + "</b> <span class='small " + sgn(quote(s.symbol).change_pct) + "'>" +
           pct((quote(s.symbol).change_pct || 0) / 100) + "</span>" : num(s.close, 2)) + cell(pct(s.r1m), sgn(s.r1m)) + cell(pct(s.r3m), sgn(s.r3m)) + cell(pct(s.r1y), sgn(s.r1y)) +
         cell(pct(s.vs_idx_3m), sgn(s.vs_idx_3m)) + cell(pctAbs(s.vol, 0)) + cell(s.sharpe == null ? "–" : s.sharpe.toFixed(2)) +
-        cell(pctAbs((s.div || {}).yield)) + cell(s.pe == null ? "–" : num(s.pe, 1)) + cell(esc(s.trend)) + cell(num(s.score)) + "</tr>";
+        cell(pctAbs((s.div || {}).yield)) + cell(s.pe == null ? "–" : num(s.pe, 1)) + cell(esc(s.trend)) + cell(num(s.score)) + cell(moverHtml(s.symbol), "l") + "</tr>";
     }).join("") + "</tbody>";
     $("sc-note").textContent = rows.length + " shares" + (rows.length > shown.length ? " (first 400 shown)" : "") +
       ". Tap a column to sort, tick boxes to compare (up to 6). " + (D.notes.illiquid_left_out ? D.notes.illiquid_left_out + " illiquid shares left out. " : "") +
       D.notes.face_value_note;
     $("f-compare").textContent = "Compare selected (" + state.compare.length + ")";
+  }
+  // Every listed share, grouped by sector, best day first inside each sector.
+  function drawSectors() {
+    var q = $("f-q").value.trim().toLowerCase(), sec = $("f-sector").value, my = parseFloat($("f-yield").value);
+    var all = marketRows();
+    var rows = all.filter(function (r) {
+      if (q && r.symbol.toLowerCase().indexOf(q) < 0 && (r.name || "").toLowerCase().indexOf(q) < 0) return false;
+      if (sec && r.sector !== sec.toUpperCase()) return false;
+      if ($("f-sh").checked && !r.shariah) return false;
+      if ($("f-watch").checked && !r.watch) return false;
+      if ($("f-held").checked && !r.owned) return false;
+      if ($("f-mov").checked && !MV[r.symbol]) return false;
+      if (!isNaN(my) && !((((bySym[r.symbol] || {}).div || {}).yield || 0) * 100 >= my)) return false;
+      return true;
+    });
+    var groups = {};
+    rows.forEach(function (r) { (groups[r.sector] = groups[r.sector] || []).push(r); });
+    var names = Object.keys(groups).sort();
+    var head = "<thead><tr><th class='l'>Stock</th><th class='l hide-m'>Name</th><th>Price</th><th>Change</th>" +
+      "<th class='hide-m'>Volume</th><th class='l'>Mover</th><th>Score</th></tr></thead>";
+    var body = names.map(function (n) {
+      var g = groups[n].sort(function (a, b) {
+        if (a.change == null && b.change == null) return a.symbol.localeCompare(b.symbol);
+        if (a.change == null) return 1; if (b.change == null) return -1;
+        return b.change - a.change;
+      });
+      var ch = g.filter(function (r) { return r.change != null; }).map(function (r) { return r.change; });
+      var avg = ch.length ? ch.reduce(function (a, b) { return a + b; }, 0) / ch.length : null;
+      var up = ch.filter(function (x) { return x > 0; }).length, dn = ch.filter(function (x) { return x < 0; }).length;
+      return "<tr class='grp'><td colspan='7'>" + esc(n) + " <span class='muted small'>· " + g.length + " shares · average " +
+        "<span class='" + sgn(avg) + "'>" + pct(avg, 2) + "</span> · ▲ " + up + " ▼ " + dn + "</span></td></tr>" +
+        g.map(function (r) {
+          var sym = bySym[r.symbol] ? symCell(Object.assign({}, bySym[r.symbol])) :
+            "<b>" + esc(r.symbol) + "</b>" + (r.shariah ? '<span class="tag sh" title="KMI All Share (Shariah-compliant)">☪</span>' : "") +
+            (r.owned ? '<span class="tag own">owned</span>' : "");
+          return "<tr>" + cell(sym, "l") + cell(esc((r.name || "").slice(0, 30)), "l hide-m") +
+            cell(r.price == null ? "–" : num(r.price, 2)) + cell(pct(r.change, 2), sgn(r.change)) +
+            cell(r.volume == null ? "–" : num(r.volume), "hide-m") + cell(moverHtml(r.symbol), "l") +
+            cell(r.score == null ? "<span class='muted' title='No price history on file, or too thinly traded to rank'>–</span>" : num(r.score)) + "</tr>";
+        }).join("");
+    }).join("");
+    $("sc-table").innerHTML = head + "<tbody>" + (body || "<tr><td class='l muted' colspan='7'>No shares match.</td></tr>") + "</tbody>";
+    var M = D.market || {};
+    var src = all.some(function (r) { return r.source === "live"; }) ? "live prices" :
+      M.as_of ? "the PSX market watch at " + M.as_of : "the last two closes on file";
+    $("sc-note").textContent = rows.length + " of " + all.length + " listed shares in " + names.length + " sectors; the day's change from " + src + ". " +
+      "Mover: top " + (M.movers_max || 10) + " gainers, losers and most traded among shares trading at least Rs " + num(M.movers_min_value || 5e6) +
+      " that day, and each sector's best gainer. Score is blank for shares without price history on file or too thinly traded to rank." +
+      (all.length < 100 ? " Only " + all.length + " shares on file: run pkdata.py universe and pkdata.py live (or the daily update) to list every share." : "");
   }
   $("sc-table").addEventListener("click", function (e) {
     var th = e.target.closest("th");

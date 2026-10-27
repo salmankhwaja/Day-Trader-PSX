@@ -7,8 +7,10 @@
 
 The dashboard has five views:
   Overview   KSE-100, sector league table, top-ranked shares, upcoming dividends
-  Screener   every ranked share; filter by sector, Shariah, dividend yield, watchlist or holdings;
-             tick shares to compare
+  Screener   "Ranked": every ranked share (shares with price history on file, liquid enough);
+             "All by sector": every listed share grouped by sector, with the day's change and a
+             Mover column (top 10 gainers, losers and most traded, and each sector's best);
+             filter by sector, Shariah, dividend yield, watchlist, holdings or movers; tick to compare
   Compare    up to 6 shares: rebased price chart, returns, risk, valuation, dividends side by side
   Portfolio  the paper account: value vs KSE-100, allocation, holdings with review actions,
              dividends received, the latest proposal
@@ -282,7 +284,49 @@ def build_data(h, cfg, all_=None, days=500):
         "dividend_calendar": calendar, "portfolio": portfolio, "proposal": proposal, "funds": funds,
         "mine": mine,
         "risk": risk_block(h, cfg),
+        "market": market_block(h, cfg, stocks),
     }
+
+
+def market_block(h, cfg, stocks):
+    """Every listed share, grouped by sector in the page: price, the day's change and volume, for
+    the Screener's "All shares by sector" view. Sources, best first: the last market-watch snapshot
+    (live.json: one request covers every share), else the last two daily closes on file, else the
+    index page's price in universe.json. Sector: the ranked data, the company page, the market watch."""
+    import freshness as F
+    import scanner
+    uni = P.load_universe(h)
+    snap = F.load_live(h) or {}
+    quotes = snap.get("quotes") or {}
+    by = {s["symbol"]: s for s in stocks}
+    rows = []
+    for sym in sorted(set(uni) | set(quotes) | set(by)):
+        u, x, st = uni.get(sym) or {}, quotes.get(sym) or {}, by.get(sym) or {}
+        sector = st.get("sector")
+        if not sector:
+            sector = (P.load_company(h, sym) or {}).get("sector") or x.get("sector")
+        price = change = volume = None
+        src = None
+        if x.get("current"):
+            price, volume, src = x["current"], x.get("volume"), "market watch"
+            change = x["change_pct"] / 100 if x.get("change_pct") is not None else None
+        elif os.path.exists(C.price_path(h, sym)):
+            last = C.read_prices(C.price_path(h, sym), live=False)[-2:]
+            if last:
+                price, volume, src = last[-1]["close"], last[-1].get("volume"), "close " + last[-1]["date"]
+                if len(last) == 2 and last[0]["close"]:
+                    change = last[-1]["close"] / last[0]["close"] - 1
+        elif u.get("price"):
+            price, src = u["price"], "index page"
+        rows.append({"symbol": sym, "name": st.get("name") or u.get("name") or (x.get("name")),
+                     "sector": (sector or "").strip().upper() or "UNCLASSIFIED",
+                     "shariah": st.get("shariah") if st else u.get("shariah"),
+                     "price": price, "change": r4(change), "volume": volume,
+                     "value": round(price * volume) if price and volume else None, "source": src,
+                     "ranked": bool(st), "score": st.get("score"), "watch": st.get("watch", False),
+                     "owned": st.get("owned", False) or st.get("held", False)})
+    return {"as_of": snap.get("fetched"), "rows": rows, "movers_max": scanner.MOVERS_MAX,
+            "movers_min_value": scanner.MOVERS_MIN_VALUE}
 
 
 def risk_block(h, cfg):

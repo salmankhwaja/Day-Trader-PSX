@@ -242,6 +242,10 @@ def cmd_movers(a, h, cfg):
     return 0
 
 
+MOVERS_MAX = 10          # top N gainers, losers and most traded
+MOVERS_MIN_VALUE = 5e6   # rupees traded today; thinner shares can jump 10% on a few hundred shares
+
+
 def _band_note(x, cfg):
     if not x.get("ldcp"):
         return ""
@@ -274,8 +278,8 @@ def main(argv=None):
     p.add_argument("--from-dir", help="a folder of saved intraday responses, SYMBOL.json each")
     p.add_argument("--json", action="store_true")
     p = sub.add_parser("movers")
-    p.add_argument("--max", type=int, default=10)
-    p.add_argument("--min-value", type=float, default=5e6, help="rupees traded today (default 5 million)")
+    p.add_argument("--max", type=int, default=MOVERS_MAX)
+    p.add_argument("--min-value", type=float, default=MOVERS_MIN_VALUE, help="rupees traded today (default 5 million)")
     p.add_argument("--from-file")
     p.add_argument("--now")
     p.add_argument("--json", action="store_true")

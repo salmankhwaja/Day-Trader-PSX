@@ -9,7 +9,7 @@
 
 Steps, each one allowed to fail without stopping the rest:
   1. universe + Shariah list (Mondays, or when missing)
-  2. company pages (7-day cache), prices, payouts, MUFAP
+  2. company pages (7-day cache), prices, the market watch (every share's last trade), payouts, MUFAP
   3. paper account: credit dividends, review, record the value, a fresh proposal on Fridays
   4. your portfolio: list dividends due (never recorded automatically), advice with stop-losses,
      fund review
@@ -90,6 +90,8 @@ def run(home, scope="watchlist", download=True, git=False):
         # watchlist pages daily (announcements change daily); the whole market weekly
         step("company pages", "pkdata", ["company", "--all"] if whole else ["company", "--watchlist", "--max-age", "1"], home)
         step("prices", "pkdata", ["psx", "--all" if whole else "--watchlist"], home)
+        # one request: every listed share's last price, change and volume (the dashboard's all-shares view)
+        step("market watch", "pkdata", ["live"], home)
         step("payouts", "pkdata", ["payouts"], home)
         step("mufap", "pkdata", ["mufap"], home)
         if C.load_config(home).get("pakistanibulls_terms_ok"):

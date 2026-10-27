@@ -96,6 +96,12 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
 .st.GREEN { background: var(--good); } .st.RED { background: var(--bad); } .st.FLAT { background: var(--muted); }
 tr.row-GREEN td:first-child { box-shadow: inset 3px 0 0 var(--good); } tr.row-RED td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 tr.lot td { font-size: 12px; color: var(--text-2); border-bottom-style: dashed; }
+.mv { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 4px; white-space: nowrap; border: 1px solid var(--border); }
+.mv.up { color: var(--good-text); border-color: var(--good); }
+.mv.down { color: var(--bad-text); border-color: var(--bad); }
+.mv.act { color: var(--accent); border-color: var(--accent); }
+.mv.sec { color: var(--text-2); }
+tr.grp td { background: var(--surface-2); font-weight: 600; text-align: left; }
 .tag.live { border-color: var(--s3); color: var(--s3); }
 .dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--s3); margin-right: 4px; vertical-align: middle; }
 @media (max-width: 600px) { .bar .btn { margin-left: auto; } .hide-m { display: none; } .bar .meta { display: none; } main { padding: 12px; } .kpi .v { font-size: 19px; } }
@@ -139,11 +145,13 @@ tr.lot td { font-size: 12px; color: var(--text-2); border-bottom-style: dashed; 
 
   <section class="view" id="v-screener">
     <div class="filters">
+      <div class="seg" id="f-mode" role="group" aria-label="Screener view"><button data-m="ranked" class="on">Ranked</button><button data-m="sector">All shares by sector</button></div>
       <input id="f-q" type="search" placeholder="Symbol or name" aria-label="Search">
       <select id="f-sector" aria-label="Sector"><option value="">All sectors</option></select>
       <label class="ck"><input type="checkbox" id="f-sh"> Shariah</label>
       <label class="ck"><input type="checkbox" id="f-watch"> Watchlist</label>
       <label class="ck"><input type="checkbox" id="f-held"> Owned or paper</label>
+      <label class="ck"><input type="checkbox" id="f-mov"> Movers only</label>
       <label class="ck">Min yield <input id="f-yield" type="number" min="0" step="1" style="width:64px" placeholder="%"></label>
       <button class="btn" id="f-compare">Compare selected (0)</button>
     </div>

@@ -390,8 +390,9 @@ python3 scripts/dashboard.py serve                     # http://127.0.0.1:8787
 ```
 
 Views (also a Risk & SIP tab with the style, portfolio risk and a live SIP calculator): Overview (KSE-100, sectors, top ranked, upcoming dividends), My portfolio (real holdings
-with action, stop and target, buy ideas, allocation, costs by broker, realised P/L, dividends), Screener (filter by sector,
-Shariah, yield; tick up to 6 to compare), Compare (rebased prices, returns, risk, valuation,
+with action, stop and target, buy ideas, allocation, costs by broker, realised P/L, dividends), Screener (Ranked, or All shares by sector: every listed share with the day's change and a
+Mover column for top gainers, losers, most traded and each sector's best; filter by sector,
+Shariah, yield or movers; tick up to 6 to compare), Compare (rebased prices, returns, risk, valuation,
 dividends side by side), Paper (value vs KSE-100, allocation, holdings with review action and next
 dividend, latest proposal), Dividends (calendar, top yields), Funds (MUFAP by category).
 
