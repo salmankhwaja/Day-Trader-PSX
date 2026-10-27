@@ -139,7 +139,7 @@ same page another way, save the body to a file, and import it:
    `pkdata.py psx <SYMBOL> --from-file <file>`. Company pages (`/company/<SYMBOL>`) still fetch
    normally.
 3. If PSX can't be reached from this session at all, say so plainly and use the data the
-   user syncs from their computer (`scripts/daily_sync.sh`, see README), or rank funds only.
+   user syncs from their computer (`scripts/daily_sync.sh`, see docs/REFERENCE.md in the repo), or rank funds only.
 
 **Whole market, sectors, Shariah, dividends.** The watchlist is the default scope. For every
 listed share (about 500), build the universe once, then prices and company pages:

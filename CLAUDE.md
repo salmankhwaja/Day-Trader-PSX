@@ -2,14 +2,16 @@
 
 ## Rules for every change
 
-1. **Every commit updates README.md to match.** New or changed commands go in the cheat sheet,
-   new settings in Settings, new scripts in Repo layout, new tabs in the dashboard tables, and the
-   table of contents stays in sync. A commit that changes behaviour without the README is not
-   done.
+1. **Every commit updates the docs to match.** `README.md` is the short front door (what to ask,
+   your data, setup for Claude, Gemini, ChatGPT, computer and phone): keep it short and add a line
+   there only for something a new user should see. `docs/REFERENCE.md` is the full manual: new or
+   changed commands go in its cheat sheet, new settings in Settings, new scripts in Repo layout,
+   and its table of contents stays in sync. A commit that changes behaviour without the docs is
+   not done.
 2. **Run the tests before committing:** `python3 -m unittest discover tests`. `TestDocs` fails if
    a script in `psx-mufap/scripts/` or a setting in `profiles.VARIABLES` / `DEFAULT_CONFIG` is
-   missing from README.md.
-3. **Check README links:** every `](#anchor)` must match a heading (GitHub slug rules).
+   missing from README.md and docs/REFERENCE.md.
+3. **Check links in both files:** every `](#anchor)` and `](file#anchor)` must match a heading (GitHub slug rules).
 4. Keep `psx-mufap/SKILL.md` in step too, when the way Claude should use a tool changes.
 
 ## Conventions

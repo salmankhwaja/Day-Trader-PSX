@@ -1193,8 +1193,7 @@ class TestPSXSkills(unittest.TestCase):
             self.assertEqual(sync_skills.main(["--check"]), 0, "run python3 tools/sync_skills.py")
         with open(os.path.join(ROOT, ".claude-plugin", "plugin.json")) as f:
             listed = json.load(f)["skills"]
-        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
-            readme = f.read()
+        readme = read_docs()
         for n in self.NAMES:
             with open(os.path.join(ROOT, n, "SKILL.md"), encoding="utf-8") as f:
                 text = f.read()
@@ -1405,23 +1404,31 @@ class TestBackup(Market):
                 os.remove(f)
 
 
+def read_docs():
+    """README.md plus the full manual in docs/: together they must cover every tool and setting."""
+    out = []
+    for p in ["README.md"] + sorted(os.path.join("docs", f) for f in os.listdir(os.path.join(ROOT, "docs")) if f.endswith(".md")):
+        with open(os.path.join(ROOT, p), encoding="utf-8") as f:
+            out.append(f.read())
+    return "\n".join(out)
+
+
 class TestDocs(unittest.TestCase):
     """The README must keep up with the code: every tool and every setting is documented."""
 
     def setUp(self):
-        with open(os.path.join(ROOT, "README.md")) as f:
-            self.readme = f.read()
+        self.readme = read_docs()
 
     def test_every_script_is_in_the_readme(self):
         scripts = sorted(f for f in os.listdir(os.path.join(ROOT, "psx-mufap", "scripts"))
                          if f.endswith((".py", ".sh")) and f not in ("common.py",))
         missing = [f for f in scripts if f not in self.readme]
-        self.assertEqual(missing, [], "add these to README.md")
+        self.assertEqual(missing, [], "add these to README.md or docs/REFERENCE.md")
 
     def test_every_setting_is_in_the_readme(self):
         keys = set(PRF.VARIABLES) | set(C.DEFAULT_CONFIG)
         missing = sorted(k for k in keys if "`%s`" % k not in self.readme and '"%s"' % k not in self.readme)
-        self.assertEqual(missing, [], "document these settings in README.md")
+        self.assertEqual(missing, [], "document these settings in docs/REFERENCE.md")
 
 
 def argparse_ns(**kw):
