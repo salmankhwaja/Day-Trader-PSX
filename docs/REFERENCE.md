@@ -247,6 +247,7 @@ python3 portfolio.py advise                         # SELL / TRIM / REVIEW / HOL
                                                     #   and the price calculator for each
 python3 portfolio.py advise --all --shariah --buy 5 # buy ideas from the whole market, Shariah only
 python3 portfolio.py advise --fetch                 # download fresh prices first, no question asked
+python3 portfolio.py advise --view cards            # short cards, one per share (the default on Android)
 ```
 
 ```bash
@@ -369,6 +370,7 @@ python3 portfolio.py delete 7               # remove entry #7 (typos happen; mar
 python3 portfolio.py holdings          # each share: bought (price, date, time) vs now (live or close): GREEN or RED
 python3 portfolio.py holdings --lots   # ...and every purchase on its own
 python3 portfolio.py holdings --live   # judged at live prices
+python3 portfolio.py holdings --view cards   # short cards for a phone (the default on Android)
 python3 portfolio.py pnl --year 2026   # realised profit per sale and redemption, after all charges
 python3 portfolio.py fees              # what each broker has cost you (brace yourself)
 python3 portfolio.py export trades.csv
@@ -394,6 +396,30 @@ when that price is from:
 - Bought the same share more than once? `--lots` (and the dashboard) shows each purchase with its
   own date, time, broker and colour. Your second buy can be red while the first is green.
 - On a terminal the words are coloured; set `NO_COLOR=1` if you'd rather not.
+
+**On a phone: cards.** Wide tables wrap into a mess on a phone screen, so on Android (Termux,
+Pydroid 3) `holdings` and `advise` print one short block per share instead, with a gap between
+them and the urgent ones first:
+
+```text
+DO FIRST: TRIM MCB, REVIEW LUCK
+
+YOUR HOLDINGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MCB  ✂ TRIM
+🔴 -4.1%  (Rs -2,465)
+Now    289.75   x200
+Stop   268.40
+Target 330.10
+• 38% of the portfolio (limit
+  25%): sell about 70
+If stop hits    Rs -4,390
+If target hits  Rs +7,880
+```
+
+`--view table` brings the full tables back for one run; `"view": "table"` in config.json, or
+`PKM_VIEW=table`, makes it stick. On a computer it's the other way round: tables unless you ask
+for `--view cards`.
 
 ### 9. Practise with paper money
 
@@ -950,6 +976,19 @@ to see your holdings, buy ideas and the price calculator at today's prices (see
 
 To add the buttons: long-press the home screen › Widgets › **Termux:Widget**.
 
+Prefer typing? The daily routine is four commands (in `~/Day-Trader-PSX/psx-mufap`):
+
+```bash
+python3 scripts/portfolio.py holdings --live   # where you stand: each share green or red
+python3 scripts/portfolio.py advise --live     # what to do: sell, trim, review, hold, buy ideas
+python3 scripts/portfolio.py orders --live     # the tickets to type into your broker's app
+python3 scripts/pkdata.py backup               # the zip to attach in a Claude chat
+```
+
+Use `--live` while the market is open (about 09:30–15:30, Monday to Friday) and `--no-fetch`
+after the close, when the 07:00 update already has the day's prices. On the phone both print as
+[cards](#8-see-your-portfolio).
+
 ### Step 9: keep it safe and current
 
 ```bash
@@ -1002,6 +1041,7 @@ your risk style, then from the built-in defaults. A minimal file is enough:
 | `watchlist`, `benchmark` | the shares you follow (manage with `watchlist.py`), and what they're measured against |
 | `external_signals_max_age_days` | a second opinion older than this many days is ignored (default 3) |
 | `pakistanibulls_terms_ok` | whether you've read PakistaniBulls' terms and switched on direct download (`signals.py pakistanibulls --terms`) |
+| `view` | how `advise` and `holdings` print: `cards` (short blocks for a phone), `table`, or `auto` (cards on Android, tables elsewhere; the default). `--view` or `PKM_VIEW` override it for one run |
 | `risk_profile` | your risk style: `conservative`, `moderate`, `aggressive` or `very_aggressive` (see [Your risk style](#your-risk-style)) |
 | `cost_bps_per_side` | trading cost in **backtests**, in basis points per buy or sell (20 = 0.2%) |
 | `lot_size` | shares per board lot (1 on PSX's ready market) |

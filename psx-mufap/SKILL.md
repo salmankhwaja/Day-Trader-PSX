@@ -338,6 +338,9 @@ How to present them:
   first) and show each share as **GREEN** (profit) or **RED** (loss) if sold now, after charges on
   both sides: what they paid and when (date, time) against the price now and when it's from (live
   time, or the 15:30 close). Mention purchases of the same share that differ in colour.
+- `advise` and `holdings` print short cards, one per share, on Android (`view` setting, `--view
+  cards|table`); in a chat sandbox they print tables. When the user is on a phone, answer in the
+  same shape: one short block per share with a blank line between, urgent ones first.
 - Lead with any SELL or TRIM, then buy ideas, each with its stop-loss. Show why (the rule
   that fired, the out-of-sample result) in plain words.
 - Prices are the last close: say so, and that the user should check the live price.

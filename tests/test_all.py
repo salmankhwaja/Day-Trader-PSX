@@ -9,6 +9,8 @@ import tempfile
 import unittest
 import unittest.mock
 
+os.environ.setdefault("PKM_VIEW", "table")  # tests read tables, even when run on an Android phone
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIX = os.path.join(ROOT, "tests", "fixtures")
 sys.path.insert(0, os.path.join(ROOT, "psx-mufap", "scripts"))
@@ -1175,6 +1177,45 @@ class TestGreenRed(Market):
         run(PF.main, ["--home", self.h, "export", exp])
         with open(exp) as f:
             self.assertIn("10:05", f.read())
+
+
+class TestCards(Market):
+    """Phone view: advise and holdings as short cards, one block per share."""
+
+    def test_view_mode(self):
+        with unittest.mock.patch.dict(os.environ, {"PKM_VIEW": ""}):
+            with unittest.mock.patch.object(C, "is_android", return_value=True):
+                self.assertEqual(C.view_mode({"view": "auto"}), "cards")
+                self.assertEqual(C.view_mode({"view": "table"}), "table")
+                self.assertEqual(C.view_mode({"view": "cards"}, "table"), "table")  # the flag wins
+            with unittest.mock.patch.object(C, "is_android", return_value=False):
+                self.assertEqual(C.view_mode({"view": "auto"}), "table")
+        with unittest.mock.patch.dict(os.environ, {"PKM_VIEW": "cards"}):
+            self.assertEqual(C.view_mode({"view": "table"}), "cards")
+
+    def test_cards_are_short_and_spaced(self):
+        run(PF.main, ["--home", self.h, "broker", "add", "AKD", "--preset", "akd", "--default"])
+        run(PF.main, ["--home", self.h, "cash", "deposit", "500000", "--date", "2025-01-01"])
+        for sym, k in (("SYN01", -200), ("SYN11", -30)):
+            rows = C.read_prices(C.price_path(self.h, sym))
+            run(PF.main, ["--home", self.h, "buy", sym, "100", str(rows[k]["close"]), "--date", rows[k]["date"]])
+        rc, out = run(PF.main, ["--home", self.h, "advise", "--no-fetch", "--view", "cards"])
+        self.assertEqual(rc, 0)
+        self.assertIn("DO FIRST: SELL SYN01", out)
+        self.assertNotIn("| Stock |", out)
+        self.assertNotIn("\033[", out)
+        body = out.split("YOUR HOLDINGS", 1)[1]
+        self.assertEqual(body.count(C.card_rule()) >= 2, True)
+        self.assertIn("\n\n" + C.card_rule(), body)  # a blank line between cards
+        for line in out.splitlines()[1:]:  # after the "Based on" line
+            if not line.startswith("\u2501"):
+                self.assertLessEqual(len(line), C.CARD_WIDTH + 4, line)
+        rc, out = run(PF.main, ["--home", self.h, "holdings", "--no-fetch", "--view", "cards"])
+        self.assertIn("SYN01  x100", out)
+        self.assertIn("Paid", out)
+        self.assertNotIn("| Stock |", out)
+        rc, out = run(PF.main, ["--home", self.h, "holdings", "--no-fetch"])
+        self.assertIn("| Stock |", out)  # tables stay the default off Android
 
 
 class TestWatchlist(Market):

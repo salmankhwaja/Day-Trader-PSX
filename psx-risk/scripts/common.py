@@ -64,6 +64,10 @@ DEFAULT_CONFIG = {
     "external_signals_max_age_days": 3,
     # PakistaniBulls direct download: off until you read their terms (signals.py pakistanibulls --terms).
     "pakistanibulls_terms_ok": False,
+    # How advise and holdings print: "cards" (short, one block per share, made for a phone
+    # screen), "table" (wide Markdown tables) or "auto" (cards on Android, tables elsewhere).
+    # The PKM_VIEW environment variable or a --view flag overrides it.
+    "view": "auto",
 }
 
 
@@ -473,6 +477,50 @@ def fmt_pct(x, digits=1):
 
 def fmt_pkr(x):
     return "n/a" if x is None else "PKR {:,.0f}".format(x)
+
+
+# ---------------------------------------------------------------- phone cards
+
+VIEWS = ("auto", "cards", "table")
+CARD_WIDTH = 34
+
+
+def view_mode(cfg=None, arg=None):
+    """'cards' or 'table': the --view flag, then PKM_VIEW, then config "view"; auto = cards on Android."""
+    v = (arg or os.environ.get("PKM_VIEW") or (cfg or {}).get("view") or "auto").strip().lower()
+    if v not in ("cards", "table"):
+        v = "cards" if is_android() else "table"
+    return v
+
+
+def colour(text, code):
+    """ANSI colour on a terminal (Termux included); plain text when piped or NO_COLOR is set."""
+    import sys
+    if code and sys.stdout.isatty() and os.environ.get("NO_COLOR") is None:
+        return "\033[1;%sm%s\033[0m" % (code, text)
+    return text
+
+
+def card_rule():
+    return "\u2501" * CARD_WIDTH
+
+
+def card_wrap(text, bullet="\u2022 "):
+    """One bullet point, wrapped to the card width with a hanging indent."""
+    import textwrap
+    return textwrap.fill(text, CARD_WIDTH, initial_indent=bullet, subsequent_indent=" " * len(bullet),
+                         break_on_hyphens=False)
+
+
+def num(x, digits=2):
+    return "n/a" if x is None else "{:,.{d}f}".format(x, d=digits)
+
+
+def rs(x, sign=False):
+    """Rupees, short: 'Rs 7,336' or with sign=True 'Rs +7,336' / 'Rs -7,336'."""
+    if x is None:
+        return "n/a"
+    return ("Rs {:+,.0f}" if sign else "Rs {:,.0f}").format(x)
 
 
 def md_table(headers, rows):

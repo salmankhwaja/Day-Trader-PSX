@@ -425,12 +425,87 @@ def advise(h, cfg, args):
     return res
 
 
+ICON = {"SELL": "\u26d4", "TRIM": "\u2702", "REVIEW": "\U0001f440", "HOLD": "\u2705", "NO DATA": "\u2754"}
+ACTION_COLOUR = {"SELL": "31", "TRIM": "33", "REVIEW": "33", "HOLD": "32", "NO DATA": "37", "BUY": "36"}
+DOT = {"GREEN": "\U0001f7e2", "RED": "\U0001f534", "FLAT": "\u26aa"}
+
+
+def card_lines(res):
+    """advise as short cards for a phone: one block per share, a blank line between them."""
+    out = []
+    hold, buy = res["holdings"], res["buy"]
+    urgent = ["%s %s" % (r["action"], r["symbol"]) for r in hold if r["action"] in ("SELL", "TRIM", "REVIEW")]
+    out.append(C.colour("DO FIRST: " + ", ".join(urgent), "1") if urgent else "Nothing urgent: hold, stops in place.")
+    if buy:
+        out.append("Buy ideas: " + ", ".join(i["symbol"] for i in buy))
+    if hold:
+        out.append("")
+        out.append("YOUR HOLDINGS")
+    for r in hold:
+        act = r["action"]
+        out.append(C.card_rule())
+        out.append("%s  %s" % (C.colour(r["symbol"], "1"), C.colour("%s %s" % (ICON.get(act, ""), act), ACTION_COLOUR.get(act))))
+        if r.get("net_pl_pct") is not None:
+            out.append("%s %s  (%s)" % (DOT.get(r.get("status"), ""), C.fmt_pct(r["net_pl_pct"]), C.rs(r.get("net_pl"), sign=True)))
+        if r.get("price") is not None:
+            out.append("Now    %s   x%d" % (C.num(r["price"]), r["qty"]))
+        if r.get("stop") is not None:
+            out.append("Stop   %s%s" % (C.num(r["stop"]), "  (yours)" if r.get("stop_source") == "yours" else ""))
+        if r.get("target") is not None and act != "SELL":
+            out.append("Target %s" % C.num(r["target"]))
+        out.append(C.card_wrap(r["why"]))
+        for n in r.get("notes") or []:
+            out.append(C.card_wrap(n, "\u26a0 "))
+        c = r.get("calc")
+        if c and act != "SELL" and c["loss_at_stop"]:
+            out.append("If stop hits    %s" % C.rs(-c["loss_at_stop"], sign=True))
+            out.append("If target hits  %s" % C.rs(c["gain_at_target"], sign=True))
+        t = r.get("theirs")
+        if t:
+            out.append(C.card_wrap("PakistaniBulls: %s (%s)" % (t["signal"], t.get("agreement") or "?")))
+        out.append("")
+    if buy:
+        out.append("BUY IDEAS")
+        for i in buy:
+            out.append(C.card_rule())
+            out.append("%s  %s" % (C.colour(i["symbol"] + (" \u262a" if i.get("shariah") else ""), "1"),
+                                   C.colour("\U0001f6d2 BUY", ACTION_COLOUR["BUY"])))
+            out.append("Entry  %s%s" % (C.num(i["entry"]), "   x%d" % i["qty"] if i.get("qty") else ""))
+            out.append("Stop   %s  (%s)" % (C.num(i["stop"]), C.fmt_pct(i["stop_pct"])))
+            out.append("Target %s" % C.num(i["target"]))
+            if i.get("qty"):
+                out.append("Cost %s, risk %s" % (C.rs(i.get("cost")), C.rs(i.get("risk_pkr"))))
+            out.append(C.card_wrap("tested %s/yr vs %s buy-and-hold" % (C.fmt_pct(i["oos_cagr"]), C.fmt_pct(i["oos_buyhold_cagr"]))))
+            t = i.get("theirs")
+            if t:
+                out.append(C.card_wrap("PakistaniBulls: %s (%s)" % (t["signal"], t.get("agreement") or "?")))
+            out.append("")
+        if not res["info"].get("capital"):
+            out.append(C.card_wrap("No quantities: record cash first (portfolio.py cash deposit AMOUNT)."))
+    elif res["info"].get("note"):
+        out.append(C.card_wrap("No buy ideas: " + res["info"]["note"]))
+    else:
+        out.append(C.card_wrap("No buy ideas today. Holding cash is fine."))
+    out.append(C.card_rule())
+    info = res["info"]
+    out.append(C.card_wrap("Style %s. If every stop hits: %s (budget %s)." % (
+        res.get("risk_profile"), C.rs(info.get("open_risk")), C.rs(info.get("risk_budget"))), ""))
+    out.append("Tickets: portfolio.py orders")
+    out.append("Detail:  add --view table")
+    out.append(C.card_wrap("Rule-based, from %s; not investment advice." % (
+        "live prices" if res.get("prices") == "live" else "the last close"), ""))
+    return out
+
+
 def cmd_advise(a, h, cfg):
     import freshness as F
     F.decide(a, h, cfg, F.scope(h, cfg, None, a.all), payouts=True)
     res = advise(h, cfg, a)
     if a.json:
         print(json.dumps(res, indent=1, default=str))
+        return 0
+    if C.view_mode(cfg, getattr(a, "view", None)) == "cards":
+        print("\n".join(card_lines(res)))
         return 0
     if res["holdings"]:
         print("YOUR HOLDINGS")

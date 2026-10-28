@@ -239,7 +239,8 @@ standard library only: nothing to `pip install`.
 | **Android, the whole thing** | everything a computer does, no computer needed | Termux from F-Droid, about 20 minutes: [Android guide](docs/REFERENCE.md#run-it-on-your-android-phone) |
 
 On Android with Termux the morning update, alerts and the dashboard run on the phone itself, and
-home-screen buttons do the common jobs.
+home-screen buttons do the common jobs. Advice and holdings print as short cards, one per share,
+instead of tables that wrap off the screen (`--view table` if you miss them).
 
 ---
 

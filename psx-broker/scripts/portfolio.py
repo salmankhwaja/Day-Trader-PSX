@@ -687,6 +687,46 @@ def when(date, time):
     return date + (" " + time if time else "") if date else "n/a"
 
 
+def holding_cards(s, stops):
+    """holdings as short cards for a phone: the totals first, then one block per share."""
+    import advice as A
+    out = []
+    g = sum(1 for p in s["holdings"] if p["status"] == "GREEN")
+    r = sum(1 for p in s["holdings"] if p["status"] == "RED")
+    out.append(C.colour("Value %s" % C.rs(s["value"]), "1"))
+    out.append("P/L   %s unrealised" % C.rs(s["unrealised"], sign=True))
+    if s["realised"]:
+        out.append("      %s realised" % C.rs(s["realised"], sign=True))
+    if s["cash"] is not None:
+        out.append("Cash  %s" % C.rs(s["cash"]))
+    out.append("%d in profit, %d at a loss" % (g, r))
+    out.append("")
+    for p in sorted(s["holdings"], key=lambda p: (p["net_pl_pct"] is None, p["net_pl_pct"] or 0)):
+        st = stops.get(p["symbol"], {})
+        out.append(C.card_rule())
+        out.append("%s %s  x%d" % (A.DOT.get(p["status"], ""), C.colour(p["symbol"], "1"), p["qty"]))
+        if p["net_pl"] is not None:
+            out.append(C.colour("%s  (%s)" % (C.fmt_pct(p["net_pl_pct"]), C.rs(p["net_pl"], sign=True)),
+                                {"GREEN": "32", "RED": "31"}.get(p["status"])))
+        out.append("Paid   %s" % C.num(p["avg_cost"]))
+        if p["price"] is not None:
+            out.append("Now    %s  (%s)" % (C.num(p["price"]),
+                                           "live " + (p["price_time"] or "") if p["price_source"] == "live" else "close " + (p["price_date"] or "")))
+        if st.get("stop") is not None:
+            out.append("Stop   %s%s" % (C.num(st["stop"]), "  (yours)" if st.get("stop_source") == "yours" else ""))
+        out.append("")
+    for f in s["funds"]:
+        out.append(C.card_rule())
+        out.append("%s %s" % (A.DOT.get(status_of(f["unrealised"]), ""), C.colour(f["fund"], "1")))
+        out.append("%s  (%s)" % (C.fmt_pct(f["unrealised_pct"]), C.rs(f["unrealised"], sign=True)))
+        out.append("Value  %s" % C.rs(f["value"]))
+        out.append("")
+    out.append(C.card_rule())
+    out.append(C.card_wrap("P/L if sold now, after charges both ways.", ""))
+    out.append("Next: portfolio.py advise")
+    return out
+
+
 def cmd_holdings(a, h, cfg):
     import advice as A
     lg = load(h)
@@ -697,6 +737,9 @@ def cmd_holdings(a, h, cfg):
         print("no holdings recorded. Start with: portfolio.py buy SYMBOL QTY PRICE --broker NAME --date YYYY-MM-DD")
         return 0
     stops = {r["symbol"]: r for r in A.review_holdings(h, cfg, lg, s)}
+    if C.view_mode(cfg, getattr(a, "view", None)) == "cards" and not a.lots:
+        print("\n".join(holding_cards(s, stops)))
+        return 0
     rows = []
     for p in s["holdings"]:
         st = stops.get(p["symbol"], {})
@@ -952,6 +995,7 @@ def main(argv=None):
     p.add_argument("--note")
     p = sub.add_parser("holdings", help="each holding: bought (date, time, price) vs now (live or close): GREEN or RED")
     p.add_argument("--lots", action="store_true", help="also every purchase on its own")
+    p.add_argument("--view", choices=C.VIEWS, help="cards (phone) or table (default: config \"view\", auto = cards on Android)")
     F.add_args(p)
     p = sub.add_parser("pnl")
     p.add_argument("--year", type=int)
@@ -975,6 +1019,7 @@ def main(argv=None):
     p.add_argument("--buy", type=int, default=3, help="how many buy ideas (default 3)")
     p.add_argument("--candidates", type=int, help="default: your risk profile's 'candidates'")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--view", choices=C.VIEWS, help="cards (phone) or table (default: config \"view\", auto = cards on Android)")
     F.add_args(p)
     p = sub.add_parser("orders", help="order tickets for your broker's app: stop-losses, buys, sells")
     p.add_argument("--all", action="store_true", help="buy ideas from the whole market")
