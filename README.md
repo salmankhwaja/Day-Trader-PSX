@@ -24,7 +24,7 @@ You:     Anything setting up for tomorrow? Any news on my shares?
 **Contents:** [What you can ask](#what-you-can-ask) · [Your data stays with you](#your-data-stays-with-you) ·
 [Start with Claude in 5 minutes](#start-with-claude-in-5-minutes) · [Claude commands, in detail](#claude-commands-in-detail) ·
 [Gemini, ChatGPT and Codex](#gemini-chatgpt-and-codex) · [On your computer](#on-your-computer) ·
-[On your phone](#on-your-phone) · [Good to know](#good-to-know)
+[On your phone](#on-your-phone) · [The dashboard on GitHub Pages](#the-dashboard-on-github-pages) · [Good to know](#good-to-know)
 
 ---
 
@@ -237,11 +237,47 @@ standard library only: nothing to `pip install`.
 | **iPhone or iPad** | ask anything, look at your dashboard | the Claude app (skills come with your account) and your backup zip in Files; open your computer's dashboard over Tailscale, or the one-file `dashboard.html` |
 | **Android, chat only** | the same as iPhone | the Claude app and your backup zip in Downloads |
 | **Android, the whole thing** | everything a computer does, no computer needed | Termux from F-Droid, about 20 minutes: [Android guide](docs/REFERENCE.md#run-it-on-your-android-phone) |
-| **Any phone, in the browser** | the dashboard, installable, seven themes | switch on GitHub Pages for this repo (or your fork), open `https://<you>.github.io/Day-Trader-PSX/` and load your `data.json`: it stays on the phone, never in the repo ([how](docs/REFERENCE.md#step-7-open-your-dashboard)) |
+| **Any phone, in the browser** | the dashboard, installable, seven themes | [GitHub Pages](#the-dashboard-on-github-pages): open the page, load your `data.json`, done |
 
 On Android with Termux the morning update, alerts and the dashboard run on the phone itself, and
 home-screen buttons do the common jobs. Advice and holdings print as short cards, one per share,
 instead of tables that wrap off the screen (`--view table` if you miss them).
+
+---
+
+## The dashboard on GitHub Pages
+
+The dashboard is plain HTML and JavaScript, so GitHub can host it for free: open it in any
+browser, add it to your home screen, and it works offline. Live copy:
+**https://salmankhwaja.github.io/Day-Trader-PSX/**
+
+> [!NOTE]
+> **The page is public; your numbers are not.** This repo holds no data, so the Pages copy opens
+> empty and asks for your file. What you load is kept in that browser on that device (IndexedDB)
+> and never uploaded: not to GitHub, not to anyone. **Forget data on this device** (Data tab)
+> wipes it.
+
+**Switch it on** (once, for this repo or your fork): *Settings › Pages › Build and deployment ›
+Deploy from a branch › `main` / `/ (root)` › Save.* A minute later the page is at
+`https://<your-username>.github.io/Day-Trader-PSX/`. Every push to `main` updates it.
+
+**Feed it your data:**
+
+1. Make the file where your data lives:
+   ```bash
+   python3 psx-mufap/scripts/dashboard.py build
+   ```
+   It writes `dashboard/data.json` in your data folder: **Internal storage › pkmarket ›
+   dashboard** on Android, `~/pkmarket/dashboard/` on a computer. (The daily update's one-file
+   `dashboard.html` works too.)
+2. Open the Pages link, tap **Load data file** and pick it.
+3. Fresher numbers? Build again, then **Data › Load a newer data file**.
+
+**What it can't do:** GitHub Pages only serves files; it can't run Python. So there is no
+**Fetch now** and no **Live prices** there: the page shows what your file holds, as of when you
+built it. For those two, run `dashboard.py serve` on your computer or phone
+([how](docs/REFERENCE.md#step-7-open-your-dashboard)). Advice, stop-losses and green/red are all
+in the file, so everything else works.
 
 ---
 

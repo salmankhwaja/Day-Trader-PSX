@@ -964,8 +964,8 @@ Termux once, which wakes the dashboard service.
 `https://<you>.github.io/Day-Trader-PSX/`. That copy ships with no data: market data and ledgers
 never go in the repo. The first time, it asks you to **Load data file**: pick the `data.json`
 that `dashboard.py build` writes in your data folder's `dashboard/`, or the one-file
-`dashboard.html` the daily update makes. The file is kept in that browser's storage on that device
-and never uploaded; load a newer one from the **Data** tab whenever you like, or **Forget** it. Add
+`dashboard.html` the daily update makes (on Android: **Internal storage › pkmarket › dashboard ›
+data.json**). The file is kept in that browser's storage on that device and never uploaded; load a newer one from the **Data** tab whenever you like, or **Forget** it. Add
 the page to your home screen and it opens offline too. Fetch and Live need `dashboard.py serve`,
 so the Pages copy shows what the file holds.
 

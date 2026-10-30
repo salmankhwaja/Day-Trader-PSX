@@ -941,7 +941,7 @@
       if (window.PKM_DATA || location.protocol === "file:" || (api && !api.live)) {
         el.hidden = false;
         el.innerHTML = "Live prices: " + (window.PKM_DATA || location.protocol === "file:"
-          ? "not in the one-file version; open the dashboard from its server (<code>dashboard.py serve --allow-live</code>)."
+          ? "not in " + (SOURCE === "device" ? "this browser copy" : "the one-file version") + "; open the dashboard from its server (<code>dashboard.py serve --allow-live</code>)."
           : "off on this server (start it with <code>--allow-live</code>).") +
           " From the command line: <code>python3 pkdata.py live</code>, or <code>--live</code> on any advice.";
       }
@@ -1147,6 +1147,7 @@
   else fetch("data.json", { cache: "no-store" }).then(function (r) {
     if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json();
   }).then(function (d) { SOURCE = "server"; boot(d); }).catch(function (e) {
-    fromDevice(location.protocol === "file:" ? "" : "No data.json next to this page (" + e.message + ").");
+    // A 404 is normal on GitHub Pages (the repo never holds data): no need to mention it.
+    fromDevice(location.protocol === "file:" || /^404\b/.test(e.message) ? "" : "No data.json next to this page (" + e.message + ").");
   });
 })();
