@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and serve the PSX / MUFAP dashboard.
 
-  dashboard.py build [--all] [--days 500]          write <home>/dashboard/{index.html,app.js,data.json}
+  dashboard.py build [--all] [--days 500]          write <home>/dashboard/{index.html,app.js,theme.js,data.json}
   dashboard.py build --standalone FILE.html        one self-contained file (open it anywhere)
   dashboard.py serve [--port 8787] [--host 127.0.0.1]
 
@@ -64,6 +64,7 @@ UI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 FILES = {"/": ("index.html", "text/html; charset=utf-8"),
          "/index.html": ("index.html", "text/html; charset=utf-8"),
          "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+         "/theme.js": ("theme.js", "text/javascript; charset=utf-8"),
          "/data.json": ("data.json", "application/json")}
 
 
@@ -361,6 +362,8 @@ def cmd_build(a, h, cfg):
             page = f.read()
         with open(os.path.join(UI_DIR, "app.js"), encoding="utf-8") as f:
             js = f.read()
+        with open(os.path.join(UI_DIR, "theme.js"), encoding="utf-8") as f:
+            page = page.replace('<script src="theme.js"></script>', "<script>%s</script>" % f.read())
         inline = "<script>window.PKM_DATA=%s;</script>\n<script>%s</script>" % (
             blob.replace("</", "<\\/"), js)
         page = page.replace('<script src="app.js"></script>', inline)
@@ -370,7 +373,7 @@ def cmd_build(a, h, cfg):
         return 0
     out = os.path.join(h, "dashboard")
     os.makedirs(out, exist_ok=True)
-    for fn in ("index.html", "app.js"):
+    for fn in ("index.html", "app.js", "theme.js"):
         shutil.copyfile(os.path.join(UI_DIR, fn), os.path.join(out, fn))
     with open(os.path.join(out, "data.json"), "w", encoding="utf-8") as f:
         f.write(blob)

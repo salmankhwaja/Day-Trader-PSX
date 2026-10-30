@@ -34,6 +34,7 @@
 
   function chart(id, cfg) {
     if (charts[id]) charts[id].destroy();
+    if (!$(id)) return null;  // already replaced by a message (no Chart.js, or no data for it)
     if (typeof Chart === "undefined") { $(id).parentNode.innerHTML = '<div class="empty">Charts need the Chart.js library (internet access).</div>'; return null; }
     charts[id] = new Chart($(id), cfg);
     return charts[id];
@@ -93,7 +94,7 @@
 
   // ---------------------------------------------------------------- tabs
   var views = { overview: renderOverview, screener: renderScreener, compare: renderCompare,
-                mine: renderMine, portfolio: renderPortfolio, dividends: renderDividends, funds: renderFunds, risk: renderRisk };
+                mine: renderMine, portfolio: renderPortfolio, dividends: renderDividends, funds: renderFunds, risk: renderRisk, data: renderData };
   function show(v) {
     if (!views[v]) v = "overview";
     Array.prototype.forEach.call($("tabs").children, function (b) { b.classList.toggle("on", b.getAttribute("data-v") === v); });
@@ -102,19 +103,66 @@
     rendered[v] = true;
     store("view", v);
   }
-  $("tabs").onclick = function (e) { var v = e.target.getAttribute("data-v"); if (v) show(v); };
+  $("tabs").onclick = function (e) { var b = e.target.closest && e.target.closest("[data-v]"); if (b) show(b.getAttribute("data-v")); };
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest("[data-sym]");
     if (a) { e.preventDefault(); addCompare(a.getAttribute("data-sym")); show("compare"); }
   });
-  $("theme").onclick = function () {
-    var cur = document.documentElement.getAttribute("data-theme") ||
-      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    var next = cur === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    store("theme", next);
-    Object.keys(rendered).forEach(function (k) { if ($("v-" + k).classList.contains("on")) views[k](); });
-  };
+  // ---------------------------------------------------------------- themes & clock
+  var THEMES = [["auto", "Auto (follow phone)"], ["light", "Light"], ["dark", "Dark"], ["bluegray", "Blue Gray"],
+                ["black", "Black"], ["terminal", "Terminal"], ["red", "Red"]];
+  function applyTheme(id, rerender) {
+    var ok = THEMES.some(function (t) { return t[0] === id; }) ? id : "auto";
+    document.documentElement.setAttribute("data-theme", ok);
+    store("theme", ok);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", css("--surface") || "#1d4ed8");
+    Array.prototype.forEach.call($("theme-menu").children, function (b) { b.setAttribute("aria-checked", String(b.getAttribute("data-t") === ok)); });
+    if (rerender) Object.keys(rendered).forEach(function (k) { if ($("v-" + k).classList.contains("on")) views[k](); });  // charts read the colours
+  }
+  (function setupThemes() {
+    var btn = $("theme"), menu = $("theme-menu");
+    menu.innerHTML = THEMES.map(function (t) {
+      return '<button role="menuitemradio" aria-checked="false" data-t="' + t[0] + '"><span class="swatch swatch-' + t[0] + '"></span>' + t[1] + "</button>";
+    }).join("");
+    function close() { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); }
+    btn.onclick = function (e) { e.stopPropagation(); menu.hidden = !menu.hidden; btn.setAttribute("aria-expanded", String(!menu.hidden)); };
+    menu.onclick = function (e) { var b = e.target.closest("[data-t]"); if (b) { applyTheme(b.getAttribute("data-t"), true); close(); } };
+    document.addEventListener("click", function (e) { if (!menu.hidden && !menu.contains(e.target)) close(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+    applyTheme(document.documentElement.getAttribute("data-theme") || store("theme") || "auto", false);
+  })();
+  function tickClock() {
+    var d = new Date();
+    $("clock").innerHTML = "<b>" + esc(d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })) + "</b><br>" +
+      esc(d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }));
+  }
+  tickClock(); setInterval(tickClock, 15000);
+
+  // ---------------------------------------------------------------- number fields: 100,000
+  function groupNum(raw) {
+    var t = String(raw == null ? "" : raw).replace(/[^0-9.\-]/g, ""), neg = t.charAt(0) === "-";
+    t = t.replace(/-/g, "");
+    var parts = t.split("."), i = parts.shift().replace(/^0+(?=\d)/, ""), dec = parts.length ? "." + parts.join("") : "";
+    return (neg ? "-" : "") + (i ? i.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : (dec ? "0" : "")) + dec;
+  }
+  function nv(id) { var v = parseFloat(String($(id).value).replace(/,/g, "")); return isNaN(v) ? 0 : v; }
+  function enhanceNumbers(root) {
+    Array.prototype.forEach.call((root || document).querySelectorAll('input[type="number"]'), function (el) {
+      el.type = "text"; el.inputMode = "decimal"; el.classList.add("numeric"); el.autocomplete = "off";
+      if (el.value) el.value = groupNum(el.value);
+      el.addEventListener("input", function () {
+        var before = el.value, caret = el.selectionStart == null ? before.length : el.selectionStart;
+        var sig = before.slice(0, caret).replace(/[^0-9.\-]/g, "").length, after = groupNum(before);
+        if (after === before) return;
+        el.value = after;
+        var k = 0, pos = 0;
+        while (pos < after.length && k < sig) { if (/[0-9.\-]/.test(after.charAt(pos))) k++; pos++; }
+        try { el.setSelectionRange(pos, pos); } catch (e) {}
+      }, true);
+    });
+  }
+  enhanceNumbers(document);
 
   // ---------------------------------------------------------------- overview
   function renderOverview() {
@@ -241,7 +289,7 @@
       b.classList.toggle("on", b.getAttribute("data-m") === state.scMode);
     });
     if (state.scMode === "sector") return drawSectors();
-    var q = $("f-q").value.trim().toLowerCase(), sec = $("f-sector").value, my = parseFloat($("f-yield").value);
+    var q = $("f-q").value.trim().toLowerCase(), sec = $("f-sector").value, my = parseFloat(String($("f-yield").value).replace(/,/g, ""));
     var rows = D.stocks.filter(function (s) {
       if (q && s.symbol.toLowerCase().indexOf(q) < 0 && (s.name || "").toLowerCase().indexOf(q) < 0) return false;
       if (sec && (s.sector || "").toUpperCase() !== sec.toUpperCase()) return false;
@@ -278,7 +326,7 @@
   }
   // Every listed share, grouped by sector, best day first inside each sector.
   function drawSectors() {
-    var q = $("f-q").value.trim().toLowerCase(), sec = $("f-sector").value, my = parseFloat($("f-yield").value);
+    var q = $("f-q").value.trim().toLowerCase(), sec = $("f-sector").value, my = parseFloat(String($("f-yield").value).replace(/,/g, ""));
     var all = marketRows();
     var rows = all.filter(function (r) {
       if (q && r.symbol.toLowerCase().indexOf(q) < 0 && (r.name || "").toLowerCase().indexOf(q) < 0) return false;
@@ -696,8 +744,8 @@
     return hi;
   }
   function drawSip() {
-    var m = +$("sp-m").value || 0, y = Math.max(1, Math.min(60, +$("sp-y").value || 1)), r = (+$("sp-r").value || 0) / 100,
-        s = (+$("sp-s").value || 0) / 100, l = +$("sp-l").value || 0, inf = (+$("sp-i").value || 0) / 100, g = +$("sp-g").value || 0;
+    var m = nv("sp-m"), y = Math.max(1, Math.min(60, nv("sp-y") || 1)), r = nv("sp-r") / 100,
+        s = nv("sp-s") / 100, l = nv("sp-l"), inf = nv("sp-i") / 100, g = nv("sp-g");
     var rows = sipProject(m, y, r, s, l), last = rows[rows.length - 1];
     var lo = sipProject(m, y, r - 0.03, s, l).slice(-1)[0].value, hi = sipProject(m, y, r + 0.03, s, l).slice(-1)[0].value;
     var k = [["Invested", pkr(last.invested), y + " years", ""], ["Could grow to", pkr(last.value), "gain " + pkr(last.value - last.invested), "pos"],
@@ -1007,7 +1055,6 @@
     D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
     $("meta").textContent = "Built " + D.generated + " · " + D.stocks.length + " shares (" + D.scope + ") · prices to " +
       (D.calendar[D.calendar.length - 1] || "–");
-    var theme = store("theme"); if (theme) document.documentElement.setAttribute("data-theme", theme);
     checkFreshness();
     var fromHash = (location.hash.match(/compare=([^&]*)/) || [])[1];
     var saved = fromHash ? decodeURIComponent(fromHash).split(",") : (store("compare") || []);
@@ -1016,10 +1063,90 @@
     if (!state.compare.length) D.stocks.filter(function (s) { return s.owned || s.held || s.watch; }).slice(0, 3).forEach(function (s) { addCompare(s.symbol); });
     show(fromHash ? "compare" : (store("view") || "overview"));
   }
-  if (window.PKM_DATA) boot(window.PKM_DATA);
+  // ---------------------------------------------------------------- your data on this device
+  // The GitHub Pages copy has no data of its own (market data and ledgers never go in the repo).
+  // You load the data.json that `dashboard.py build` writes (or the one-file dashboard.html);
+  // it is kept in this browser's IndexedDB and never leaves the device.
+  var SOURCE = "server", LOADED_AT = null;
+  var IDB = {
+    open: function () {
+      return new Promise(function (res, rej) {
+        var r = indexedDB.open("psx-dashboard", 1);
+        r.onupgradeneeded = function () { r.result.createObjectStore("kv"); };
+        r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); };
+      });
+    },
+    get: function (k) { return IDB.open().then(function (db) { return new Promise(function (res, rej) { var q = db.transaction("kv").objectStore("kv").get(k); q.onsuccess = function () { res(q.result); }; q.onerror = function () { rej(q.error); }; }); }); },
+    set: function (k, v) { return IDB.open().then(function (db) { return new Promise(function (res, rej) { var tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").put(v, k); tx.oncomplete = function () { res(); }; tx.onerror = function () { rej(tx.error); }; }); }); },
+    del: function (k) { return IDB.open().then(function (db) { return new Promise(function (res) { var tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").delete(k); tx.oncomplete = function () { res(); }; }); }); }
+  };
+  function parseDataFile(text) {
+    text = String(text);
+    var t = text.replace(/^\uFEFF/, "").trim();
+    if (t.charAt(0) === "{") return JSON.parse(t);
+    var m = text.match(/window\.PKM_DATA=(\{[\s\S]*?\});<\/script>/);   // the one-file dashboard.html
+    if (m) return JSON.parse(m[1].replace(/<\\\//g, "</"));
+    throw new Error("not a dashboard data file");
+  }
+  function validData(d) { return d && Array.isArray(d.stocks) && Array.isArray(d.calendar); }
+  function pickFile() {
+    var inp = document.createElement("input");
+    inp.type = "file"; inp.accept = ".json,.html,application/json,text/html";
+    inp.onchange = function () {
+      var f = inp.files && inp.files[0];
+      if (!f) return;
+      f.text().then(function (txt) {
+        var d = parseDataFile(txt);
+        if (!validData(d)) throw new Error("this file has no dashboard data");
+        return IDB.set("data", { data: d, name: f.name, loaded: new Date().toISOString() });
+      }).then(function () { location.reload(); })
+        .catch(function (e) { alert("Couldn't load that file: " + e.message); });
+    };
+    inp.click();
+  }
+  function howToMake() {
+    return '<ol><li>On your phone (Termux) or computer, run <code>python3 psx-mufap/scripts/dashboard.py build</code>. ' +
+      'It writes <code>dashboard/data.json</code> in your data folder. The daily update also writes the one-file <code>dashboard.html</code>; either works.</li>' +
+      '<li>Tap <b>Load data file</b> and pick it. It is stored only in this browser, on this device.</li>' +
+      '<li>Load a newer file whenever you want fresher numbers.</li></ol>';
+  }
+  function showLoader(reason) {
+    $("tabs").hidden = true; document.querySelector("main").hidden = true;
+    var L = $("loader"); L.hidden = false;
+    L.innerHTML = '<div class="card"><h2>Load your data</h2><p class="muted">This copy of the dashboard has no data of its own: ' +
+      "PSX market data and your ledger never go in the repo. Load your own file and it stays on this device.</p>" + howToMake() +
+      '<div class="row-actions"><button class="btn big" id="ld-pick">Load data file</button></div>' +
+      (reason ? '<p class="note">' + esc(reason) + "</p>" : "") + "</div>";
+    $("ld-pick").onclick = pickFile;
+  }
+  function renderData() {
+    var src = { server: "your dashboard server (data.json next to this page)", file: "the one-file dashboard you opened", device: "a file you loaded on this device" }[SOURCE];
+    $("dt-card").innerHTML = "<h2>Your data</h2>" +
+      '<ul class="list"><li><span>Source</span><span>' + esc(src) + "</span></li>" +
+      "<li><span>Built</span><span>" + esc(D.generated || "–") + "</span></li>" +
+      "<li><span>Prices up to</span><span>" + esc(D.calendar[D.calendar.length - 1] || "–") + "</span></li>" +
+      "<li><span>Shares</span><span>" + num(D.stocks.length) + " (" + esc(D.scope || "") + ")</span></li>" +
+      (LOADED_AT ? "<li><span>Loaded</span><span>" + esc(LOADED_AT.name) + " · " + esc(new Date(LOADED_AT.loaded).toLocaleString()) + "</span></li>" : "") +
+      "</ul>" + (SOURCE === "server" ? '<p class="note">Served by <code>dashboard.py serve</code>. To refresh, run the daily update or use the refresh banner.</p>' :
+      '<div class="row-actions"><button class="btn" id="dt-pick">Load a newer data file</button>' +
+      (SOURCE === "device" ? '<button class="btn danger" id="dt-forget">Forget data on this device</button>' : "") + "</div>" + howToMake()) +
+      '<p class="note">Your data never leaves this device. PSX market data is for personal use: don\'t republish it.</p>';
+    if ($("dt-pick")) $("dt-pick").onclick = pickFile;
+    if ($("dt-forget")) $("dt-forget").onclick = function () {
+      if (confirm("Remove the loaded data from this device?")) IDB.del("data").then(function () { location.reload(); });
+    };
+  }
+  function fromDevice(reason) {
+    return IDB.get("data").then(function (rec) {
+      if (rec && validData(rec.data)) { SOURCE = "device"; LOADED_AT = rec; window.PKM_DATA = rec.data; boot(rec.data); }
+      else showLoader(reason);
+    }).catch(function () { showLoader(reason); });
+  }
+  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(function () {});
+  if (window.PKM_DATA) { SOURCE = "file"; boot(window.PKM_DATA); }
   else fetch("data.json", { cache: "no-store" }).then(function (r) {
     if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json();
-  }).then(boot).catch(function (e) {
-    document.querySelector("main").innerHTML = '<div class="empty">Could not load data.json (' + esc(e.message) + "). Run dashboard.py build.</div>";
+  }).then(function (d) { SOURCE = "server"; boot(d); }).catch(function (e) {
+    fromDevice(location.protocol === "file:" ? "" : "No data.json next to this page (" + e.message + ").");
   });
 })();

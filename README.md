@@ -237,6 +237,7 @@ standard library only: nothing to `pip install`.
 | **iPhone or iPad** | ask anything, look at your dashboard | the Claude app (skills come with your account) and your backup zip in Files; open your computer's dashboard over Tailscale, or the one-file `dashboard.html` |
 | **Android, chat only** | the same as iPhone | the Claude app and your backup zip in Downloads |
 | **Android, the whole thing** | everything a computer does, no computer needed | Termux from F-Droid, about 20 minutes: [Android guide](docs/REFERENCE.md#run-it-on-your-android-phone) |
+| **Any phone, in the browser** | the dashboard, installable, seven themes | switch on GitHub Pages for this repo (or your fork), open `https://<you>.github.io/Day-Trader-PSX/` and load your `data.json`: it stays on the phone, never in the repo ([how](docs/REFERENCE.md#step-7-open-your-dashboard)) |
 
 On Android with Termux the morning update, alerts and the dashboard run on the phone itself, and
 home-screen buttons do the common jobs. Advice and holdings print as short cards, one per share,

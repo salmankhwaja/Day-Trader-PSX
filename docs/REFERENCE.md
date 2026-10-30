@@ -941,6 +941,11 @@ home-screen buttons use.
 In Chrome, go to **http://127.0.0.1:8787**, then Chrome menu › **Add to Home screen**.
 Congratulations: you now have a trading terminal that cost less than a samosa.
 
+The header shows the time and date and a theme button: Auto (follows your phone), Light, Dark,
+Blue Gray, Black, Terminal or Red, remembered per device. On a phone the tabs sit at the bottom;
+swipe the bar for Funds, Risk & SIP and Data. Number boxes (the SIP calculator, say) show commas
+as you type: `50,000`.
+
 | Tab | Shows |
 |---|---|
 | Overview | KSE-100, sectors, top-ranked shares, dividends coming up |
@@ -949,9 +954,20 @@ Congratulations: you now have a trading terminal that cost less than a samosa.
 | My portfolio | **order tickets** for your broker's app; **bought vs now**: each holding (and each purchase) GREEN or RED, with when you bought and when the price is from; what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; the price calculator (rupees at the stop and at the target, reward-to-risk); your funds; costs by broker; realised P/L |
 | Paper · Dividends · Funds | practice account, dividend calendar, MUFAP rankings |
 | Risk & SIP | your risk style, money at risk, value-at-risk, allocation vs target, and a live SIP calculator |
+| Data | where this page's data came from, when it was built, and (on GitHub Pages) loading a newer file or forgetting it |
 
 The address only works on this phone: nothing leaves the device. If the page won't load, open
 Termux once, which wakes the dashboard service.
+
+**The same dashboard on GitHub Pages.** With Pages switched on for this repo (or your fork:
+*Settings › Pages › Deploy from a branch › `main` / root*), the dashboard is at
+`https://<you>.github.io/Day-Trader-PSX/`. That copy ships with no data: market data and ledgers
+never go in the repo. The first time, it asks you to **Load data file**: pick the `data.json`
+that `dashboard.py build` writes in your data folder's `dashboard/`, or the one-file
+`dashboard.html` the daily update makes. The file is kept in that browser's storage on that device
+and never uploaded; load a newer one from the **Data** tab whenever you like, or **Forget** it. Add
+the page to your home screen and it opens offline too. Fetch and Live need `dashboard.py serve`,
+so the Pages copy shows what the file holds.
 
 When the data is older than today, the strip under the tabs offers **Fetch now** or **Use stored
 data**; tick *remember my choice* and it won't ask again. Tick **Live prices** during market hours
@@ -1274,7 +1290,9 @@ psx-mufap/                      the skill and the tools
 │   ├── daily_sync.sh           shell wrapper for cron and systemd
 │   ├── install_services.sh     systemd timer (your schedule) and dashboard service
 │   └── android_setup.sh        one-command setup in Termux
-├── dashboard/                  index.html + app.js (Chart.js 4.4.1 from cdnjs, pinned with SRI)
+├── dashboard/                  index.html + app.js (Chart.js 4.4.1 from cdnjs, pinned with SRI), theme.js
+│                               (saved theme before first paint), manifest, sw.js and icons/ (installable
+│                               and offline when served from GitHub Pages)
 └── references/                 strategy and data-source notes
 psx-scanner/ … psx-insiders/   the 11 desk skills: SKILL.md + scripts/ (a synced copy of the code
                                 each needs) + brokers.json
@@ -1283,6 +1301,7 @@ tests/                          offline tests on synthetic data and trimmed page
 zips/                           one zip per skill, to add in the Claude app (built by tools/sync_skills.py)
 docs/REFERENCE.md               this manual (README.md is the short front door)
 ci/                             GitHub Actions workflows, ready to enable (see ci/README.md)
+index.html, .nojekyll           GitHub Pages: the site root opens the dashboard; files are served as they are
 ```
 
 Run the tests with no network needed:

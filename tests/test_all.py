@@ -366,6 +366,8 @@ class TestDashboard(Market):
             page = f.read()
         self.assertIn("window.PKM_DATA=", page)
         self.assertNotIn('<script src="app.js">', page)
+        self.assertNotIn('<script src="theme.js">', page)   # inlined, so the one file still keeps the saved theme
+        self.assertIn('localStorage.getItem("pkm.theme")', page)
         self.assertNotIn("</script><script>alert", page)
 
     def test_all_shares_by_sector(self):
@@ -402,6 +404,7 @@ class TestDashboard(Market):
             r = opener.open(base + "/data.json")
             self.assertEqual(r.status, 200)
             self.assertIn("default-src 'none'", r.headers["Content-Security-Policy"])
+            self.assertEqual(opener.open(base + "/theme.js").status, 200)   # built next to the page and served
             for path in ("/config.json", "/../config.json", "/paper/portfolio.json", "/dashboard/"):
                 with self.assertRaises(urllib.error.HTTPError) as e:
                     opener.open(base + path)
