@@ -32,10 +32,30 @@
   var SLOTS = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
   var state = { compare: [], slots: {}, cRange: 250, ovRange: 250, sort: { key: "score", dir: -1 }, scMode: store("scMode") || "ranked" };
 
+  // Chart.js comes from cdnjs and loads in the background (async): a slow or blocked CDN on a
+  // phone network must never leave the page blank. Charts draw once it arrives; if it never does,
+  // each chart says so and everything else still works.
+  var chartLib = typeof Chart !== "undefined" ? "ready" : "loading";
+  function chartLibDone(state) {
+    if (chartLib !== "loading") return;
+    chartLib = state;
+    if (D) Object.keys(views).forEach(function (k) { if ($("v-" + k).classList.contains("on")) views[k](); });
+  }
+  (function () {
+    var tag = document.getElementById("chartjs");
+    if (chartLib === "ready" || !tag) return;
+    tag.addEventListener("load", function () { chartLibDone(typeof Chart !== "undefined" ? "ready" : "failed"); });
+    tag.addEventListener("error", function () { chartLibDone("failed"); });
+    setTimeout(function () { chartLibDone(typeof Chart !== "undefined" ? "ready" : "failed"); }, 20000);
+  })();
   function chart(id, cfg) {
-    if (charts[id]) charts[id].destroy();
+    if (charts[id]) { charts[id].destroy(); delete charts[id]; }
     if (!$(id)) return null;  // already replaced by a message (no Chart.js, or no data for it)
-    if (typeof Chart === "undefined") { $(id).parentNode.innerHTML = '<div class="empty">Charts need the Chart.js library (internet access).</div>'; return null; }
+    if (chartLib !== "ready" && typeof Chart !== "undefined") chartLib = "ready";
+    var box = $(id).parentNode;
+    if (chartLib === "loading") { box.classList.add("waiting"); return null; }
+    box.classList.remove("waiting", "nolib");
+    if (chartLib === "failed") { box.classList.add("nolib"); return null; }   // keep the canvas: views redraw
     charts[id] = new Chart($(id), cfg);
     return charts[id];
   }
@@ -190,7 +210,7 @@
         options: baseOpts({ interaction: { mode: "index", intersect: false }, plugins: Object.assign(baseOpts().plugins, { legend: { display: false } }) }) });
     }
     rangeSeg($("ov-range"), state.ovRange, function (n) { state.ovRange = n; drawIndex(n); });
-    if (D.series[bsym]) drawIndex(state.ovRange); else $("ov-index").parentNode.innerHTML = '<div class="empty">No KSE-100 prices yet.</div>';
+    if (D.series[bsym]) drawIndex(state.ovRange); else if ($("ov-index")) $("ov-index").parentNode.innerHTML = '<div class="empty">No KSE-100 prices yet.</div>';
 
     var secs = (D.sectors || []).filter(function (s) { return s["3m"] != null; });
     var pos = css("--s1"), neg = css("--bad");
@@ -205,7 +225,7 @@
         } } }) }),
         scales: { x: { ticks: { color: css("--text-2"), callback: function (v) { return v + "%"; } }, grid: { color: css("--grid") }, border: { display: false } },
                   y: { ticks: { color: css("--text-2"), autoSkip: false, font: { size: 11 } }, grid: { display: false }, border: { display: false } } } }) });
-    $("ov-sectors").parentNode.style.height = Math.max(240, secs.length * 22 + 40) + "px";
+    if ($("ov-sectors")) $("ov-sectors").parentNode.style.height = Math.max(240, secs.length * 22 + 40) + "px";
 
     var top = st.slice().sort(function (a, b) { return (b.score || 0) - (a.score || 0); }).slice(0, 10);
     $("ov-top").innerHTML = "<tr><th class='l'>Stock</th><th>1M</th><th>3M</th><th>1Y</th><th>Yield</th><th>Score</th></tr>" +
@@ -515,7 +535,7 @@
         options: baseOpts({ interaction: { mode: "index", intersect: false } }) });
       $("pf-eqnote").textContent = "Both rebased to 100 on the first day recorded. The daily service records one point per day.";
     } else {
-      $("pf-equity").parentNode.innerHTML = '<div class="empty">The value chart starts once the daily service has recorded two days (paper.py mark).</div>';
+      if ($("pf-equity")) $("pf-equity").parentNode.innerHTML = '<div class="empty">The value chart starts once the daily service has recorded two days (paper.py mark).</div>';
     }
     var alloc = {};
     p.holdings.forEach(function (h) {
@@ -682,7 +702,7 @@
       }) },
       options: baseOpts({ scales: { x: { stacked: true, ticks: { color: css("--text-2") }, grid: { display: false }, border: { display: false } },
         y: { stacked: true, ticks: { color: css("--text-2") }, grid: { color: css("--grid") }, border: { display: false } } } }) });
-    $("mi-fees").parentNode.style.height = "200px";
+    if ($("mi-fees")) $("mi-fees").parentNode.style.height = "200px";
     $("mi-feet").innerHTML = "<tr><th class='l'>Broker</th><th>Trades</th><th>Turnover</th><th>Total costs</th><th>Cost rate</th></tr>" +
       F.map(function (f) {
         var t = f.commission + f.taxes + f.other;

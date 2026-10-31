@@ -1168,6 +1168,8 @@ trading morning". The 07:00 daily run refreshes them, ready to copy before the 0
 | "Live prices failed" | PSX unreachable, or the market-watch page changed | It falls back to the last fetch and says so. Try `pkdata.py live`; outside market hours it shows the last trades |
 | No *Live prices* box in the dashboard | Server started without `--allow-live`, or it's the one-file version | `dashboard.py serve --allow-live` (local only) |
 | Dashboard has no *Fetch now* | Server started without `--allow-refresh`, or it's the one-file version | `dashboard.py serve --allow-refresh` (local only), or run `pkm.py daily` and reload |
+| Charts say *Loading charts…* or that Chart.js didn't load | The chart library comes from cdnjs.cloudflare.com, which is slow or blocked on this network | Everything else works meanwhile; charts draw as soon as it arrives. Try Wi-Fi instead of mobile data (or the other way round), or reload |
+| The dashboard on GitHub Pages opens blank on the phone | An older copy cached by the browser (before Nov 2026 the page waited for the chart library, so a slow CDN left it white) | Reload once while online; if it persists, Chrome › ⋮ › Settings › Site settings › All sites › `<you>.github.io` › Clear & reset, then open it again |
 | "no price data" in a ranking | Prices not fetched yet | `pkdata.py psx --watchlist` (or `--all`) |
 | A buy idea has no quantity | No capital known | Record holdings, or `portfolio.py cash deposit AMOUNT` |
 | "that would sell … shares not held" | Wrong broker or date on a sale | Check `portfolio.py trades`; shares sell from the broker that holds them |

@@ -117,6 +117,9 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
 .list { margin: 0; padding: 0; list-style: none; }
 .list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
+.chart.nolib canvas { display: none; }
+.chart.nolib::after { content: "Charts need the Chart.js library from cdnjs.cloudflare.com, which this network didn\2019 t deliver. Everything else works."; position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 16px; color: var(--muted); font-size: 13px; }
+.chart.waiting::after { content: "Loading charts…"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
 .sel { width: 18px; height: 18px; }
 .fresh { max-width: 1280px; margin: 12px auto 0; padding: 8px 12px; font-size: 13px; line-height: 2; color: var(--text-2);
   border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
@@ -351,7 +354,7 @@ input.numeric { font-variant-numeric: tabular-nums; }
   </section>
   <p class="note">Research and practice only, not investment advice. Paper trades are never real orders. Data: PSX Data Portal and MUFAP, for personal use; do not republish.</p>
 </main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="sha512-CQBWl4fJHWbryGE+Pc7UAxWMUMNMWzWxF4SQo9CgkJIN1kx6djDQZjh3Y8SZ1d+6I+1zze6Z7kHXO7q3UyZAWw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script id="chartjs" async src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="sha512-CQBWl4fJHWbryGE+Pc7UAxWMUMNMWzWxF4SQo9CgkJIN1kx6djDQZjh3Y8SZ1d+6I+1zze6Z7kHXO7q3UyZAWw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="app.js"></script>
 </body>
 </html>
