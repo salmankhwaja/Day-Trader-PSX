@@ -371,6 +371,7 @@ def build_summary(months, meta, errors):
         data = dashboard.build_data(h, cfg, all_=True, days=1)
         for k in ("series", "calendar", "mine", "portfolio", "proposal"):
             data.pop(k, None)
+        (data.get("web") or {}).pop("ledger", None)   # the feed never carries anyone's holdings
         # Buy ideas for the whole market, independent of anyone's holdings: entry, stop, target and the
         # backtest that passed. The browser sizes them to your own capital and cash.
         try:

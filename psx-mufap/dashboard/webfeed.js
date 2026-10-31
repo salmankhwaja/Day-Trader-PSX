@@ -82,7 +82,7 @@
   }
 
   /** feed {summary, months} + ledger -> data in dashboard.py's data.json shape. L = Ledger module. */
-  function build(feed, lg, L, today) {
+  function build(feed, lg, L, today, opts) {
     var S0 = feed.summary, H = history(feed.months), D = {};
     Object.keys(S0).forEach(function (k) { D[k] = S0[k]; });
     today = today || new Date().toISOString().slice(0, 10);
@@ -101,54 +101,16 @@
     });
     D.portfolio = null; D.proposal = null; D.source = "feed";
     D.mine = null;
-    var S = S0.settings || {}, bySym = {};
-    (D.stocks || []).forEach(function (s) { bySym[s.symbol] = s; });
     var rowsOf = function (s) { return H.rows[s] || []; };
-    var priceOf = function (s) { var r = rowsOf(s); return r.length ? { price: r[r.length - 1].close, date: r[r.length - 1].date, source: "close", time: "15:30" } : null; };
-    var navOf = function (f) { var x = (S0.fund_index || {})[f]; return x ? { nav: x.nav, date: x.date, category: x.category } : null; };
+    var owned = applyLedger(D, lg, L, {
+      S: settingsFor(S0, opts && opts.profile), rowsOf: rowsOf, ideas: S0.ideas || [], fundIndex: S0.fund_index || (S0.web || {}).fund_index || {},
+      categories: (S0.funds || {}).categories, bench3m: ((S0.benchmark || {}).metrics || {})["3m"], today: today, advice_date: S0.generated,
+      profile: (opts && opts.profile) || ((S0.web || {}).profile)
+    });
     var watch = {};
     (lg.watchlist || []).forEach(function (s) { watch[s] = 1; });
-    var owned = {};
-    if (lg.entries.length) {
-      var s = L.summary(lg, priceOf, navOf, today);
-      s.holdings.forEach(function (p) { owned[p.symbol] = 1; });
-      var b3 = ((S0.benchmark || {}).metrics || {})["3m"];
-      var rv = L.review(lg, s, rowsOf, S, b3, function (sym) { return (bySym[sym] || {}).payouts || []; }, today);
-      var rvBy = {};
-      rv.forEach(function (r) { rvBy[r.symbol] = r; });
-      var sized = L.sizeIdeas(S0.ideas || [], lg, s, rv, S, 3);
-      var r4 = function (x) { return x == null ? null : Math.round(x * 10000) / 10000; };
-      var fees = {};
-      lg.entries.forEach(function (e) {
-        if ((e.type !== "buy" && e.type !== "sell") || /bonus issue/.test(e.note || "")) return;
-        var f = fees[e.broker] = fees[e.broker] || { trades: 0, turnover: 0, commission: 0, taxes: 0, other: 0, estimated: 0 };
-        f.trades++; f.turnover += e.qty * e.price; f.commission += e.commission; f.taxes += e.taxes; f.other += e.other;
-        f.estimated += e.commission_estimated ? 1 : 0;
-      });
-      D.mine = {
-        second_opinion: null, source: "browser",
-        tickets: L.tickets(rv, sized.ideas, lg, S),
-        summary: { value: s.value, cost: s.cost, unrealised: s.unrealised, realised: s.realised, dividends: s.dividends, fees: s.fees, cash: s.cash },
-        funds: L.reviewFunds(s.funds, S0.fund_index, (S0.funds || {}).categories).map(function (f) { f.unrealised_pct = r4(f.unrealised_pct); return f; }),
-        holdings: s.holdings.map(function (p) {
-          var r = rvBy[p.symbol] || {}, i = bySym[p.symbol] || {};
-          return { symbol: p.symbol, qty: p.qty, avg_cost: Math.round(p.avg_cost * 100) / 100, cost: Math.round(p.cost * 100) / 100, price: p.price,
-            price_date: p.price_date, value: p.value, unrealised: p.unrealised, unrealised_pct: r4(p.unrealised_pct), dividends: p.dividends,
-            brokers: p.brokers, first_buy: p.first_buy, days_held: p.days_held, sector: i.sector, shariah: i.shariah, action: r.action, why: r.why,
-            notes: r.notes || [], stop: r.stop, stop_source: r.stop_source, target: r.target, weight: r4(r.weight), trim_qty: r.trim_qty, calc: r.calc,
-            first_buy_time: p.first_buy_time, price_source: p.price_source, price_time: p.price_time, net_pl: p.net_pl, net_pl_pct: r4(p.net_pl_pct),
-            status: p.status, theirs: null,
-            lots: p.lots.map(function (l) { return { date: l.date, time: l.time, qty: l.qty, broker: l.broker, unit_cost: Math.round(l.unit_cost * 10000) / 10000, cost: l.cost, net_pl: l.net_pl, status: l.status }; }) };
-        }),
-        sales: s.sales.slice(-100),
-        fees: Object.keys(fees).sort().map(function (k) { return Object.assign({ broker: k }, fees[k]); }),
-        dividends: lg.entries.filter(function (e) { return e.type === "dividend"; }).slice(-100),
-        buy_ideas: sized.ideas, advice_date: S0.generated, settings: S
-      };
-      var total = s.value + (s.cash || 0);
-      D.risk = Object.assign({}, S0.risk || {}, { portfolio: { profile: (S0.risk || {}).profile, total: total, cash: s.cash,
-        open_risk: sized.open_risk, open_risk_pct: total ? sized.open_risk / total : null, risk_budget: sized.risk_budget } });
-    }
+    var bySym = {};
+    (D.stocks || []).forEach(function (s) { bySym[s.symbol] = s; });
     (D.stocks || []).forEach(function (x) { x.owned = !!owned[x.symbol]; x.held = false; x.watch = !!watch[x.symbol]; });
     ((D.market || {}).rows || []).forEach(function (x) { x.owned = !!owned[x.symbol]; x.watch = !!watch[x.symbol]; });
     (D.dividend_calendar || []).forEach(function (x) { x.held = !!owned[x.symbol]; });
@@ -156,7 +118,93 @@
     return D;
   }
 
-  var api = { BASE: BASE, status: status, unlock: unlock, stillValid: stillValid, load: load, open: open, history: history, build: build };
+  /** The settings the advice engine uses for a risk appetite: your own (with any overrides) when it is
+   *  the profile in your config, else that profile's published values. data = data.json or the feed summary. */
+  function settingsFor(data, profile) {
+    var W = (data && data.web) || {}, base = (data && data.settings) || W.settings || {};
+    if (!profile || profile === W.profile || !(W.profiles || {})[profile]) return Object.assign({}, base);
+    return Object.assign({}, base, W.profiles[profile]);
+  }
+
+  /** Recompute "My portfolio" (D.mine) and portfolio risk from a ledger, in the browser: the same maths as
+   *  portfolio.py / advice.py (ledger.js). ctx: S settings, rowsOf(sym) -> [{date, close}] oldest first,
+   *  ideas (market-wide buy ideas with entry), fundIndex, categories, bench3m, today, advice_date, profile.
+   *  Returns {symbol: true} for the shares held. */
+  function applyLedger(D, lg, L, ctx) {
+    var S = ctx.S, rowsOf = ctx.rowsOf, owned = {}, bySym = {}, today = ctx.today;
+    (D.stocks || []).forEach(function (s) { bySym[s.symbol] = s; });
+    D.mine = null;
+    if (!lg || !lg.entries || !lg.entries.length) return owned;
+    var priceOf = function (s) { var r = rowsOf(s); return r.length ? { price: r[r.length - 1].close, date: r[r.length - 1].date, source: "close", time: "15:30" } : null; };
+    var navOf = function (f) { var x = (ctx.fundIndex || {})[f]; return x ? { nav: x.nav, date: x.date, category: x.category } : null; };
+    var s = L.summary(lg, priceOf, navOf, today);
+    s.holdings.forEach(function (p) { owned[p.symbol] = 1; });
+    var rv = L.review(lg, s, rowsOf, S, ctx.bench3m, function (sym) { return (bySym[sym] || {}).payouts || []; }, today);
+    var rvBy = {};
+    rv.forEach(function (r) { rvBy[r.symbol] = r; });
+    // Buy ideas keep their backtested entry; the stop and target follow the chosen risk appetite.
+    var ideas = (ctx.ideas || []).map(function (i0) {
+      var i = Object.assign({}, i0), rows = rowsOf(i.symbol);
+      if (rows.length && i.entry > 0) {
+        var sf = L.stopFor(rows, i.entry, i.price_date || rows[rows.length - 1].date, S);
+        if (sf && sf.stop > 0 && sf.stop < i.entry) {
+          i.stop = sf.stop; i.target = sf.target; i.risk_per_share = Math.round((i.entry - sf.stop) * 100) / 100; i.stop_pct = sf.stop / i.entry - 1;
+        }
+      }
+      return i;
+    });
+    var sized = L.sizeIdeas(ideas, lg, s, rv, S, 3);
+    var r4 = function (x) { return x == null ? null : Math.round(x * 10000) / 10000; };
+    var fees = {};
+    lg.entries.forEach(function (e) {
+      if ((e.type !== "buy" && e.type !== "sell") || /bonus issue/.test(e.note || "")) return;
+      var f = fees[e.broker] = fees[e.broker] || { trades: 0, turnover: 0, commission: 0, taxes: 0, other: 0, estimated: 0 };
+      f.trades++; f.turnover += e.qty * e.price; f.commission += e.commission; f.taxes += e.taxes; f.other += e.other;
+      f.estimated += e.commission_estimated ? 1 : 0;
+    });
+    D.mine = {
+      second_opinion: null, source: "browser", profile: ctx.profile || null,
+      tickets: L.tickets(rv, sized.ideas, lg, S),
+      summary: { value: s.value, cost: s.cost, unrealised: s.unrealised, realised: s.realised, dividends: s.dividends, fees: s.fees, cash: s.cash },
+      funds: L.reviewFunds(s.funds, ctx.fundIndex, ctx.categories).map(function (f) { f.unrealised_pct = r4(f.unrealised_pct); return f; }),
+      holdings: s.holdings.map(function (p) {
+        var r = rvBy[p.symbol] || {}, i = bySym[p.symbol] || {};
+        return { symbol: p.symbol, qty: p.qty, avg_cost: Math.round(p.avg_cost * 100) / 100, cost: Math.round(p.cost * 100) / 100, price: p.price,
+          price_date: p.price_date, value: p.value, unrealised: p.unrealised, unrealised_pct: r4(p.unrealised_pct), dividends: p.dividends,
+          brokers: p.brokers, first_buy: p.first_buy, days_held: p.days_held, sector: i.sector, shariah: i.shariah, action: r.action, why: r.why,
+          notes: r.notes || [], stop: r.stop, stop_source: r.stop_source, target: r.target, weight: r4(r.weight), trim_qty: r.trim_qty, calc: r.calc,
+          first_buy_time: p.first_buy_time, price_source: p.price_source, price_time: p.price_time, net_pl: p.net_pl, net_pl_pct: r4(p.net_pl_pct),
+          status: p.status, theirs: null,
+          lots: p.lots.map(function (l) { return { date: l.date, time: l.time, qty: l.qty, broker: l.broker, unit_cost: Math.round(l.unit_cost * 10000) / 10000, cost: l.cost, net_pl: l.net_pl, status: l.status }; }) };
+      }),
+      sales: s.sales.slice(-100),
+      fees: Object.keys(fees).sort().map(function (k) { return Object.assign({ broker: k }, fees[k]); }),
+      dividends: lg.entries.filter(function (e) { return e.type === "dividend"; }).slice(-100),
+      buy_ideas: sized.ideas, buy_note: sized.note || null, advice_date: ctx.advice_date, settings: S
+    };
+    var total = s.value + (s.cash || 0);
+    // When no new share fits (max_holdings reached) sizeIdeas returns only a note: work the risk out here.
+    var openR = sized.open_risk != null ? sized.open_risk : Math.round(rv.reduce(function (t, r) {
+      return t + (r.price && r.stop != null && r.price > r.stop ? r.qty * (r.price - r.stop) : 0); }, 0) * 100) / 100;
+    var budget = sized.risk_budget != null ? sized.risk_budget : Math.round(S.max_open_risk_pct * total * 100) / 100;
+    D.risk = Object.assign({}, D.risk || {}, { portfolio: { profile: ctx.profile || (D.risk || {}).profile, total: total, cash: s.cash,
+      open_risk: openR, open_risk_pct: total ? openR / total : null, risk_budget: budget } });
+    return owned;
+  }
+
+  /** rowsOf for a data.json: its series are closes aligned with its calendar. */
+  function rowsFromSeries(D) {
+    var cache = {};
+    return function (sym) {
+      if (cache[sym]) return cache[sym];
+      var v = (D.series || {})[sym], cal = D.calendar || [], out = [];
+      if (v) for (var i = 0; i < cal.length; i++) if (v[i] != null) out.push({ date: cal[i], close: v[i] });
+      if (!out.length) { var st = (D.stocks || []).find(function (x) { return x.symbol === sym; }); if (st && st.close) out.push({ date: st.last_date, close: st.close }); }
+      return (cache[sym] = out);
+    };
+  }
+
+  var api = { BASE: BASE, status: status, unlock: unlock, stillValid: stillValid, load: load, open: open, history: history, build: build, applyLedger: applyLedger, settingsFor: settingsFor, rowsFromSeries: rowsFromSeries };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.WebFeed = api;
 })(typeof self !== "undefined" ? self : this);

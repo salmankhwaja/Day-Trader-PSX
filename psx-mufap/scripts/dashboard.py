@@ -289,6 +289,7 @@ def build_data(h, cfg, all_=None, days=500):
         "mine": mine,
         "risk": risk_block(h, cfg),
         "market": market_block(h, cfg, stocks),
+        "web": web_block(h, cfg),
     }
 
 
@@ -331,6 +332,43 @@ def market_block(h, cfg, stocks):
                      "owned": st.get("owned", False) or st.get("held", False)})
     return {"as_of": snap.get("fetched"), "rows": rows, "movers_max": scanner.MOVERS_MAX,
             "movers_min_value": scanner.MOVERS_MIN_VALUE}
+
+
+# The settings the browser's advice engine (dashboard/ledger.js) reads, and the extra ones the
+# Risk & SIP tab shows for a chosen risk appetite.
+WEB_KEYS = ["risk_per_trade", "max_position_pct", "max_holdings", "cash_reserve_pct", "max_open_risk_pct",
+            "stop_atr_mult", "vol_window", "min_stop_pct", "max_stop_pct", "target_r", "stop_limit_gap",
+            "trend_fast", "trend_slow", "review_lag_pct"]
+WEB_SHOWN = ["gate_max_drawdown", "gate_min_sharpe", "max_annual_loss_pct", "allocation"]
+
+
+def web_block(h, cfg):
+    """What the page needs to keep a portfolio and give advice in the browser (GitHub Pages, a loaded
+    file, the sample): the four risk profiles and the quiz, so you can pick your risk appetite there;
+    broker tariffs, to estimate charges; every fund's NAV, to value a fund you hold; and your ledger,
+    so the page starts from what you hold. Everything stays in the file you build: nothing is sent."""
+    import profiles as PRF
+    import risk as RK
+    out = {"profile": cfg.get("risk_profile") or PRF.DEFAULT_PROFILE, "order": PRF.ORDER,
+           "profiles": {n: {k: PRF.PROFILES[n][k] for k in WEB_KEYS + WEB_SHOWN if k in PRF.PROFILES[n]} for n in PRF.ORDER},
+           "settings": {k: A.setting(cfg, k) for k in WEB_KEYS},
+           "about": {k: PRF.VARIABLES[k][1] for k in WEB_KEYS + WEB_SHOWN},
+           "quiz": [{"dim": d, "q": q, "answers": a} for d, q, a in RK.QUESTIONS], "worst_year": RK.WORST_YEAR,
+           "brokers": PF.load_presets()}
+    try:
+        fdate, frows = rank.fund_rows(h)
+        idx = {}
+        for cat, fs in rank.rank_funds(frows).items():
+            scored = [f for f in fs if f.get("score") is not None]
+            for f in fs:
+                pos = scored.index(f) if f in scored else None
+                idx[f["fund"]] = {"nav": f["nav"], "date": f.get("validity_date") or fdate, "category": cat,
+                                  "rank": None if pos is None else pos + 1, "of": len(scored)}
+        out["fund_index"] = idx
+    except (SystemExit, Exception):  # noqa: BLE001 -- no MUFAP data on file yet
+        out["fund_index"] = {}
+    out["ledger"] = PF.load(h) if os.path.exists(PF.lpath(h)) else None
+    return out
 
 
 def risk_block(h, cfg):

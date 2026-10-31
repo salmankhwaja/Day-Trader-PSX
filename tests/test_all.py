@@ -1362,6 +1362,38 @@ class TestWebFeed(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
+class TestBrowserAdvice(unittest.TestCase):
+    """The web page's portfolio and advice (webfeed.applyLedger on a data.json) match the Python run,
+    and the risk appetite you pick in the page changes the advice the way the profiles say."""
+
+    def test_sample_matches_python_and_follows_appetite(self):
+        import subprocess
+        dash = os.path.join(ROOT, "psx-mufap", "dashboard")
+        js = ("const L=require(%r),W=require(%r),D=require(%r);"
+              "const run=p=>{const d=Object.assign({},D);d.risk=Object.assign({},D.risk);"
+              "W.applyLedger(d,JSON.parse(JSON.stringify(D.web.ledger)),L,{S:W.settingsFor(D,p),rowsOf:W.rowsFromSeries(D),"
+              "ideas:D.mine.buy_ideas,fundIndex:D.web.fund_index,categories:D.funds.categories,bench3m:D.benchmark.metrics['3m'],"
+              "today:D.sample.as_of,profile:p});return d;};"
+              "const out={};for(const p of D.web.order){const d=run(p);out[p]={h:d.mine.holdings.map(h=>[h.symbol,h.action,h.stop,h.target]),"
+              "ideas:d.mine.buy_ideas.map(i=>[i.symbol,i.qty]),note:d.mine.buy_note,risk:d.risk.portfolio};}"
+              "console.log(JSON.stringify(out));") % (os.path.join(dash, "ledger.js"), os.path.join(dash, "webfeed.js"),
+                                                     os.path.join(dash, "sample-data.json"))
+        out = json.loads(subprocess.check_output(["node", "-e", js]))
+        with open(os.path.join(dash, "sample-data.json"), encoding="utf-8") as f:
+            D = json.load(f)
+        py = [[h["symbol"], h["action"], h["stop"], h["target"]] for h in D["mine"]["holdings"]]
+        self.assertEqual(out[D["web"]["profile"]]["h"], py)               # the page agrees with portfolio.py advise
+        self.assertEqual(out["moderate"]["ideas"], [[i["symbol"], i["qty"]] for i in D["mine"]["buy_ideas"]])
+        stops = {p: dict((h[0], h[2]) for h in out[p]["h"]) for p in D["web"]["order"]}
+        self.assertNotEqual(stops["conservative"], stops["very_aggressive"])   # wider stops for more appetite
+        self.assertIn("most your style allows", out["very_aggressive"]["note"])  # 6 shares is the cap there
+        for p in D["web"]["order"]:
+            r = out[p]["risk"]
+            self.assertTrue(r["risk_budget"] > 0 and r["open_risk"] >= 0, (p, r))
+        self.assertLess(out["conservative"]["risk"]["risk_budget"], out["aggressive"]["risk"]["risk_budget"])
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not installed")
 class TestBrowserLedger(Market):
     """psx-mufap/dashboard/ledger.js gives the same numbers as portfolio.py and advice.py."""
 

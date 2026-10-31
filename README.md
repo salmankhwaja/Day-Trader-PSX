@@ -276,6 +276,12 @@ Saturday). **Refresh prices now** (top of the page, or Data) opens the workflow 
 (standard runners are free on public repos); each run takes 1-3 minutes and commits only when a
 price changed.
 
+**Your portfolio on the page:** *My portfolio* adds and edits buys, sells, mutual funds, cash and
+dividends (charges and fund units worked out as you type; one-tap Buy / Sell on each holding), and
+lets you pick your **risk appetite** (Conservative to Very aggressive, or the 8-question quiz): the
+sell / trim / hold advice, stops, targets and buy-idea sizes follow it. It works in the sample too,
+as a practice portfolio. [Details](docs/REFERENCE.md#the-website-prices-by-github-action-holdings-in-your-browser).
+
 **Your holdings, in and out:** Data saves an encrypted backup, restores one, imports a trades CSV
 or the `ledger.json` from the Python tools, and exports both. Same format both ways, so Termux,
 your computer and the website can share one portfolio.

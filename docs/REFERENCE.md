@@ -956,7 +956,7 @@ as you type: `50,000`.
 | Overview | KSE-100, sectors, top-ranked shares, dividends coming up |
 | Screener | **Ranked**: every ranked share (price history on file, liquid enough); **All shares by sector**: every listed share grouped by sector, best day first, with price, change, volume and a **Mover** column (▲ top-10 gainer, ▼ top-10 loser, ◆ top-10 most traded among shares trading at least Rs 5 million that day, ★ the sector's best gainer); filter by sector, Shariah, yield, watchlist, holdings or *Movers only*; tick to compare |
 | Compare | up to 6 companies side by side, dividends included |
-| My portfolio | **order tickets** for your broker's app; **bought vs now**: each holding (and each purchase) GREEN or RED, with when you bought and when the price is from; what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; the price calculator (rupees at the stop and at the target, reward-to-risk); your funds; costs by broker; realised P/L |
+| My portfolio | your **risk appetite** (four profiles or the quiz) and, in the browser, **add / edit transactions** (shares, funds, cash, dividends); **order tickets** for your broker's app; **bought vs now**: each holding (and each purchase) GREEN or RED, with when you bought and when the price is from; what to sell, trim or hold, each with stop-loss and target; buy ideas with quantity; the price calculator (rupees at the stop and at the target, reward-to-risk); your funds; costs by broker; realised P/L |
 | Paper · Dividends · Funds | practice account, dividend calendar, MUFAP rankings |
 | Risk & SIP | your risk style, money at risk, value-at-risk, allocation vs target, and a live SIP calculator |
 | Data | where this page's data came from, when it was built, and (on GitHub Pages) loading a newer file or forgetting it |
@@ -1096,6 +1096,35 @@ holiday is spotted (every price and volume unchanged) and not recorded as a sess
 **Refresh prices now** (the bar at the top, or Data) opens the workflow's page on GitHub: tap
 *Run workflow* while signed in. The site keeps no GitHub token, so nobody else can start runs
 from it. Reload the page when the run is done.
+
+**Adding and editing transactions on the page.** *My portfolio* has a holdings card wherever the data
+lives in your browser (the feed, a loaded `data.json` or `dashboard.html`, or the sample):
+
+| Button | Records |
+|---|---|
+| + Buy or sell shares | side, symbol (suggested from the market), shares, price per share, date, time, broker; charges are estimated from the broker's tariff and shown before you save (commission, tax, CDC and levies, what you pay or receive); the contract note's charges and your own stop-loss are optional |
+| + Mutual fund | invest or redeem: fund (from MUFAP's list), amount, NAV (filled from MUFAP for recent dates; type it from your statement for older ones), load %; the units are worked out as you type |
+| + Cash · + Dividend | deposits and withdrawals with your broker; dividends received after tax |
+| Transactions | every entry, newest first, each with **Edit** and **Delete**. An edit replaces the entry; if the new one can't stand (selling shares you didn't hold then), nothing changes |
+| Under the buttons | one chip per holding with **Buy** / **Sell** (Sell fills in the whole position, or the trim size when the advice is TRIM) and per fund with **Invest** / **Redeem** |
+
+Number boxes show commas as you type (`100,000`). A loaded file that carries your ledger (any
+`data.json` built since November 2026) starts the browser portfolio from it; after that the browser
+keeps its own copy, and *Data › Restore or import* replaces it with a newer `ledger.json`. Because
+`data.json` and `dashboard.html` now carry your trade history, treat them like your ledger: yours,
+not for sharing. In
+sample mode it's a practice portfolio for that browser tab only. The copy served by
+`dashboard.py serve` shows and advises but doesn't change your Termux ledger: record trades there
+with `portfolio.py`.
+
+**Your risk appetite, on the page.** *My portfolio* and *Risk & SIP* open with a card to pick
+Conservative, Moderate, Aggressive or Very aggressive (the four profiles in `profiles.py`), or to take
+the same 8-question quiz as `risk.py quiz` and use its result. Sell, trim or hold, stop-losses,
+targets, buy-idea sizes, order tickets and the risk numbers are worked out again in the browser,
+with the same maths as `portfolio.py advise` (a test checks they agree). Your profile from
+`config.json`, with any values you set yourself, is the starting choice; another choice uses that
+profile's own values. Buy ideas keep the backtest's entry; their stop and target follow your
+appetite. The choice is saved in that browser. Rule-based suggestions, not investment advice.
 
 **Your holdings** live in this browser's IndexedDB, on this device only. **Data** has:
 

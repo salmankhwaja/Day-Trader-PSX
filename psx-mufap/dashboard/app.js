@@ -609,9 +609,10 @@
 
   function renderMine() {
     var M = D.mine;
-    if (SOURCE === "feed") {
-      renderEditor();
-      Array.prototype.forEach.call($("v-mine").children, function (c) { if (c.id !== "mi-edit") c.style.display = M ? "" : "none"; });
+    if (engineOn()) {
+      renderRiskCard("mi-risk", $("v-mine"));
+      if (canEdit()) renderEditor(); else serverNote();
+      Array.prototype.forEach.call($("v-mine").children, function (c) { if (c.id !== "mi-edit" && c.id !== "mi-risk") c.style.display = M ? "" : "none"; });
       if (!M) return;
     }
     if (!M) {
@@ -700,7 +701,7 @@
           "<td class='l' style='white-space:normal;min-width:220px'>" + esc(i.strategy) + " " + esc(JSON.stringify(i.params || {})) +
           ": out-of-sample " + pct(i.oos_cagr) + " a year vs buy-and-hold " + pct(i.oos_buyhold_cagr) + "</td></tr>";
       }).join("") : "<tr><td class='l muted' colspan='11'>No buy ideas: nothing passed every check, or portfolio.py advise has not run yet.</td></tr>");
-    $("mi-buynote").textContent = (M.advice_date ? (SOURCE === "feed" ? "Backtested by the site's feed run of " : "From the run of ") + M.advice_date + ". " : "") +
+    $("mi-buynote").textContent = (M.buy_note ? "No new buys: " + M.buy_note + ". " : "") + (M.advice_date ? (SOURCE === "feed" ? "Backtested by the site's feed run of " : "From the run of ") + M.advice_date + ". " : "") +
       (SOURCE === "feed" ? "" : M.second_opinion ? "PakistaniBulls: their candlestick-pattern signals (read " + M.second_opinion + "), a different method shown for comparison, for your own use only. " :
         "Add a second opinion: signals.py pakistanibulls --from-file PAGE.html. ") +
       "Size risks " + (st.risk_per_trade * 100).toFixed(1) + "% of your capital between entry and stop, at most " + Math.round(st.max_position_pct * 100) +
@@ -809,7 +810,8 @@
     var R = D.risk;
     if (!R) { $("v-risk").innerHTML = '<div class="empty">Rebuild the dashboard to see risk and SIP.</div>'; return; }
     var P = R.portfolio;
-    var k = [["Risk profile", (R.profile || "").replace("_", " "), "risk.py quiz to change", ""]];
+    if (engineOn()) renderRiskCard("rk-risk", $("v-risk"));
+    var k = [["Risk profile", (R.profile || "").replace("_", " "), engineOn() ? "change it above, or take the quiz" : "risk.py quiz to change", ""]];
     if (P && P.total) {
       k.push(["If every stop hit", pkr(P.open_risk), pctAbs(P.open_risk_pct) + " of portfolio; budget " + pkr(P.risk_budget), P.open_risk > P.risk_budget ? "neg" : ""]);
       if (P.var_1m_95 != null) k.push(["A bad month (95%)", pkr(P.var_1m_95), "value-at-risk on your shares", ""]);
@@ -1217,9 +1219,10 @@
       SOURCE === "server" ? '<p class="note">Served by <code>dashboard.py serve</code>. To refresh, run the daily update or use the refresh banner.</p>' :
       '<div class="row-actions"><button class="btn" id="dt-pick">Load a newer data file</button>' +
       (SOURCE === "device" ? '<button class="btn danger" id="dt-forget">Forget data on this device</button>' : "") + "</div>" + howToMake()) +
-      importExportHTML() + privacyNote() +
+      importExportHTML() + (canEdit() ? holdingsIOHTML() : "") + privacyNote() +
       '<p class="note">PSX market data is for personal use: don\'t republish it.</p>';
     wireImportExport();
+    if (canEdit()) wireHoldingsIO();
     if (SOURCE !== "sample" && location.protocol !== "file:") {
       $("dt-card").insertAdjacentHTML("beforeend", '<p class="note">Want to see what every tab can do? ' +
         '<button class="linkbtn" id="dt-sample">Try the sample data</button>. Your own data stays as it is.</p>');
@@ -1233,7 +1236,7 @@
   }
   function fromDevice(reason) {
     return IDB.get("data").then(function (rec) {
-      if (rec && validData(rec.data)) { SOURCE = "device"; LOADED_AT = rec; window.PKM_DATA = rec.data; boot(rec.data); }
+      if (rec && validData(rec.data)) { SOURCE = "device"; LOADED_AT = rec; window.PKM_DATA = rec.data; return start(rec.data); }
       else showLoader(reason);
     }).catch(function () { showLoader(reason); });
   }
@@ -1306,12 +1309,19 @@
     }).catch(function (e) { showUnlock("Couldn't load the prices: " + e.message); });
   }
   function rebuild() {
-    D = WebFeed.build(FEED, LEDGER, Ledger);
+    D = SOURCE === "feed" ? WebFeed.build(FEED, LEDGER, Ledger, null, { profile: chosenProfile() }) : recompute(BASE);
     bySym = {}; D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
     var on = Object.keys(views).filter(function (k) { return $("v-" + k).classList.contains("on"); })[0] || "mine";
     rendered = {}; show(on);
   }
-  function saveLedger() { return IDB.set("ledger", LEDGER).then(rebuild); }
+  function saveLedger() {
+    if (SOURCE === "sample") {   // the sample's practice portfolio lives in this tab only
+      try { sessionStorage.setItem("pkm_sample_ledger", JSON.stringify(LEDGER)); } catch (e) {}
+      return Promise.resolve().then(rebuild);
+    }
+    if (!canEdit()) return Promise.resolve().then(rebuild);
+    return IDB.set("ledger", LEDGER).then(rebuild);
+  }
   function feedBar() {
     var el = $("fresh"), st = FEED_ST || {}, ps = st.psx || {}, mf = st.mufap || {};
     el.hidden = false; el.className = "fresh";
@@ -1329,106 +1339,343 @@
   function todayISO() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
   function fmsg(id, text, ok) { var el = $(id); if (el) { el.textContent = text; el.className = "note " + (ok ? "pos" : "neg"); } }
 
+
+  // ---------------------------------------------------------------- your portfolio, kept and advised in the browser
+  // Wherever the data lives in this browser (GitHub Pages, a loaded file, the one-file dashboard, the sample),
+  // "My portfolio" is worked out here from your ledger (ledger.js: the same maths as portfolio.py and
+  // advice.py) and your chosen risk appetite. dashboard.py serve stays read-only: it reads your Termux ledger.
+  var BASE = null;
+  var PROFILE_NAMES = { conservative: "Conservative", moderate: "Moderate", aggressive: "Aggressive", very_aggressive: "Very aggressive" };
+  function webOf() { return (D && D.web) || (BASE && BASE.web) || (FEED && FEED.summary && FEED.summary.web) || null; }
+  function engineOn() { return !!(window.Ledger && window.WebFeed && LEDGER && webOf() && webOf().profiles); }
+  function canEdit() { return engineOn() && SOURCE !== "server"; }
+  function chosenProfile() {
+    var W = webOf() || {}, p = store("risk_profile");
+    return (W.profiles || {})[p] ? p : (W.profile || "moderate");
+  }
+  function fmtSetting(k, v) {
+    if (v == null) return "–";
+    if (typeof v === "object") return Object.keys(v).map(function (x) { return x.replace("_", " ") + " " + Math.round(v[x] * 100) + "%"; }).join(", ");
+    if (/pct|^gate_max|risk_per_trade/.test(k)) return (v * 100).toFixed(1).replace(/\.0$/, "") + "%";
+    return String(Math.round(v * 100) / 100);
+  }
+  var RISK_SHOWN = ["risk_per_trade", "max_position_pct", "max_holdings", "cash_reserve_pct", "max_open_risk_pct",
+    "stop_atr_mult", "min_stop_pct", "max_stop_pct", "target_r", "gate_max_drawdown", "gate_min_sharpe", "max_annual_loss_pct"];
+  function recompute(base) {
+    var d = Object.assign({}, base), W = base.web || {}, prof = chosenProfile();
+    d.stocks = (base.stocks || []).map(function (x) { return Object.assign({}, x); });
+    d.risk = Object.assign({}, base.risk || {});
+    if (LEDGER && LEDGER.entries.length) {
+      var today = base.sample ? base.sample.as_of : todayISO();
+      var owned = WebFeed.applyLedger(d, LEDGER, Ledger, {
+        S: WebFeed.settingsFor(base, prof), rowsOf: WebFeed.rowsFromSeries(base),
+        ideas: base.ideas || ((base.mine || {}).buy_ideas) || [], fundIndex: W.fund_index || {}, categories: (base.funds || {}).categories,
+        bench3m: ((base.benchmark || {}).metrics || {})["3m"], today: today, advice_date: base.generated, profile: prof });
+      d.stocks.forEach(function (x) { x.owned = !!owned[x.symbol]; });
+      (d.dividend_calendar || []).forEach(function (x) { x.held = !!owned[x.symbol]; });
+    } else if (canEdit()) d.mine = null;   // an empty browser portfolio: nothing to show yet
+    var P = (W.profiles || {})[prof] || {}, S = WebFeed.settingsFor(base, prof);
+    d.risk.profile = prof;
+    d.risk.settings = RISK_SHOWN.map(function (k) { return { key: k, value: fmtSetting(k, S[k] != null ? S[k] : P[k]), about: (W.about || {})[k] || "" }; });
+    if (P.allocation) d.risk.allocation_target = P.allocation;
+    return d;
+  }
+  function loadLedger(data) {
+    var W = data.web || {}, clone = function (x) { return x ? JSON.parse(JSON.stringify(x)) : null; };
+    PRESETS = W.brokers || PRESETS;
+    if (SOURCE === "server") { LEDGER = Ledger.normalise(clone(W.ledger) || Ledger.empty()); return Promise.resolve(); }
+    if (SOURCE === "sample") {
+      var kept = null;
+      try { kept = JSON.parse(sessionStorage.getItem("pkm_sample_ledger") || "null"); } catch (e) {}
+      LEDGER = Ledger.normalise(kept || clone(W.ledger) || Ledger.empty());
+      return Promise.resolve();
+    }
+    return IDB.get("ledger").then(function (lg) {
+      if (lg && lg.entries && lg.entries.length) { LEDGER = Ledger.normalise(lg); return; }
+      LEDGER = Ledger.normalise(clone(W.ledger) || Ledger.empty());   // start from the holdings in the file you loaded
+      if (LEDGER.entries.length) return IDB.set("ledger", LEDGER);
+    }).catch(function () { LEDGER = Ledger.normalise(clone(W.ledger) || Ledger.empty()); });
+  }
+  /** Boot a data.json-shaped file (server, loaded file, one-file dashboard, sample) with the browser portfolio. */
+  function start(data) {
+    BASE = data;
+    if (!(window.Ledger && window.WebFeed && data.web && data.web.profiles)) { LEDGER = null; return boot(data); }   // an older data.json
+    return loadLedger(data).then(function () { boot(recompute(BASE)); }, function () { LEDGER = null; boot(data); });
+  }
+  function setProfile(p) {
+    store("risk_profile", p);
+    var on = Object.keys(views).filter(function (k) { return $("v-" + k).classList.contains("on"); })[0] || "mine";
+    D = SOURCE === "feed" ? WebFeed.build(FEED, LEDGER, Ledger, null, { profile: p }) : recompute(BASE);
+    bySym = {}; D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
+    rendered = {}; show(on);
+  }
+  var QUIZ = { open: false, answers: [] };
+  function profileLine(S) {
+    return "Risk " + fmtSetting("risk_per_trade", S.risk_per_trade) + " of capital per new buy · up to " + fmtSetting("max_position_pct", S.max_position_pct) +
+      " in one share · at most " + fmtSetting("max_holdings", S.max_holdings) + " shares · keep " + fmtSetting("cash_reserve_pct", S.cash_reserve_pct) +
+      " cash · stops " + fmtSetting("min_stop_pct", S.min_stop_pct) + "–" + fmtSetting("max_stop_pct", S.max_stop_pct) + " below entry · targets " +
+      fmtSetting("target_r", S.target_r) + "× the risk" + (S.allocation ? " · aim for " + fmtSetting("allocation", S.allocation) : "") + ".";
+  }
+  function scoreQuiz(a, W) {   // risk.py score_quiz
+    var cap = [], wil = [];
+    W.quiz.forEach(function (q, i) { (q.dim === "capacity" ? cap : wil).push(a[i]); });
+    var level = function (xs) { return Math.min(4, Math.max(1, Math.round(xs.reduce(function (t, x) { return t + x; }, 0) / xs.length))); };
+    var lc = level(cap), lw = level(wil);
+    if (a[0] === 1 || a[2] === 1) lc = 1;   // money needed within 2 years, or under a month saved, caps it
+    var fin = Math.min(lc, lw);
+    return { capacity: lc, willingness: lw, profile: W.order[fin - 1], worst: (W.worst_year || [])[a[7] - 1],
+      limited_by: lc < lw ? "capacity" : lw < lc ? "willingness" : "both" };
+  }
+  function renderRiskCard(id, parent) {
+    var box = $(id), W = webOf() || {}, prof = chosenProfile();
+    if (!box) { box = document.createElement("div"); box.id = id; parent.insertBefore(box, parent.firstChild); }
+    var S = Object.assign({}, (W.profiles || {})[prof] || {}, WebFeed.settingsFor(D.web ? D : BASE || {}, prof));
+    var html = '<div class="card" style="margin-bottom:12px"><h2>Your risk appetite</h2>' +
+      '<div class="seg" role="radiogroup" aria-label="Risk appetite">' + (W.order || []).map(function (p) {
+        return '<button type="button" data-prof="' + p + '" class="' + (p === prof ? "on" : "") + '" aria-checked="' + (p === prof) + '">' + esc(PROFILE_NAMES[p] || p) + "</button>";
+      }).join("") + "</div>" +
+      '<p class="small" style="margin:10px 0 4px">' + esc(profileLine(S)) + "</p>" +
+      '<p class="note">Sell, trim or hold, stop-losses, targets, buy-idea sizes and order tickets on this page follow this choice' +
+      (prof === W.profile && SOURCE !== "sample" ? " (with any values you set yourself in config.json)" : "") + ". Saved in this browser. " +
+      '<button class="linkbtn" data-quiz="1">' + (QUIZ.open ? "Close the quiz" : "Not sure? Take the 8-question quiz") + "</button></p>";
+    if (QUIZ.open) {
+      html += '<form class="quiz" id="' + id + '-quiz">' + W.quiz.map(function (q, i) {
+        return '<fieldset><legend>' + (i + 1) + ". " + esc(q.q) + "</legend>" + q.answers.map(function (a, j) {
+          return '<label class="qopt"><input type="radio" name="q' + i + '" value="' + (j + 1) + '"' + (QUIZ.answers[i] === j + 1 ? " checked" : "") + "> " + esc(a) + "</label>";
+        }).join("") + "</fieldset>";
+      }).join("") + '<div class="row-actions"><button class="btn" type="submit">See my result</button></div><p class="note" id="' + id + '-qres"></p></form>';
+    }
+    box.innerHTML = html + '<p class="note">Rule-based suggestions from your chosen limits, not investment advice. Nothing here places an order.</p></div>';
+    box.querySelectorAll("[data-prof]").forEach(function (b) { b.onclick = function () { setProfile(b.getAttribute("data-prof")); }; });
+    box.querySelector("[data-quiz]").onclick = function () { QUIZ.open = !QUIZ.open; renderRiskCard(id, parent); };
+    var form = $(id + "-quiz");
+    if (form) form.onsubmit = function (e) {
+      e.preventDefault();
+      var a = W.quiz.map(function (q, i) { var c = form.querySelector('input[name="q' + i + '"]:checked'); return c ? +c.value : 0; });
+      QUIZ.answers = a;
+      if (a.indexOf(0) >= 0) { $(id + "-qres").textContent = "Answer all eight, please (question " + (a.indexOf(0) + 1) + " is missing)."; return; }
+      var r = scoreQuiz(a, W);
+      $(id + "-qres").innerHTML = "Your answers point to <b>" + esc(PROFILE_NAMES[r.profile]) + "</b> (ability to take risk " + r.capacity + "/4, comfort with it " +
+        r.willingness + "/4" + (r.limited_by !== "both" ? "; set by your " + r.limited_by : "") + "). Worst year you could live with: " +
+        Math.round((r.worst || 0) * 100) + "%. " + '<button class="btn" type="button" id="' + id + '-use">Use ' + esc(PROFILE_NAMES[r.profile]) + "</button>";
+      $(id + "-use").onclick = function () { QUIZ.open = false; setProfile(r.profile); };
+    };
+  }
+  function serverNote() {
+    var box = $("mi-edit");
+    if (!box) { box = document.createElement("div"); box.id = "mi-edit"; $("v-mine").insertBefore(box, $("mi-risk") ? $("mi-risk").nextSibling : $("v-mine").firstChild); }
+    box.innerHTML = '<div class="card" style="margin-bottom:12px"><h2>Your holdings</h2><p class="muted">This page is served by <code>dashboard.py</code> ' +
+      "from your Termux ledger, so it shows and advises, but doesn't change it. Record trades with <code>portfolio.py buy / sell</code> (or the menu), " +
+      "or open the GitHub Pages copy, load your data and add them there.</p></div>";
+  }
+
   // ---- My portfolio: add trades, funds, cash and dividends here
-  var EDIT = { form: null };
-  function brokerOptions() {
-    var names = Object.keys(LEDGER.brokers);
-    return names.map(function (n) { return '<option' + (n === LEDGER.default_broker ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
+  var EDIT = { form: null, prefill: null, editId: null };
+  function brokerOptions(pick) {
+    var names = Object.keys(LEDGER.brokers), want = pick && LEDGER.brokers[pick] ? pick : LEDGER.default_broker;
+    return names.map(function (n) { return '<option' + (n === want ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
   }
   function presetOptions() {
     return Object.keys(PRESETS.brokers).sort().map(function (k) {
       return '<option value="' + esc(k) + '"' + (k === "finqalab" ? " selected" : "") + ">" + esc(PRESETS.brokers[k].name || k) + "</option>";
     }).join("");
   }
+  function fundIndex() { return D.fund_index || (D.web || {}).fund_index || ((BASE || {}).web || {}).fund_index || {}; }
+  function v(x) { return x == null ? "" : esc(String(x)); }
   function renderEditor() {
     var box = $("mi-edit");
-    if (!box) { box = document.createElement("div"); box.id = "mi-edit"; $("v-mine").insertBefore(box, $("v-mine").firstChild); }
-    var n = LEDGER.entries.length, hasB = Object.keys(LEDGER.brokers).length > 0, f = EDIT.form;
-    var head = '<div class="card" style="margin-bottom:12px"><h2>Your holdings <span class="muted" style="text-transform:none;letter-spacing:0">· kept in this browser only</span></h2>' +
+    if (!box) { box = document.createElement("div"); box.id = "mi-edit"; $("v-mine").insertBefore(box, $("mi-risk") ? $("mi-risk").nextSibling : $("v-mine").firstChild); }
+    var n = LEDGER.entries.length, hasB = Object.keys(LEDGER.brokers).length > 0, f = EDIT.form, P = EDIT.prefill || {}, editing = EDIT.editId != null;
+    var M = D.mine || {}, HS = M.holdings || [], FS = M.funds || [];
+    var where = SOURCE === "sample" ? "practice portfolio: this browser tab only, your own data untouched" : "kept in this browser only";
+    var head = '<div class="card" style="margin-bottom:12px"><h2>Your holdings <span class="muted" style="text-transform:none;letter-spacing:0">· ' + where + "</span></h2>" +
       (n ? "" : '<p class="muted">Add what you hold and every tab works it out: green or red after charges, stop-losses, what to sell, trim or hold, and buy ideas sized to your cash. ' +
         "Already use the Python tools? <b>Data › Import</b> takes your <code>ledger.json</code> or a trades CSV.</p>") +
       '<div class="row-actions">' +
-      (hasB ? '<button class="btn" data-f="trade">+ Buy or sell</button><button class="btn ghost" data-f="fund">+ Mutual fund</button>' +
+      (hasB ? '<button class="btn" data-f="trade">+ Buy or sell shares</button><button class="btn ghost" data-f="fund">+ Mutual fund</button>' +
         '<button class="btn ghost" data-f="cash">+ Cash</button><button class="btn ghost" data-f="div">+ Dividend</button>' +
-        '<button class="btn ghost" data-f="list">Entries (' + n + ")</button>" : "") +
+        '<button class="btn ghost" data-f="list">Transactions (' + n + ")</button>" : "") +
       '<button class="btn ghost" data-f="broker">' + (hasB ? "Brokers" : "Start: pick your broker") + "</button></div>";
-    var body = "";
+    // One tap from what you hold: buy more, sell, invest more, redeem
+    if (hasB && (HS.length || FS.length) && !f) {
+      head += '<div class="quick">' + HS.map(function (h) {
+        return '<span class="qh"><b>' + esc(h.symbol) + "</b> " + num(h.qty) + ' <span class="muted">sh</span>' +
+          (h.action ? ' <span class="st ' + (h.action === "SELL" ? "RED" : h.action === "TRIM" ? "FLAT" : "GREEN") + '">' + esc(h.action) + "</span>" : "") +
+          '<button class="linkbtn" data-q="buy" data-qsym="' + esc(h.symbol) + '">Buy</button><button class="linkbtn" data-q="sell" data-qsym="' + esc(h.symbol) + '" data-qty="' +
+          (h.action === "TRIM" && h.trim_qty ? h.trim_qty : h.qty) + '">Sell</button></span>';
+      }).join("") + FS.map(function (x) {
+        return '<span class="qh"><b>' + esc(x.fund) + '</b> <span class="muted">' + pkr(x.value) + "</span>" +
+          '<button class="linkbtn" data-qf="buy" data-fund="' + esc(x.fund) + '">Invest</button><button class="linkbtn" data-qf="sell" data-fund="' + esc(x.fund) +
+          '" data-amt="' + (x.value || "") + '">Redeem</button></span>';
+      }).join("") + "</div>";
+    }
+    var body = "", save = '<div class="row-actions"><button class="btn" type="submit">' + (editing ? "Save changes" : "Save") + "</button>" +
+      (editing || f ? '<button class="btn ghost" type="button" data-cancel="1">Cancel</button>' : "") + "</div>";
     if (!hasB || f === "broker") {
       body = '<form id="ed-broker" class="edform"><label>Broker <select id="eb-preset">' + presetOptions() + "</select></label>" +
         '<label>Name it <input id="eb-name" placeholder="e.g. Finqalab" required></label>' +
         '<button class="btn" type="submit">Add broker</button>' +
         (hasB ? '<p class="small muted">Yours: ' + Object.keys(LEDGER.brokers).map(function (k) { return esc(k) + (k === LEDGER.default_broker ? " (default)" : ""); }).join(", ") + "</p>" : "") +
-        '<p class="small muted">Charges are estimated from the broker\'s published tariff (brokers.json); enter the real ones from your contract note when you have them.</p><p id="ed-msg"></p></form>';
+        '<p class="small muted">Charges are estimated from the broker\'s published tariff (brokers.json); enter the real ones from your contract note when you have them.</p></form>';
     } else if (f === "trade") {
-      body = '<form id="ed-trade" class="edform"><label>Side <select id="et-side"><option value="buy">Buy</option><option value="sell">Sell</option></select></label>' +
-        '<label>Symbol <input id="et-sym" list="ed-syms" autocapitalize="characters" required placeholder="MEBL"></label>' +
-        '<label>Qty <input id="et-qty" inputmode="numeric" required></label><label>Price <input id="et-px" inputmode="decimal" required></label>' +
-        '<label>Date <input id="et-date" type="date" value="' + todayISO() + '" required></label><label>Time <input id="et-time" type="time"></label>' +
-        "<label>Broker <select id=\"et-broker\">" + brokerOptions() + "</select></label>" +
-        '<details><summary class="small">Charges from the contract note, stop-loss, note (optional)</summary>' +
-        '<label>Commission <input id="et-c" inputmode="decimal"></label><label>Taxes <input id="et-t" inputmode="decimal"></label>' +
-        '<label>Other (CDC, levies) <input id="et-o" inputmode="decimal"></label><label>Your stop-loss <input id="et-stop" inputmode="decimal"></label>' +
-        '<label>Note <input id="et-note"></label></details><button class="btn" type="submit">Save</button><p id="ed-msg"></p>' +
+      body = '<form id="ed-trade" class="edform"><h3 class="edh">' + (editing ? "Edit transaction" : P.side === "sell" ? "Sell shares" : "Buy or sell shares") + "</h3>" +
+        '<label>Side <select id="et-side"><option value="buy"' + (P.side !== "sell" ? " selected" : "") + '>Buy</option><option value="sell"' + (P.side === "sell" ? " selected" : "") + ">Sell</option></select></label>" +
+        '<label>Symbol <input id="et-sym" list="ed-syms" autocapitalize="characters" required placeholder="e.g. MEBL" value="' + v(P.symbol) + '"></label>' +
+        '<label>Shares <input id="et-qty" type="number" required placeholder="e.g. 500" value="' + v(P.qty) + '"></label>' +
+        '<label>Price per share <input id="et-px" type="number" required placeholder="e.g. 253.50" value="' + v(P.price) + '"></label>' +
+        '<label>Date <input id="et-date" type="date" value="' + v(P.date || todayISO()) + '" required></label><label>Time <input id="et-time" type="time" value="' + v(P.time) + '"></label>' +
+        '<label>Broker <select id="et-broker">' + brokerOptions(P.broker) + "</select></label>" +
+        '<details' + (P.commission != null || P.stop ? " open" : "") + '><summary class="small">Charges from the contract note, stop-loss, note (optional)</summary>' +
+        '<label>Commission <input id="et-c" type="number" placeholder="estimated if empty" value="' + v(P.commission) + '"></label><label>Taxes <input id="et-t" type="number" placeholder="estimated if empty" value="' + v(P.taxes) + '"></label>' +
+        '<label>Other (CDC, levies) <input id="et-o" type="number" placeholder="estimated if empty" value="' + v(P.other) + '"></label><label>Your stop-loss <input id="et-stop" type="number" placeholder="worked out if empty" value="' + v(P.stop) + '"></label>' +
+        '<label>Note <input id="et-note" placeholder="e.g. contract note #1234" value="' + v(P.note) + '"></label></details>' +
+        '<p class="small muted" id="et-calc"></p>' + save + '' +
         '<datalist id="ed-syms">' + D.stocks.map(function (x) { return '<option value="' + esc(x.symbol) + '">' + esc(x.name || "") + "</option>"; }).join("") + "</datalist></form>";
     } else if (f === "fund") {
-      var FI = D.fund_index || {};
-      body = '<form id="ed-fund" class="edform"><label>Side <select id="ef-side"><option value="buy">Invest</option><option value="sell">Redeem</option></select></label>' +
-        '<label>Fund <input id="ef-fund" list="ed-funds" required></label><label>Amount (PKR) <input id="ef-amt" inputmode="decimal" required></label>' +
-        '<label>NAV <input id="ef-nav" inputmode="decimal" required></label><label>Date <input id="ef-date" type="date" value="' + todayISO() + '" required></label>' +
-        '<label>Load % <input id="ef-load" inputmode="decimal" placeholder="0"></label><button class="btn" type="submit">Save</button><p id="ed-msg"></p>' +
+      var FI = fundIndex();
+      body = '<form id="ed-fund" class="edform"><h3 class="edh">' + (editing ? "Edit fund transaction" : P.side === "sell" ? "Redeem from a fund" : "Mutual fund") + "</h3>" +
+        '<label>Side <select id="ef-side"><option value="buy"' + (P.side !== "sell" ? " selected" : "") + '>Invest</option><option value="sell"' + (P.side === "sell" ? " selected" : "") + ">Redeem</option></select></label>" +
+        '<label>Fund <input id="ef-fund" list="ed-funds" required placeholder="e.g. Meezan Islamic Fund" value="' + v(P.fund) + '"></label>' +
+        '<label>Amount (PKR) <input id="ef-amt" type="number" required placeholder="e.g. 100,000" value="' + v(P.amount) + '"></label>' +
+        '<label>NAV <input id="ef-nav" type="number" required placeholder="from MUFAP, or your statement" value="' + v(P.nav) + '"></label>' +
+        '<label>Date <input id="ef-date" type="date" value="' + v(P.date || todayISO()) + '" required></label>' +
+        '<label>Load % <input id="ef-load" type="number" placeholder="0" value="' + v(P.load_pct) + '"></label>' +
+        '<p class="small muted" id="ef-calc">For an older date, type that day\'s NAV from your fund statement.</p>' + save + '' +
         '<datalist id="ed-funds">' + Object.keys(FI).sort().map(function (k) { return '<option value="' + esc(k) + '">' + esc(FI[k].category) + "</option>"; }).join("") + "</datalist></form>";
     } else if (f === "cash") {
-      body = '<form id="ed-cash" class="edform"><label>Kind <select id="ec-kind"><option value="1">Deposit</option><option value="-1">Withdrawal</option></select></label>' +
-        '<label>Amount (PKR) <input id="ec-amt" inputmode="decimal" required></label><label>Date <input id="ec-date" type="date" value="' + todayISO() + '" required></label>' +
-        '<button class="btn" type="submit">Save</button><p class="small muted">Cash lets buy ideas respect what you can actually spend.</p><p id="ed-msg"></p></form>';
+      body = '<form id="ed-cash" class="edform"><h3 class="edh">' + (editing ? "Edit cash entry" : "Cash with your broker") + "</h3>" +
+        '<label>Kind <select id="ec-kind"><option value="1"' + (!(P.amount < 0) ? " selected" : "") + '>Deposit</option><option value="-1"' + (P.amount < 0 ? " selected" : "") + ">Withdrawal</option></select></label>" +
+        '<label>Amount (PKR) <input id="ec-amt" type="number" required placeholder="e.g. 500,000" value="' + v(P.amount != null ? Math.abs(P.amount) : null) + '"></label>' +
+        '<label>Date <input id="ec-date" type="date" value="' + v(P.date || todayISO()) + '" required></label>' +
+        save + '<p class="small muted">Cash lets buy ideas respect what you can actually spend.</p></form>';
     } else if (f === "div") {
-      body = '<form id="ed-div" class="edform"><label>Symbol <input id="ed-dsym" autocapitalize="characters" required></label>' +
-        '<label>Received, after tax (PKR) <input id="ed-damt" inputmode="decimal" required></label><label>Date <input id="ed-ddate" type="date" value="' + todayISO() + '" required></label>' +
-        '<button class="btn" type="submit">Save</button><p id="ed-msg"></p></form>';
+      body = '<form id="ed-div" class="edform"><h3 class="edh">' + (editing ? "Edit dividend" : "Dividend received") + "</h3>" +
+        '<label>Symbol <input id="ed-dsym" list="ed-syms2" autocapitalize="characters" required placeholder="e.g. HUBC" value="' + v(P.symbol) + '"></label>' +
+        '<label>Received, after tax (PKR) <input id="ed-damt" type="number" required placeholder="e.g. 12,000" value="' + v(P.net) + '"></label>' +
+        '<label>Date <input id="ed-ddate" type="date" value="' + v(P.date || todayISO()) + '" required></label>' + save + '' +
+        '<datalist id="ed-syms2">' + HS.map(function (h) { return '<option value="' + esc(h.symbol) + '">'; }).join("") + "</datalist></form>";
     } else if (f === "list") {
       var E = Ledger.ordered(LEDGER.entries).reverse();
-      body = '<div class="tablewrap" style="max-height:50vh"><table><tr><th class="l">Date</th><th class="l">Entry</th><th>Amount</th><th class="l">Broker</th><th></th></tr>' +
+      body = '<div class="tablewrap" style="max-height:55vh"><table><tr><th class="l">Date</th><th class="l">Transaction</th><th>Amount</th><th class="l hide-m">Broker</th><th></th></tr>' +
         (E.length ? E.map(function (e) {
           var what = e.type === "buy" || e.type === "sell" ? "<b class='" + (e.type === "buy" ? "pos" : "neg") + "'>" + e.type.toUpperCase() + "</b> " + esc(e.symbol) + " " + num(e.qty) + " @ " + num(e.price, 2) :
-            e.type === "fund_buy" || e.type === "fund_sell" ? (e.type === "fund_buy" ? "Invest " : "Redeem ") + esc(e.fund) :
+            e.type === "fund_buy" || e.type === "fund_sell" ? (e.type === "fund_buy" ? "Invest " : "Redeem ") + esc(e.fund) + " <span class='muted'>@ " + num(e.nav, 4) + "</span>" :
             e.type === "cash" ? (e.amount >= 0 ? "Deposit" : "Withdrawal") : e.type === "dividend" ? "Dividend " + esc(e.symbol) : esc(e.type);
           var amt = e.type === "buy" || e.type === "sell" ? pkr(e.qty * e.price) : pkr(e.amount != null ? e.amount : e.net);
-          return "<tr>" + cell(esc(e.date) + (e.time ? " " + esc(e.time) : ""), "l") + cell(what, "l") + cell(amt) + cell(esc(e.broker || ""), "l") +
-            cell('<button class="btn ghost small" data-del="' + e.id + '">Delete</button>') + "</tr>";
-        }).join("") : "<tr><td class='l muted' colspan='5'>Nothing recorded yet.</td></tr>") + "</table></div><p id=\"ed-msg\"></p>";
+          var editable = ["buy", "sell", "fund_buy", "fund_sell", "cash", "dividend"].indexOf(e.type) >= 0;
+          return "<tr>" + cell(esc(e.date) + (e.time ? " " + esc(e.time) : ""), "l") + cell(what, "l") + cell(amt) + cell(esc(e.broker || ""), "l hide-m") +
+            cell((editable ? '<button class="btn ghost small" data-edit="' + e.id + '">Edit</button> ' : "") + '<button class="btn ghost small" data-del="' + e.id + '">Delete</button>') + "</tr>";
+        }).join("") : "<tr><td class='l muted' colspan='5'>Nothing recorded yet.</td></tr>") + "</table></div>";
     }
-    box.innerHTML = head + body + "</div>";
-    box.querySelectorAll("[data-f]").forEach(function (b) { b.onclick = function () { EDIT.form = EDIT.form === b.dataset.f ? null : b.dataset.f; renderEditor(); }; });
-    var done = function (msg) { EDIT.form = null; saveLedger().then(function () { fmsg("ed-msg", msg, true); }); };
-    var guard = function (fn) { return function (e) { e.preventDefault(); try { fn(); } catch (err) { fmsg("ed-msg", err.message, false); } }; };
-    if ($("ed-broker")) $("ed-broker").onsubmit = guard(function () {
-      var name = $("eb-name").value.trim(); if (!name) throw new Error("name the broker");
-      Ledger.addBroker(LEDGER, PRESETS, name, $("eb-preset").value, true); EDIT.form = "trade"; IDB.set("ledger", LEDGER).then(rebuild);
+    box.innerHTML = head + body + '<p id="ed-msg" class="note" role="status"></p></div>';
+    enhanceNumbers(box);
+    var reset = function () { EDIT.form = null; EDIT.prefill = null; EDIT.editId = null; };
+    box.querySelectorAll("[data-f]").forEach(function (b) { b.onclick = function () { var to = EDIT.form === b.dataset.f ? null : b.dataset.f; reset(); EDIT.form = to; renderEditor(); }; });
+    box.querySelectorAll("[data-cancel]").forEach(function (b) { b.onclick = function () { var back = EDIT.editId != null ? "list" : null; reset(); EDIT.form = back; renderEditor(); }; });
+    box.querySelectorAll("[data-q]").forEach(function (b) {
+      b.onclick = function () {
+        var sym = b.dataset.qsym, st = bySym[sym] || {};
+        reset(); EDIT.form = "trade";
+        EDIT.prefill = { side: b.dataset.q, symbol: sym, qty: b.dataset.q === "sell" ? b.dataset.qty : "", price: st.close || "" };
+        renderEditor(); box.scrollIntoView({ block: "start", behavior: "smooth" });
+      };
     });
+    box.querySelectorAll("[data-qf]").forEach(function (b) {
+      b.onclick = function () {
+        var x = fundIndex()[b.dataset.fund] || {};
+        reset(); EDIT.form = "fund";
+        EDIT.prefill = { side: b.dataset.qf, fund: b.dataset.fund, nav: x.nav || "", amount: b.dataset.qf === "sell" ? Math.round(+b.dataset.amt || 0) || "" : "" };
+        renderEditor(); box.scrollIntoView({ block: "start", behavior: "smooth" });
+      };
+    });
+    // Save: a new transaction, or an edited one (the old one is replaced; if the new one doesn't fit, nothing changes)
+    var done = function (msg) { reset(); EDIT.form = msg.list ? "list" : null; saveLedger().then(function () { fmsg("ed-msg", msg.text || msg, true); }); };
+    var guard = function (fn) {
+      return function (e) {
+        e.preventDefault();
+        var snap = JSON.stringify(LEDGER), id = EDIT.editId;
+        try {
+          if (id != null) Ledger.remove(LEDGER, id);
+          var r = fn();
+          done(id != null ? { text: "Changed. " + r, list: true } : r);
+        } catch (err) { LEDGER = JSON.parse(snap); fmsg("ed-msg", err.message, false); }
+      };
+    };
+    if ($("ed-broker")) $("ed-broker").onsubmit = function (e) {
+      e.preventDefault();
+      try {
+        var name = $("eb-name").value.trim(); if (!name) throw new Error("name the broker");
+        Ledger.addBroker(LEDGER, PRESETS, name, $("eb-preset").value, true); reset(); EDIT.form = "trade"; saveLedger();
+      } catch (err) { fmsg("ed-msg", err.message, false); }
+    };
     if ($("eb-preset")) $("eb-preset").onchange = function () { if (!$("eb-name").value) $("eb-name").value = (PRESETS.brokers[$("eb-preset").value].name || "").split(" (")[0]; };
     if ($("eb-preset") && !$("eb-name").value) $("eb-preset").onchange();
-    if ($("et-sym")) $("et-sym").onchange = function () { var x = bySym[$("et-sym").value.trim().toUpperCase()]; if (x && !$("et-px").value) $("et-px").value = x.close; };
+    var tradeCalc = function () {
+      if (!$("et-calc")) return;
+      var q = parseFloat(String($("et-qty").value).replace(/,/g, "")), p = parseFloat(String($("et-px").value).replace(/,/g, "")), b = LEDGER.brokers[$("et-broker").value];
+      if (!(q > 0) || !(p > 0) || !b) { $("et-calc").textContent = ""; return; }
+      var side = $("et-side").value, c = Ledger.estimateCharges(b, q, p, side), fees = c[0] + c[1] + c[2];
+      $("et-calc").textContent = "Value " + pkr(q * p) + " · est. charges " + pkr(fees) + " (commission " + num(c[0], 2) + ", tax " + num(c[1], 2) + ", CDC/levies " + num(c[2], 2) + ") → " +
+        (side === "buy" ? "you pay about " + pkr(q * p + fees) : "you receive about " + pkr(q * p - fees)) + ". Your contract note wins.";
+    };
+    if ($("et-sym")) {
+      $("et-sym").onchange = function () { var x = bySym[$("et-sym").value.trim().toUpperCase()]; if (x && !$("et-px").value) { $("et-px").value = groupNum(x.close); } tradeCalc(); };
+      ["et-qty", "et-px", "et-side", "et-broker"].forEach(function (k) { $(k).addEventListener("input", tradeCalc); $(k).addEventListener("change", tradeCalc); });
+      tradeCalc();
+    }
     if ($("ed-trade")) $("ed-trade").onsubmit = guard(function () {
       var e = Ledger.recordTrade(LEDGER, PRESETS, { side: $("et-side").value, symbol: $("et-sym").value, qty: $("et-qty").value, price: $("et-px").value,
         date: $("et-date").value, time: $("et-time").value, broker: $("et-broker").value, commission: $("et-c").value, taxes: $("et-t").value,
         other: $("et-o").value, stop: $("et-stop").value, note: $("et-note").value });
-      done("Saved: " + e.type + " " + e.qty + " " + e.symbol + " @ " + e.price + (e.estimated.length ? " (charges estimated)" : ""));
+      return "Saved: " + e.type + " " + num(e.qty) + " " + e.symbol + " @ " + e.price + (e.estimated.length ? " (charges estimated)" : "");
     });
-    if ($("ef-fund")) $("ef-fund").onchange = function () { var x = (D.fund_index || {})[$("ef-fund").value]; if (x && !$("ef-nav").value) $("ef-nav").value = x.nav; };
+    var fundCalc = function () {
+      if (!$("ef-calc")) return;
+      var a = parseFloat(String($("ef-amt").value).replace(/,/g, "")), nv0 = parseFloat(String($("ef-nav").value).replace(/,/g, "")), ld = parseFloat($("ef-load").value) || 0;
+      var x = fundIndex()[$("ef-fund").value];
+      var hint = x ? "MUFAP NAV " + num(x.nav, 4) + " on " + x.date + " (" + x.category + "). " : "";
+      if (a > 0 && nv0 > 0) {
+        var units = $("ef-side").value === "sell" ? a / (nv0 * (1 - ld / 100)) : a * (1 - ld / 100) / nv0;
+        $("ef-calc").textContent = hint + groupNum(String(a)) + " ÷ " + nv0 + (ld ? " (after " + ld + "% load)" : "") + " = " + num(units, 4) + " units.";
+      } else $("ef-calc").textContent = hint + "For an older date, type that day's NAV from your fund statement.";
+    };
+    if ($("ef-fund")) {
+      $("ef-fund").onchange = function () { var x = fundIndex()[$("ef-fund").value]; if (x && !$("ef-nav").value) $("ef-nav").value = x.nav; fundCalc(); };
+      $("ef-date").onchange = function () { var x = fundIndex()[$("ef-fund").value]; if (x && $("ef-date").value < x.date && String($("ef-nav").value) === String(x.nav)) $("ef-nav").value = ""; fundCalc(); };
+      ["ef-amt", "ef-nav", "ef-load", "ef-side"].forEach(function (k) { $(k).addEventListener("input", fundCalc); $(k).addEventListener("change", fundCalc); });
+      fundCalc();
+    }
     if ($("ed-fund")) $("ed-fund").onsubmit = guard(function () {
-      var x = (D.fund_index || {})[$("ef-fund").value];
-      Ledger.recordFund(LEDGER, { side: $("ef-side").value, fund: $("ef-fund").value, amount: $("ef-amt").value, nav: $("ef-nav").value,
+      var x = fundIndex()[$("ef-fund").value];
+      var e = Ledger.recordFund(LEDGER, { side: $("ef-side").value, fund: $("ef-fund").value, amount: $("ef-amt").value, nav: $("ef-nav").value,
         date: $("ef-date").value, load_pct: $("ef-load").value, category: x ? x.category : null });
-      done("Saved.");
+      return "Saved: " + (e.type === "fund_buy" ? "invested " : "redeemed ") + pkr(e.amount) + " in " + e.fund + " (" + num(e.units, 4) + " units).";
     });
     if ($("ed-cash")) $("ed-cash").onsubmit = guard(function () {
-      Ledger.recordCash(LEDGER, (+$("ec-kind").value) * parseFloat(String($("ec-amt").value).replace(/,/g, "")), $("ec-date").value); done("Saved.");
+      Ledger.recordCash(LEDGER, (+$("ec-kind").value) * parseFloat(String($("ec-amt").value).replace(/,/g, "")), $("ec-date").value); return "Saved.";
     });
-    if ($("ed-div")) $("ed-div").onsubmit = guard(function () { Ledger.recordDividend(LEDGER, $("ed-dsym").value, $("ed-damt").value, $("ed-ddate").value); done("Saved."); });
+    if ($("ed-div")) $("ed-div").onsubmit = guard(function () { Ledger.recordDividend(LEDGER, $("ed-dsym").value, $("ed-damt").value, $("ed-ddate").value); return "Saved."; });
+    box.querySelectorAll("[data-edit]").forEach(function (b) {
+      b.onclick = function () {
+        var e = LEDGER.entries.find(function (x) { return x.id === +b.dataset.edit; });
+        if (!e) return;
+        reset(); EDIT.editId = e.id;
+        if (e.type === "buy" || e.type === "sell") {
+          EDIT.form = "trade";
+          EDIT.prefill = { side: e.type, symbol: e.symbol, qty: e.qty, price: e.price, date: e.date, time: e.time, broker: e.broker, note: e.note,
+            commission: e.commission_estimated ? null : e.commission, taxes: (e.estimated || []).indexOf("taxes") >= 0 ? null : e.taxes,
+            other: (e.estimated || []).indexOf("other") >= 0 ? null : e.other, stop: e.type === "buy" ? LEDGER.stops[e.symbol] : null };
+        } else if (e.type === "fund_buy" || e.type === "fund_sell") {
+          EDIT.form = "fund"; EDIT.prefill = { side: e.type === "fund_sell" ? "sell" : "buy", fund: e.fund, amount: e.amount, nav: e.nav, date: e.date, load_pct: e.load_pct };
+        } else if (e.type === "cash") { EDIT.form = "cash"; EDIT.prefill = { amount: e.amount, date: e.date }; }
+        else if (e.type === "dividend") { EDIT.form = "div"; EDIT.prefill = { symbol: e.symbol, net: e.net, date: e.date }; }
+        renderEditor(); box.scrollIntoView({ block: "start", behavior: "smooth" });
+      };
+    });
     box.querySelectorAll("[data-del]").forEach(function (b) {
       b.onclick = function () {
-        if (!confirm("Delete this entry?")) return;
-        try { Ledger.remove(LEDGER, +b.dataset.del); EDIT.form = "list"; saveLedger(); } catch (err) { fmsg("ed-msg", err.message, false); }
+        if (!confirm("Delete this transaction?")) return;
+        try { Ledger.remove(LEDGER, +b.dataset.del); reset(); EDIT.form = "list"; saveLedger(); } catch (err) { fmsg("ed-msg", err.message, false); }
       };
     });
   }
@@ -1479,22 +1726,13 @@
     return Promise.resolve(take(o.format === "psx-desk-backup" ? o.ledger : o));
   }
   var PASSBOX = "";   // the backup passphrase box keeps its text when the tab redraws (not stored anywhere)
-  function renderFeedData() {
-    var st = FEED_ST || {}, ps = st.psx || {}, mf = st.mufap || {}, n = LEDGER.entries.length;
-    var errs = (st.errors || []).slice(0, 4).map(function (e) { return "<li><span>" + esc(e.source) + "</span><span class='muted small'>" + esc(e.error) + "</span></li>"; }).join("");
-    $("dt-card").innerHTML = privacyNote() + "<h2>Prices</h2>" +
-      '<ul class="list"><li><span>Source</span><span>this site\'s feed (GitHub Action), decrypted on this device</span></li>' +
-      "<li><span>PSX</span><span>" + num(ps.shares || 0) + " shares · " + esc(ps.first || "–") + " to " + esc(ps.last || "–") + " (" + num(ps.sessions || 0) + " sessions)</span></li>" +
-      "<li><span>MUFAP</span><span>" + num(mf.funds || 0) + " funds · " + esc(mf.date || "–") + "</span></li>" +
-      "<li><span>Feed updated</span><span>" + esc(ago(st.updated)) + "</span></li></ul>" +
-      (errs ? '<p class="small muted">Last run had problems:</p><ul class="list">' + errs + "</ul>" : "") +
-      '<div class="row-actions"><a class="btn" href="' + runUrl() + '" target="_blank" rel="noopener">Refresh prices now</a>' +
-      '<button class="btn ghost" id="fd-lock">Lock this device</button></div>' +
-      '<p class="note">Refresh opens the price workflow on GitHub: tap <b>Run workflow</b> (you need to be signed in as the repo owner). ' +
-      "New prices arrive in 1–3 minutes; then reload this page. It also runs by itself at 12:15, 16:45 and 22:45 on weekdays. No token is ever stored on this site.</p>" +
-      '<h2 style="margin-top:18px">Your holdings</h2>' +
+  function holdingsIOHTML() {
+    var n = LEDGER ? LEDGER.entries.length : 0;
+    return '<h2 style="margin-top:18px">Your holdings</h2>' +
+      (SOURCE === "sample" ? "<p>" + num(n) + " practice entries, kept in <b>this browser tab only</b>: they go when you exit the sample, and your own holdings are never touched. " +
+        "Exports and backups below hold the practice portfolio.</p>" :
       "<p>" + num(n) + " entries, kept <b>only in this browser on this device</b> (IndexedDB). Nothing is uploaded: not to GitHub, not to anyone. " +
-      "Another phone or computer has its own copy, so move them with a backup. Clearing this site's data in the browser erases them.</p>" +
+      "Another phone or computer has its own copy, so move them with a backup. Clearing this site's data in the browser erases them.</p>") +
       '<label class="small">Backup passphrase <input type="password" id="fd-pass" autocomplete="new-password" placeholder="for encrypted backups" style="width:100%;max-width:320px"></label>' +
       '<div class="row-actions"><button class="btn" id="fd-backup">Save backup</button><button class="btn ghost" id="fd-import">Restore or import…</button></div>' +
       '<div class="row-actions"><button class="btn ghost" id="fd-csv">Export trades CSV</button><button class="btn ghost" id="fd-ledger">Export ledger.json</button>' +
@@ -1502,7 +1740,9 @@
       '<p class="note"><b>Save backup</b>: everything, encrypted with the passphrase above (leave it empty for a plain file). <b>Restore or import</b> takes a backup, ' +
       "a <code>ledger.json</code> from <code>portfolio.py</code> (Termux or computer) or a trades CSV (<code>" + Ledger.FIELDS.join(",") + "</code>). " +
       "<b>ledger.json</b> goes the other way: put it in your <code>pkmarket/portfolio/</code> folder and the Python tools see the same holdings.</p>" +
-      '<p class="note">PSX market data is for personal use: don\'t republish it.</p>';
+      "";
+  }
+  function wireHoldingsIO() {
     $("fd-pass").value = PASSBOX;
     $("fd-pass").oninput = function () { PASSBOX = $("fd-pass").value; };
     $("fd-backup").onclick = function () { backup($("fd-pass").value).then(function () { fmsg("fd-msg", "Backup saved to your downloads.", true); }); };
@@ -1522,6 +1762,23 @@
       if (!confirm("Erase every holding and entry on this device? Save a backup first if unsure.")) return;
       LEDGER = Ledger.empty(); saveLedger().then(function () { fmsg("fd-msg", "Erased.", true); });
     };
+  }
+  function renderFeedData() {
+    var st = FEED_ST || {}, ps = st.psx || {}, mf = st.mufap || {}, n = LEDGER.entries.length;
+    var errs = (st.errors || []).slice(0, 4).map(function (e) { return "<li><span>" + esc(e.source) + "</span><span class='muted small'>" + esc(e.error) + "</span></li>"; }).join("");
+    $("dt-card").innerHTML = privacyNote() + "<h2>Prices</h2>" +
+      '<ul class="list"><li><span>Source</span><span>this site\'s feed (GitHub Action), decrypted on this device</span></li>' +
+      "<li><span>PSX</span><span>" + num(ps.shares || 0) + " shares · " + esc(ps.first || "–") + " to " + esc(ps.last || "–") + " (" + num(ps.sessions || 0) + " sessions)</span></li>" +
+      "<li><span>MUFAP</span><span>" + num(mf.funds || 0) + " funds · " + esc(mf.date || "–") + "</span></li>" +
+      "<li><span>Feed updated</span><span>" + esc(ago(st.updated)) + "</span></li></ul>" +
+      (errs ? '<p class="small muted">Last run had problems:</p><ul class="list">' + errs + "</ul>" : "") +
+      '<div class="row-actions"><a class="btn" href="' + runUrl() + '" target="_blank" rel="noopener">Refresh prices now</a>' +
+      '<button class="btn ghost" id="fd-lock">Lock this device</button></div>' +
+      '<p class="note">Refresh opens the price workflow on GitHub: tap <b>Run workflow</b> (you need to be signed in as the repo owner). ' +
+      "New prices arrive in 1–3 minutes; then reload this page. It also runs by itself at 12:15, 16:45 and 22:45 on weekdays. No token is ever stored on this site.</p>" +
+      holdingsIOHTML() +
+      '<p class="note">PSX market data is for personal use: don\'t republish it.</p>';
+    wireHoldingsIO();
     $("fd-lock").onclick = function () { IDB.del("feedkey").then(function () { location.reload(); }); };
     if (location.protocol !== "file:") {
       $("dt-card").insertAdjacentHTML("beforeend", '<p class="note">Want to see what every tab can do? <button class="linkbtn" id="dt-sample">Try the sample data</button>. Your own data stays as it is.</p>');
@@ -1545,7 +1802,7 @@
     }).then(function (d) {
       if (!validData(d)) throw new Error("not dashboard data");
       SOURCE = "sample"; window.PKM_DATA = d; $("tabs").hidden = false; document.querySelector("main").hidden = false;
-      $("loader").hidden = true; boot(d);
+      $("loader").hidden = true; return start(d);
     }).catch(function (e) { sampleFlag(false); showLoader("The sample data couldn't load (" + e.message + ")."); });
   }
   function sampleBar() {
@@ -1561,11 +1818,11 @@
     $("livebar").hidden = true;
   }
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(function () {});
-  if (window.PKM_DATA) { SOURCE = "file"; boot(window.PKM_DATA); }
+  if (window.PKM_DATA) { SOURCE = "file"; start(window.PKM_DATA); }
   else if (sampleFlag()) fromSample();
   else fetch("data.json", { cache: "no-store" }).then(function (r) {
     if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json();
-  }).then(function (d) { SOURCE = "server"; boot(d); }).catch(function (e) {
+  }).then(function (d) { SOURCE = "server"; return start(d); }).catch(function (e) {
     // A 404 is normal on GitHub Pages (the repo never holds data): no need to mention it.
     startWeb(location.protocol === "file:" || /^404\b/.test(e.message) ? "" : "No data.json next to this page (" + e.message + ").");
   });

@@ -221,6 +221,8 @@ def build(out=OUT):
         quiet(PF.main, ["--home", h, "advise", "--no-fetch", "--all"])   # holdings verdicts, buy ideas, tickets
         data = dashboard.build_data(h, C.load_config(h))
         data["sample"] = {"note": NOTE, "as_of": END.isoformat(), "how": "python3 tools/make_sample.py"}
+        for e in ((data.get("web") or {}).get("ledger") or {}).get("entries", []):
+            e["recorded"] = END.isoformat() + " 17:00"   # stable file: no build-time timestamps
         data["generated"] = END.isoformat() + " 17:00"
         with open(out, "w", encoding="utf-8") as f:
             json.dump(data, f, separators=(",", ":"), default=str)
