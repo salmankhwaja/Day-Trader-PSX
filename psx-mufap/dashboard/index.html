@@ -66,6 +66,48 @@
   --accent: #ff6b6b; --accent-ink: #2a0507; --good: #22c55e; --good-text: #4ade80; --bad: #fbbf24; --bad-text: #fbbf24;
   --s1: #ff8a8a; --s2: #fbbf24; --s3: #5eead4; --s4: #c4b5fd; --s5: #f9a8d4; --s6: #93c5fd; --grid: #3a1c22; --shadow: none;
 }
+/* ---------- CyberWatch themes: Obsidian, Crimson, Midnight, Arctic (colours from the CyberWatch dashboard) ---------- */
+:root[data-theme="obsidian"] {
+  color-scheme: dark;
+  --bg: #0a0c10; --surface: #111318; --surface-2: #181b22; --border: #1e2230;
+  --text: #e8eaf0; --text-2: #8a90a4; --muted: #6a7088;
+  --accent: #3b82f6; --accent-ink: #ffffff; --good: #22c55e; --good-text: #4ade80; --bad: #ef4444; --bad-text: #f87171;
+  --s1: #60a5fa; --s2: #f59e0b; --s3: #2dd4bf; --s4: #e879a0; --s5: #a78bfa; --s6: #22c55e;
+  --grid: #1e2230; --grid-op: .35; --clock: #60a5fa; --shadow: none;
+}
+:root[data-theme="crimson"] {
+  color-scheme: dark;
+  --bg: #0f0608; --surface: #170a0c; --surface-2: #1e0e10; --border: #2a1215;
+  --text: #f0e8e8; --text-2: #a48a8a; --muted: #866a6a;
+  --accent: #ef4444; --accent-ink: #ffffff; --good: #22c55e; --good-text: #4ade80; --bad: #f59e0b; --bad-text: #fbbf24;
+  --s1: #f87171; --s2: #f59e0b; --s3: #2dd4bf; --s4: #e879a0; --s5: #a78bfa; --s6: #60a5fa;
+  --grid: #2a1215; --grid-op: .35; --clock: #f87171; --shadow: none;
+}
+:root[data-theme="midnight"] {
+  color-scheme: dark;
+  --bg: #060810; --surface: #0c1020; --surface-2: #101628; --border: #1a2240;
+  --text: #e8f0f4; --text-2: #7a9aaa; --muted: #5a7a8a;
+  --accent: #22d3ee; --accent-ink: #04141a; --good: #22c55e; --good-text: #4ade80; --bad: #ef4444; --bad-text: #f87171;
+  --s1: #67e8f9; --s2: #f59e0b; --s3: #a78bfa; --s4: #e879a0; --s5: #22c55e; --s6: #60a5fa;
+  --grid: #1a2240; --grid-op: .35; --clock: #67e8f9; --shadow: none;
+}
+:root[data-theme="arctic"] {
+  color-scheme: light;
+  --bg: #f0f4f8; --surface: #ffffff; --surface-2: #f5f7fa; --border: #dde2ec;
+  --text: #1a1f2e; --text-2: #4a5270; --muted: #6a7290;
+  --accent: #4f46e5; --accent-ink: #ffffff; --good: #16a34a; --good-text: #15803d; --bad: #dc2626; --bad-text: #dc2626;
+  --s1: #4f46e5; --s2: #d97706; --s3: #0d9488; --s4: #db2777; --s5: #2563eb; --s6: #16a34a;
+  --grid: #dde2ec; --grid-op: .6; --clock: #4f46e5; --shadow: 0 1px 2px rgba(0,0,0,.05);
+}
+/* CyberWatch's faint grid behind the page, only in its four themes */
+:root[data-theme="obsidian"] body::before, :root[data-theme="crimson"] body::before,
+:root[data-theme="midnight"] body::before, :root[data-theme="arctic"] body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: var(--grid-op, .35);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+:root[data-theme="obsidian"] main, :root[data-theme="crimson"] main, :root[data-theme="midnight"] main, :root[data-theme="arctic"] main,
+:root[data-theme="obsidian"] .loader, :root[data-theme="crimson"] .loader, :root[data-theme="midnight"] .loader, :root[data-theme="arctic"] .loader { position: relative; z-index: 1; }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text);
   font: 14px/1.45 var(--font); }
@@ -160,8 +202,11 @@ tr.grp td { background: var(--surface-2); font-weight: 600; text-align: left; }
 .brand svg { width: 26px; height: 26px; flex: none; }
 nav#tabs[hidden], main[hidden] { display: none; }
 .top-right { display: flex; align-items: center; gap: 10px; margin-left: 12px; }
-.clock { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.clock b { color: var(--text); font-weight: 600; }
+.clock { text-align: center; flex-shrink: 0; white-space: nowrap; font-family: ui-monospace, "IBM Plex Mono", "SFMono-Regular", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace; }
+.clock-date { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 1px; }
+.clock-time { font-size: 17px; font-weight: 600; color: var(--clock, var(--accent)); letter-spacing: 2px; line-height: 1; transition: color .3s; font-variant-numeric: tabular-nums; }
+.clock-ms { font-size: 11px; opacity: .6; }
+.clock-tz { font-size: 9px; color: var(--muted); letter-spacing: 1px; margin-top: 1px; }
 /* Theme switcher: CyberWatch-style one-tap dots. Each dot is the theme's accent inside a ring of
    its background; the active one gets a ring of its own. */
 .swatches { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
@@ -177,14 +222,24 @@ nav#tabs[hidden], main[hidden] { display: none; }
 .sw-black { background: #f5f5f5; box-shadow: inset 0 0 0 var(--ring, 5px) #000000, 0 0 0 1px rgba(128,128,128,.35); }
 .sw-terminal { background: #3dff7a; box-shadow: inset 0 0 0 var(--ring, 5px) #030803; }
 .sw-red { background: #ff6b6b; box-shadow: inset 0 0 0 var(--ring, 5px) #1a0c0f; }
+.sw-obsidian { background: #3b82f6; box-shadow: inset 0 0 0 var(--ring, 5px) #0a0c10; }
+.sw-crimson { background: #ef4444; box-shadow: inset 0 0 0 var(--ring, 5px) #0f0608; }
+.sw-midnight { background: #22d3ee; box-shadow: inset 0 0 0 var(--ring, 5px) #060810; }
+.sw-arctic { background: #4f46e5; box-shadow: inset 0 0 0 var(--ring, 5px) #f0f4f8, 0 0 0 1px rgba(128,128,128,.35); }
+.sw-sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; flex: none; }
 @media (max-width: 640px) {   /* phones: one row of dots; the clock keeps the time only (as CyberWatch does) */
   .swatches { flex-wrap: nowrap; gap: 4px; }
   .sw { width: 16px; height: 16px; }
-  .sw-light, .sw-dark, .sw-bluegray, .sw-black, .sw-terminal, .sw-red { --ring: 4px; }
-  .clock .cd { display: none; }
+  .sw-light, .sw-dark, .sw-bluegray, .sw-black, .sw-terminal, .sw-red, .sw-obsidian, .sw-crimson, .sw-midnight, .sw-arctic { --ring: 4px; }
+  .clock-date, .clock-tz { display: none; }
+  .clock-time { font-size: 13px; letter-spacing: 1px; }
+  .bar { flex-wrap: wrap; row-gap: 8px; }
+  .top-right { display: contents; }
+  .clock { margin-left: auto; }
+  .swatches { order: 3; width: 100%; justify-content: center; }
   .top-right { gap: 8px; margin-left: auto; }
 }
-@media (max-width: 380px) { .bar h1 { display: none; } }   /* small phones: the logo alone, so all seven dots fit */
+@media (max-width: 380px) { .bar h1 { font-size: 14px; } }
 :root[data-theme="terminal"] .kpi .v::before { content: "$ "; color: var(--muted); font-size: .8em; }
 nav button .ico { display: none; }
 ::placeholder { color: var(--muted); opacity: .55; }
@@ -197,6 +252,9 @@ input.numeric { font-variant-numeric: tabular-nums; }
 .loader code, .data-card code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 12px; }
 .btn.big { padding: 11px 16px; font-weight: 600; font-size: 15px; }
 .btn.danger { background: transparent; color: var(--bad-text); border: 1px solid var(--bad); }
+.privacy { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--text-2); margin: 10px 0; }
+.privacy b { color: var(--text); }
 .row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 @media (max-width: 700px) {
   body { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
@@ -370,7 +428,7 @@ input.numeric { font-variant-numeric: tabular-nums; }
   <section class="view" id="v-data">
     <div class="card data-card" id="dt-card"></div>
   </section>
-  <p class="note">Research and practice only, not investment advice. Paper trades are never real orders. Data: PSX Data Portal and MUFAP, for personal use; do not republish.</p>
+  <p class="note"><b>Your data is yours:</b> it stays in this browser on this device, never in the repo and never uploaded. Research and practice only, not investment advice. Paper trades are never real orders. Data: PSX Data Portal and MUFAP, for personal use; do not republish.</p>
 </main>
 <script id="chartjs" async src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="sha512-CQBWl4fJHWbryGE+Pc7UAxWMUMNMWzWxF4SQo9CgkJIN1kx6djDQZjh3Y8SZ1d+6I+1zze6Z7kHXO7q3UyZAWw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="ledger.js"></script>

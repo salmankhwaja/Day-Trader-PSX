@@ -284,8 +284,14 @@ your computer and the website can share one portfolio.
 site reads this feed's `feed/latest.enc.json`, so PSX prices are fetched once for both apps,
 unlocked by the same passphrase.
 
-**Just looking?** Tap *Try the sample data*: a made-up market, sample funds and a sample portfolio,
-with a banner saying so. **Exit sample** goes back; your own data is never touched.
+**Just looking?** Tap *Try the sample data*: real PSX companies (MEBL, PPL, SYS, HUBC…), real MUFAP
+fund names and a sample portfolio, all with made-up prices and a banner saying so. **Exit sample**
+goes back; your own data is never touched.
+
+**Your data is yours.** It stays in your browser on your device, never in the repo, never uploaded.
+*Data › Import & export* carries it to another phone or computer and saves CSVs for Excel. Pick a
+look from eleven themes, including CyberWatch's Obsidian, Crimson, Midnight and Arctic, with
+CyberWatch's clock in the header.
 
 **The Python way still works.** Termux and the computer tools are unchanged: build `data.json`
 (`python3 psx-mufap/scripts/dashboard.py build`) and **Load data file**, or run

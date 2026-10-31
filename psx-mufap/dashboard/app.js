@@ -130,14 +130,16 @@
   });
   // ---------------------------------------------------------------- themes & clock
   var THEMES = [["auto", "Auto (follow phone)"], ["light", "Light"], ["dark", "Dark"], ["bluegray", "Blue Gray"],
-                ["black", "Black"], ["terminal", "Terminal"], ["red", "Red"]];
+                ["black", "Black"], ["terminal", "Terminal"], ["red", "Red"],
+                // CyberWatch's four, with its colours
+                ["obsidian", "Obsidian (CyberWatch)"], ["crimson", "Crimson (CyberWatch)"], ["midnight", "Midnight (CyberWatch)"], ["arctic", "Arctic (CyberWatch)"]];
   function applyTheme(id, rerender) {
     var ok = THEMES.some(function (t) { return t[0] === id; }) ? id : "auto";
     document.documentElement.setAttribute("data-theme", ok);
     store("theme", ok);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", css("--surface") || "#1d4ed8");
-    Array.prototype.forEach.call($("theme").children, function (b) {
+    Array.prototype.forEach.call($("theme").querySelectorAll("[data-t]"), function (b) {
       var on = b.getAttribute("data-t") === ok;
       b.classList.toggle("active", on); b.setAttribute("aria-checked", String(on));
     });
@@ -146,18 +148,33 @@
   (function setupThemes() {   // CyberWatch-style: one tap on a coloured dot
     var row = $("theme");
     row.innerHTML = THEMES.map(function (t) {
-      return '<button type="button" class="sw sw-' + t[0] + '" role="radio" aria-checked="false" data-t="' + t[0] +
+      return (t[0] === "obsidian" ? '<span class="sw-sep" aria-hidden="true"></span>' : "") +
+        '<button type="button" class="sw sw-' + t[0] + '" role="radio" aria-checked="false" data-t="' + t[0] +
         '" title="' + t[1] + '" aria-label="' + t[1] + ' theme"></button>';
     }).join("");
     row.onclick = function (e) { var b = e.target.closest("[data-t]"); if (b) applyTheme(b.getAttribute("data-t"), true); };
     applyTheme(document.documentElement.getAttribute("data-theme") || store("theme") || "auto", false);
   })();
-  function tickClock() {
-    var d = new Date();
-    $("clock").innerHTML = "<b>" + esc(d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })) + "</b><br><span class='cd'>" +
-      esc(d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })) + "</span>";
-  }
-  tickClock(); setInterval(tickClock, 15000);
+  // CyberWatch's clock: date, time to the millisecond in the theme's clock colour, and the time zone.
+  // Drawn with requestAnimationFrame, so it pauses by itself when the page isn't on screen.
+  (function startClock() {
+    var DN = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"], MN = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    var p2 = function (n) { return ("0" + n).slice(-2); }, tz = "";
+    try { tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || "").split("/").pop().replace(/_/g, " "); } catch (e) {}
+    var off = -new Date().getTimezoneOffset();
+    $("clock").innerHTML = '<div class="clock-date" id="cD"></div><div class="clock-time" id="cT"></div>' +
+      '<div class="clock-tz">' + (off === 0 ? "UTC" : esc(tz) + " UTC" + (off > 0 ? "+" : "-") + Math.floor(Math.abs(off) / 60) +
+      (off % 60 ? ":" + p2(Math.abs(off % 60)) : "")) + "</div>";
+    var cD = $("cD"), cT = $("cT"), lastDate = "";
+    function frame() {
+      var n = new Date(), d = DN[n.getDay()] + " " + p2(n.getDate()) + " " + MN[n.getMonth()] + " " + n.getFullYear();
+      if (d !== lastDate) { cD.textContent = d; lastDate = d; }
+      cT.innerHTML = p2(n.getHours()) + ":" + p2(n.getMinutes()) + ":" + p2(n.getSeconds()) +
+        '<span class="clock-ms">.' + ("00" + n.getMilliseconds()).slice(-3) + "</span>";
+      requestAnimationFrame(frame);
+    }
+    frame();
+  })();
 
   // ---------------------------------------------------------------- number fields: 100,000
   function groupNum(raw) {
@@ -1080,7 +1097,7 @@
     D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
     $("meta").textContent = (SOURCE === "sample" ? "Sample data · " : "Built " + D.generated + " · ") + D.stocks.length +
       " shares (" + D.scope + ") · prices to " + (D.calendar[D.calendar.length - 1] || "–");
-    if (SOURCE === "sample") sampleBar(); else if (SOURCE === "feed") feedBar(); else checkFreshness();
+    if (SOURCE === "sample" || D.sample) sampleBar(); else if (SOURCE === "feed") feedBar(); else checkFreshness();
     var fromHash = (location.hash.match(/compare=([^&]*)/) || [])[1];
     var saved = fromHash ? decodeURIComponent(fromHash).split(",") : (store("compare") || []);
     var slots = store("slots") || {};
@@ -1138,18 +1155,57 @@
   function showLoader(reason) {
     $("tabs").hidden = true; document.querySelector("main").hidden = true;
     var L = $("loader"); L.hidden = false;
-    L.innerHTML = '<div class="card"><h2>Load your data</h2><p class="muted">This copy of the dashboard has no data of its own: ' +
-      "PSX market data and your ledger never go in the repo. Load your own file and it stays on this device.</p>" + howToMake() +
+    L.innerHTML = '<div class="card"><h2>Your PSX &amp; MUFAP desk</h2><p>Rankings, compare, your portfolio with sell, trim or hold, ' +
+      "dividends, MUFAP funds and a SIP planner, in one place.</p>" + privacyNote() +
+      '<p class="muted">This copy of the dashboard has no data of its own: PSX market data and your ledger never go in the repo. ' +
+      "Load your own file, or try the sample to see every tab working.</p>" + howToMake() +
       '<div class="row-actions"><button class="btn big" id="ld-pick">Load data file</button></div>' +
       (location.protocol === "file:" ? "" : '<p><button class="linkbtn" id="ld-sample">or try sample data to explore</button></p>') +
       (reason ? '<p class="note">' + esc(reason) + "</p>" : "") + "</div>";
     $("ld-pick").onclick = pickFile;
     if ($("ld-sample")) $("ld-sample").onclick = startSample;
   }
+  function privacyNote() {
+    return '<p class="privacy"><b>Your data is yours.</b> It stays in this browser on this device: never in the repo, never uploaded, ' +
+      "no accounts, no trackers. Export it whenever you like, and import it on another phone or computer.</p>";
+  }
+  // Import & export for every way of opening the dashboard (the feed mode has its own, for holdings).
+  function csvCell(v) { v = v == null ? "" : String(v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function toCSV(cols, rows) {
+    return [cols.join(",")].concat(rows.map(function (r) { return cols.map(function (c) { return csvCell(r[c]); }).join(","); })).join("\r\n") + "\r\n";
+  }
+  function sharesCSV() {
+    return toCSV(["symbol", "name", "sector", "shariah", "close", "last_date", "r1w", "r1m", "r3m", "r1y", "ytd", "vol", "pe", "div_yield", "score", "watch", "owned"],
+      D.stocks.map(function (s) { return Object.assign({}, s, { div_yield: (s.div || {}).yield }); }));
+  }
+  function holdingsCSV() {
+    var hs = ((D.mine || {}).holdings) || [];
+    return toCSV(["symbol", "qty", "avg_cost", "cost", "price", "price_date", "value", "unrealised", "unrealised_pct", "action", "stop", "target", "status", "why"], hs);
+  }
+  function importExportHTML() {
+    var hasMine = ((D.mine || {}).holdings || []).length > 0;
+    return '<h2 style="margin-top:18px">Import &amp; export</h2>' +
+      '<div class="row-actions"><button class="btn" id="ie-import">Import a data file…</button>' +
+      '<button class="btn ghost" id="ie-json">Export data (.json)</button>' +
+      '<button class="btn ghost" id="ie-shares">Shares (.csv)</button>' +
+      (hasMine ? '<button class="btn ghost" id="ie-hold">My holdings (.csv)</button>' : "") + "</div>" +
+      '<p class="note"><b>Export data</b> saves everything this page shows in one file; <b>Import</b> takes that file (or the ' +
+      "<code>data.json</code> / <code>dashboard.html</code> your tools write) on any phone or computer. The CSVs open in Excel, " +
+      "Google Sheets or LibreOffice." + (SOURCE === "sample" ? " In sample mode the exports hold the sample." : "") + "</p>";
+  }
+  function wireImportExport() {
+    var stamp = todayISO();
+    if ($("ie-import")) $("ie-import").onclick = pickFile;
+    if ($("ie-json")) $("ie-json").onclick = function () {
+      download((SOURCE === "sample" ? "psx-sample-data-" : "psx-dashboard-data-") + stamp + ".json", JSON.stringify(D), "application/json");
+    };
+    if ($("ie-shares")) $("ie-shares").onclick = function () { download("psx-shares-" + stamp + ".csv", sharesCSV(), "text/csv"); };
+    if ($("ie-hold")) $("ie-hold").onclick = function () { download("psx-holdings-" + stamp + ".csv", holdingsCSV(), "text/csv"); };
+  }
   function renderData() {
     if (SOURCE === "feed") return renderFeedData();
     var src = { server: "your dashboard server (data.json next to this page)", file: "the one-file dashboard you opened",
-      device: "a file you loaded on this device", sample: "sample data: made-up companies, funds and prices" }[SOURCE];
+      device: "a file you loaded on this device", sample: "sample data: real PSX and MUFAP names, made-up prices" }[SOURCE];
     $("dt-card").innerHTML = "<h2>Your data</h2>" +
       '<ul class="list"><li><span>Source</span><span>' + esc(src) + "</span></li>" +
       "<li><span>Built</span><span>" + esc(D.generated || "–") + "</span></li>" +
@@ -1161,7 +1217,9 @@
       SOURCE === "server" ? '<p class="note">Served by <code>dashboard.py serve</code>. To refresh, run the daily update or use the refresh banner.</p>' :
       '<div class="row-actions"><button class="btn" id="dt-pick">Load a newer data file</button>' +
       (SOURCE === "device" ? '<button class="btn danger" id="dt-forget">Forget data on this device</button>' : "") + "</div>" + howToMake()) +
-      '<p class="note">Your data never leaves this device. PSX market data is for personal use: don\'t republish it.</p>';
+      importExportHTML() + privacyNote() +
+      '<p class="note">PSX market data is for personal use: don\'t republish it.</p>';
+    wireImportExport();
     if (SOURCE !== "sample" && location.protocol !== "file:") {
       $("dt-card").insertAdjacentHTML("beforeend", '<p class="note">Want to see what every tab can do? ' +
         '<button class="linkbtn" id="dt-sample">Try the sample data</button>. Your own data stays as it is.</p>');
@@ -1424,7 +1482,7 @@
   function renderFeedData() {
     var st = FEED_ST || {}, ps = st.psx || {}, mf = st.mufap || {}, n = LEDGER.entries.length;
     var errs = (st.errors || []).slice(0, 4).map(function (e) { return "<li><span>" + esc(e.source) + "</span><span class='muted small'>" + esc(e.error) + "</span></li>"; }).join("");
-    $("dt-card").innerHTML = "<h2>Prices</h2>" +
+    $("dt-card").innerHTML = privacyNote() + "<h2>Prices</h2>" +
       '<ul class="list"><li><span>Source</span><span>this site\'s feed (GitHub Action), decrypted on this device</span></li>' +
       "<li><span>PSX</span><span>" + num(ps.shares || 0) + " shares · " + esc(ps.first || "–") + " to " + esc(ps.last || "–") + " (" + num(ps.sessions || 0) + " sessions)</span></li>" +
       "<li><span>MUFAP</span><span>" + num(mf.funds || 0) + " funds · " + esc(mf.date || "–") + "</span></li>" +
@@ -1493,11 +1551,13 @@
   function sampleBar() {
     var el = $("fresh"), S = D.sample || {};
     el.hidden = false; el.className = "fresh sample";
-    el.innerHTML = "<b>Sample data.</b> " + esc(S.note || "Every company, fund and price here is made up.") +
-      " Not real PSX or MUFAP data, and not advice." + (S.as_of ? " Prices to " + esc(S.as_of) + "." : "") +
+    el.innerHTML = "<b>Sample data.</b> " + esc(S.note || "Real PSX companies and MUFAP fund names with made-up prices: for trying the dashboard, not for decisions.") +
+      " Not real PSX or MUFAP prices, and not advice." + (S.as_of ? " Prices to " + esc(S.as_of) + "." : "") +
       '<div class="row-actions"><button class="btn" id="sb-pick">Load my data</button>' +
       '<button class="btn ghost" id="sb-exit">Exit sample</button></div>';
-    $("sb-pick").onclick = pickFile; $("sb-exit").onclick = exitSample;
+    $("sb-pick").onclick = pickFile;
+    // A sample file you exported and imported again is kept on the device: "Exit" forgets it there.
+    $("sb-exit").onclick = SOURCE === "sample" ? exitSample : function () { IDB.del("data").then(function () { location.reload(); }); };
     $("livebar").hidden = true;
   }
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(function () {});

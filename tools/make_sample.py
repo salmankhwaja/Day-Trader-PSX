@@ -1,12 +1,14 @@
-"""Build the dashboard's sample data: a made-up PSX market, made-up MUFAP funds, a sample
-portfolio and a paper account, so anyone can try the dashboard (GitHub Pages included)
-before loading their own data.
+"""Build the dashboard's sample data: well-known PSX companies and MUFAP funds with made-up
+prices, a sample portfolio and a paper account, so anyone can try the dashboard (GitHub Pages
+included) before loading their own data.
 
     python3 tools/make_sample.py                 # writes psx-mufap/dashboard/sample-data.json
     python3 tools/make_sample.py --out FILE.json
 
-Every company, fund, price and index level here is invented (deterministic random walks).
-Real PSX data never goes in this repo: PSX restricts redistribution of its market data.
+The symbols, company names, sectors and fund names are real, so the sample looks like the PSX
+you know. Every price, index level, return, dividend, P/E and Shariah flag is invented
+(deterministic random walks). Real PSX data never goes in this repo: PSX restricts
+redistribution of its market data.
 The sample is built with the same tools as real data (pkdata, portfolio, paper, dashboard),
 so it always has the same shape as your own data.json.
 """
@@ -35,52 +37,53 @@ import psxinfo as P  # noqa: E402
 END = dt.date(2026, 10, 30)   # last sample session; bump it to refresh the sample
 SESSIONS = 520
 OUT = os.path.join(ROOT, "psx-mufap", "dashboard", "sample-data.json")
-NOTE = "Every company, fund, price and index level here is made up."
+NOTE = ("Real PSX companies and MUFAP fund names with made-up prices, index levels, returns, dividends and "
+        "Shariah flags: for trying the dashboard, not for decisions.")
 
 # symbol: (name, sector, Shariah, start price, daily drift, daily volatility, P/E, cash dividend %)
-# Symbols start with Z and names say "Sample" so nobody mistakes them for listed companies.
+# Real symbols and names so it looks like the PSX; the numbers (and Shariah flags) are made up.
 SHARES = {
-    "ZCEMA": ("Sample Cement A Ltd", "CEMENT", True, 180, 0.0011, 0.019, 7.5, 40),
-    "ZCEMB": ("Sample Cement B Ltd", "CEMENT", True, 95, 0.0004, 0.023, 6.1, 0),
-    "ZCEMC": ("Sample Cement C Ltd", "CEMENT", False, 40, -0.0006, 0.026, 11.0, 0),
-    "ZBNKA": ("Sample Bank A Ltd", "COMMERCIAL BANKS", False, 150, 0.0009, 0.014, 4.2, 180),
-    "ZBNKB": ("Sample Islamic Bank Ltd", "COMMERCIAL BANKS", True, 210, 0.0013, 0.015, 5.0, 150),
-    "ZBNKC": ("Sample Bank C Ltd", "COMMERCIAL BANKS", False, 30, -0.0003, 0.017, 3.1, 25),
-    "ZOILA": ("Sample Exploration A Ltd", "OIL & GAS EXPLORATION COMPANIES", True, 120, 0.0006, 0.016, 5.4, 90),
-    "ZOILB": ("Sample Petroleum B Ltd", "OIL & GAS EXPLORATION COMPANIES", True, 420, 0.0002, 0.015, 6.3, 300),
-    "ZOMCA": ("Sample Fuels Marketing Ltd", "OIL & GAS MARKETING COMPANIES", True, 260, -0.0004, 0.018, 8.0, 60),
-    "ZFERA": ("Sample Fertilizer A Ltd", "FERTILIZER", True, 140, 0.0010, 0.011, 7.0, 120),
-    "ZFERB": ("Sample Fertilizer B Ltd", "FERTILIZER", True, 75, 0.0005, 0.012, 6.6, 70),
-    "ZPWRA": ("Sample Power A Ltd", "POWER GENERATION & DISTRIBUTION", True, 110, 0.0008, 0.013, 4.9, 100),
-    "ZPWRB": ("Sample Power B Ltd", "POWER GENERATION & DISTRIBUTION", False, 25, -0.0009, 0.021, 2.8, 0),
-    "ZTECA": ("Sample Technologies A Ltd", "TECHNOLOGY & COMMUNICATION", True, 380, 0.0015, 0.024, 14.0, 20),
-    "ZTECB": ("Sample Software B Ltd", "TECHNOLOGY & COMMUNICATION", True, 60, -0.0012, 0.028, 19.0, 0),
-    "ZAUTA": ("Sample Motors Ltd", "AUTOMOBILE ASSEMBLER", True, 520, 0.0007, 0.017, 9.0, 250),
-    "ZFOOD": ("Sample Foods Ltd", "FOOD & PERSONAL CARE PRODUCTS", True, 90, 0.0003, 0.013, 12.0, 35),
-    "ZTEXA": ("Sample Textile Mills Ltd", "TEXTILE COMPOSITE", True, 70, -0.0002, 0.016, 8.5, 30),
+    "DGKC": ("D.G. Khan Cement Company Ltd", "CEMENT", True, 180, 0.0011, 0.019, 7.5, 40),
+    "MLCF": ("Maple Leaf Cement Factory Ltd", "CEMENT", True, 95, 0.0004, 0.023, 6.1, 0),
+    "PIOC": ("Pioneer Cement Ltd", "CEMENT", False, 40, -0.0006, 0.026, 11.0, 0),
+    "BAHL": ("Bank AL Habib Ltd", "COMMERCIAL BANKS", False, 150, 0.0009, 0.014, 4.2, 180),
+    "MEBL": ("Meezan Bank Ltd", "COMMERCIAL BANKS", True, 210, 0.0013, 0.015, 5.0, 150),
+    "BOP": ("The Bank of Punjab", "COMMERCIAL BANKS", False, 30, -0.0003, 0.017, 3.1, 25),
+    "PPL": ("Pakistan Petroleum Ltd", "OIL & GAS EXPLORATION COMPANIES", True, 120, 0.0006, 0.016, 5.4, 90),
+    "MARI": ("Mari Energies Ltd", "OIL & GAS EXPLORATION COMPANIES", True, 420, 0.0002, 0.015, 6.3, 300),
+    "PSO": ("Pakistan State Oil Company Ltd", "OIL & GAS MARKETING COMPANIES", True, 260, -0.0004, 0.018, 8.0, 60),
+    "EFERT": ("Engro Fertilizers Ltd", "FERTILIZER", True, 140, 0.0010, 0.011, 7.0, 120),
+    "FATIMA": ("Fatima Fertilizer Company Ltd", "FERTILIZER", True, 75, 0.0005, 0.012, 6.6, 70),
+    "HUBC": ("The Hub Power Company Ltd", "POWER GENERATION & DISTRIBUTION", True, 110, 0.0008, 0.013, 4.9, 100),
+    "KEL": ("K-Electric Ltd", "POWER GENERATION & DISTRIBUTION", False, 25, -0.0009, 0.021, 2.8, 0),
+    "SYS": ("Systems Ltd", "TECHNOLOGY & COMMUNICATION", True, 380, 0.0015, 0.024, 14.0, 20),
+    "TRG": ("TRG Pakistan Ltd", "TECHNOLOGY & COMMUNICATION", True, 60, -0.0012, 0.028, 19.0, 0),
+    "HCAR": ("Honda Atlas Cars (Pakistan) Ltd", "AUTOMOBILE ASSEMBLER", True, 520, 0.0007, 0.017, 9.0, 250),
+    "NATF": ("National Foods Ltd", "FOOD & PERSONAL CARE PRODUCTS", True, 90, 0.0003, 0.013, 12.0, 35),
+    "NML": ("Nishat Mills Ltd", "TEXTILE COMPOSITE", True, 70, -0.0002, 0.016, 8.5, 30),
 }
-INDEX = ("KSE100", 70000, 0.0007, 0.010)   # the sample's own made-up index, shown as the benchmark
-WATCHLIST = ["ZCEMA", "ZBNKB", "ZOILA", "ZFERA", "ZTECA", "ZPWRA", "ZAUTA", "ZFOOD"]
+INDEX = ("KSE100", 128000, 0.0007, 0.010)   # a made-up KSE-100 path at a believable level, shown as the benchmark
+WATCHLIST = ["DGKC", "MEBL", "PPL", "EFERT", "SYS", "HUBC", "HCAR", "NATF"]
 
 # MUFAP-style categories: (heading as on MUFAP, funds: (name, NAV, YTD, 30D, 90D, 1Y, 3Y))
 FUNDS = [
     ("Money Market (Annualized Return )", [
-        ("Sample Cash Fund", 10.6201, 10.8, 10.9, 10.7, 10.7, 16.8),
-        ("Sample Money Market Fund", 104.5512, 10.6, 10.5, 10.6, 10.6, 16.4),
-        ("Sample Daily Income Fund", 53.9110, 11.0, 10.8, 11.0, 11.0, 16.7)]),
+        ("ABL Cash Fund", 10.6201, 10.8, 10.9, 10.7, 10.7, 16.8),
+        ("HBL Money Market Fund", 104.5512, 10.6, 10.5, 10.6, 10.6, 16.4),
+        ("NBP Money Market Fund", 53.9110, 11.0, 10.8, 11.0, 11.0, 16.7)]),
     ("Shariah Compliant Money Market (Annualized Return )", [
-        ("Sample Islamic Cash Fund", 101.2234, 10.4, 10.3, 10.5, 10.4, 16.2),
-        ("Sample Islamic Money Market Fund", 10.4417, 10.2, 10.4, 10.2, 10.3, 15.9)]),
+        ("Meezan Rozana Amdani Fund", 101.2234, 10.4, 10.3, 10.5, 10.4, 16.2),
+        ("Alfalah Islamic Money Market Fund", 10.4417, 10.2, 10.4, 10.2, 10.3, 15.9)]),
     ("Income (Annualized Return )", [
-        ("Sample Income Fund", 11.2205, 11.6, 11.1, 11.9, 12.4, 17.1),
-        ("Sample Government Securities Fund", 108.8810, 11.2, 10.7, 11.4, 12.0, 16.6)]),
+        ("NBP Income Opportunity Fund", 11.2205, 11.6, 11.1, 11.9, 12.4, 17.1),
+        ("HBL Government Securities Fund", 108.8810, 11.2, 10.7, 11.4, 12.0, 16.6)]),
     ("Equity (Absolute Return )", [
-        ("Sample Stock Fund", 33.4120, 18.2, 2.1, 6.4, 31.5, 140.2),
-        ("Sample Growth Fund", 212.0045, 14.9, 1.4, 4.9, 26.8, 118.7),
-        ("Sample Value Fund", 18.7731, 9.1, -1.2, 2.2, 15.3, 88.4)]),
+        ("NBP Stock Fund", 33.4120, 18.2, 2.1, 6.4, 31.5, 140.2),
+        ("MCB Pakistan Stock Market Fund", 212.0045, 14.9, 1.4, 4.9, 26.8, 118.7),
+        ("ABL Stock Fund", 18.7731, 9.1, -1.2, 2.2, 15.3, 88.4)]),
     ("Shariah Compliant Equity (Absolute Return )", [
-        ("Sample Islamic Stock Fund", 25.9008, 16.4, 1.8, 5.7, 29.1, 131.6),
-        ("Sample Islamic Energy Fund", 14.3315, 21.7, 3.4, 9.8, 36.2, 155.0)]),
+        ("Meezan Islamic Fund", 25.9008, 16.4, 1.8, 5.7, 29.1, 131.6),
+        ("Meezan Energy Fund", 14.3315, 21.7, 3.4, 9.8, 36.2, 155.0)]),
 ]
 
 HEAD = ("| Sector | Category | Fund Name | Rating | Benchmark | Validity Date | NAV | YTD | MTD | 1 Day | 15 Days | "
@@ -181,23 +184,23 @@ def build(out=OUT):
         quiet(PF.main, ["--home", h, "cash", "deposit", "1600000", "--date", days[-260].isoformat(), "--note", "sample"])
         # Picked from what the made-up market did: a winner grown too big (TRIM), steady holds,
         # one past its stop (SELL), and one share bought twice (one purchase green, one red).
-        for sym, qty, ago, t in (("ZBNKB", 1500, 240, "10:12"), ("ZTECA", 120, 200, "11:40"), ("ZFOOD", 800, 160, "13:05"),
-                                 ("ZOILA", 700, 150, "10:30"), ("ZCEMB", 500, 230, "14:10"), ("ZCEMB", 300, 30, "12:20"),
-                                 ("ZBNKA", 900, 260, "10:55")):
+        for sym, qty, ago, t in (("MEBL", 1500, 240, "10:12"), ("SYS", 120, 200, "11:40"), ("NATF", 800, 160, "13:05"),
+                                 ("PPL", 700, 150, "10:30"), ("MLCF", 500, 230, "14:10"), ("MLCF", 300, 30, "12:20"),
+                                 ("BAHL", 900, 260, "10:55")):
             quiet(PF.main, ["--home", h, "buy", sym, str(qty), "%.2f" % px(sym, ago), "--date", days[-1 - ago].isoformat(),
                             "--time", t, "--note", "sample"])
-        quiet(PF.main, ["--home", h, "sell", "ZOILA", "300", "%.2f" % px("ZOILA", 40), "--date", days[-41].isoformat(),
+        quiet(PF.main, ["--home", h, "sell", "PPL", "300", "%.2f" % px("PPL", 40), "--date", days[-41].isoformat(),
                         "--time", "15:05", "--note", "sample"])
-        quiet(PF.main, ["--home", h, "fund-buy", "Sample Cash Fund", "100000", "--nav", "10.21",
+        quiet(PF.main, ["--home", h, "fund-buy", "ABL Cash Fund", "100000", "--nav", "10.21",
                         "--date", days[-120].isoformat(), "--note", "sample"])
 
         # A paper account opened 120 sessions ago, with a daily value history for its chart.
         quiet(paper.main, ["--home", h, "init", "--cash", "1000000"])
         start = days[-120]
-        for sym, qty in (("ZFERA", 1500), ("ZTECA", 400), ("ZAUTA", 250), ("ZPWRA", 1200)):
+        for sym, qty in (("EFERT", 1500), ("SYS", 400), ("HCAR", 250), ("HUBC", 1200)):
             quiet(paper.main, ["--home", h, "buy", sym, str(qty), "--price", "%.2f" % px(sym, 119), "--note", "sample"])
         left = paper.load(h)["cash"]
-        quiet(paper.main, ["--home", h, "invest", "Sample Money Market Fund", "%d" % int(left * 0.6)])
+        quiet(paper.main, ["--home", h, "invest", "HBL Money Market Fund", "%d" % int(left * 0.6)])
         pf = paper.load(h)
         pf["created"] = start.isoformat() + "T09:30:00"
         for t in pf["trades"]:

@@ -942,9 +942,12 @@ home-screen buttons use.
 In Chrome, go to **http://127.0.0.1:8787**, then Chrome menu › **Add to Home screen**.
 Congratulations: you now have a trading terminal that cost less than a samosa.
 
-The header shows the time and date and a row of coloured dots, one per theme, as in CyberWatch:
-tap a dot to switch. Auto (follows your phone), Light, Dark, Blue Gray, Black, Terminal and Red;
-the choice is remembered per device. On a phone the date hides to make room for the dots. On a phone the tabs sit at the bottom;
+The header carries CyberWatch's clock (the date, the time to the millisecond in the theme's
+clock colour, and your time zone, e.g. *Karachi UTC+5*) and a row of coloured dots, one per
+theme, as in CyberWatch: tap a dot to switch. Eleven themes: Auto (follows your phone), Light,
+Dark, Blue Gray, Black, Terminal and Red, then, after a divider, CyberWatch's own four with its
+colours and faint grid backdrop: Obsidian, Crimson, Midnight and Arctic. The choice is remembered
+per device. On a phone the clock shows the time only and the dots get a row of their own. On a phone the tabs sit at the bottom;
 swipe the bar for Funds, Risk & SIP and Data. Number boxes (the SIP calculator, say) show commas
 as you type: `50,000`.
 
@@ -972,14 +975,21 @@ the page to your home screen and it opens offline too. Fetch and Live need `dash
 so the Pages copy shows what the file holds.
 
 **Try it with sample data first.** Under **Load data file** there's *or try sample data to
-explore*; on any copy you can also go to **Data › Try the sample data**. It opens a made-up
-market: 18 sample companies in 10 sectors (symbols start with Z, names say *Sample*), a sample
-index, 12 sample MUFAP funds, a sample portfolio that shows every verdict (TRIM, SELL, HOLD, a
+explore*; on any copy you can also go to **Data › Try the sample data**. It looks like the PSX
+you know: 18 listed companies in 10 sectors (MEBL, BAHL, PPL, MARI, PSO, DGKC, EFERT, HUBC, SYS,
+HCAR and more), the KSE-100, 12 MUFAP funds (Meezan Islamic Fund, NBP Stock Fund, ABL Cash Fund…),
+and a sample portfolio that shows every verdict (TRIM, SELL, HOLD, a
 buy idea, order tickets, one share bought twice with one purchase green and one red) and a paper
 account with four months of history. A banner on every tab says it's sample data. **Exit sample**
 returns to your own data or the empty page; sample mode lasts for that browser tab only and
-never touches the data you loaded. None of it is real PSX or MUFAP data: the repo can't hold
-that. `python3 tools/make_sample.py` rebuilds it (bump `END` in that file to move its dates).
+never touches the data you loaded. The names are real, but every price, index level, return,
+dividend, P/E and Shariah flag is made up (the repo can't hold real PSX data), so don't trade on it. `python3 tools/make_sample.py` rebuilds it (bump `END` in that file to move its dates).
+
+**Your data is yours, in and out.** Whatever you load stays in that browser on that device:
+never in the repo, never uploaded, no accounts. **Data › Import & export** has *Import a data
+file* (a `data.json`, a one-file `dashboard.html`, or a file exported here), *Export data (.json)*
+(everything the page shows, to carry to another phone or computer), *Shares (.csv)* and *My
+holdings (.csv)* for Excel, Google Sheets or LibreOffice.
 
 When the data is older than today, the strip under the tabs offers **Fetch now** or **Use stored
 data**; tick *remember my choice* and it won't ask again. Tick **Live prices** during market hours
@@ -1365,15 +1375,15 @@ psx-mufap/                      the skill and the tools
 │   └── android_setup.sh        one-command setup in Termux
 ├── dashboard/                  index.html + app.js (Chart.js 4.4.1 from cdnjs, pinned with SRI), theme.js
 │                               (saved theme before first paint), manifest, sw.js and icons/ (installable
-│                               and offline when served from GitHub Pages), sample-data.json (the
-│                               made-up market behind "Try sample data")
+│                               and offline when served from GitHub Pages), sample-data.json (real
+│                               PSX and MUFAP names, made-up prices: behind "Try sample data")
 │                               ledger.js (your holdings in the browser, same maths as portfolio.py),
 │                               webfeed.js (unlocks and reads feed/)
 └── references/                 strategy and data-source notes
 psx-scanner/ … psx-insiders/   the 11 desk skills: SKILL.md + scripts/ (a synced copy of the code
                                 each needs) + brokers.json
 tools/sync_skills.py            copies the shared code into each desk skill (and checks it)
-tools/make_sample.py            builds dashboard/sample-data.json: a made-up market, funds and portfolio
+tools/make_sample.py            builds dashboard/sample-data.json: PSX and MUFAP names, made-up prices and portfolio
 tools/web_feed.py               the website's price feed: fetch PSX + MUFAP, publish feed/ encrypted
 feed/                           written by the feed workflow (encrypted; status.json is public)
 tests/                          offline tests on synthetic data and trimmed page samples

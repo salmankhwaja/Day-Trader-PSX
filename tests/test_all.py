@@ -1236,16 +1236,20 @@ class TestSample(unittest.TestCase):
         shutil.rmtree(os.path.dirname(out))
 
     def test_made_up_and_labelled(self):
+        # Real PSX symbols and MUFAP fund names, so it looks like the market you know; every number made up and said so.
         d = self.committed
-        self.assertIn("made up", d["sample"]["note"])
-        for s in d["stocks"]:
-            self.assertTrue(s["symbol"].startswith("Z"), s["symbol"])
-            self.assertIn("Sample", s["name"])
-        for s in C.DEFAULT_CONFIG["watchlist"]:   # no real ticker sneaks in
-            self.assertNotIn(s, {x["symbol"] for x in d["stocks"]})
+        self.assertIn("made-up prices", d["sample"]["note"])
+        self.assertIn("not for decisions", d["sample"]["note"])
+        self.assertEqual({s["symbol"] for s in d["stocks"]}, set(self.MS.SHARES))
+        self.assertIn("MEBL", self.MS.SHARES)
+        self.assertTrue(all(s["name"] == self.MS.SHARES[s["symbol"]][0] for s in d["stocks"]))
+        names = {f[0] for _, fs in self.MS.FUNDS for f in fs}
         for cat in d["funds"]["categories"].values():
             for f in cat["funds"]:
-                self.assertTrue(f["fund"].startswith("Sample"), f["fund"])
+                self.assertIn(f["fund"], names)
+        self.assertFalse(any("Sample" in s["name"] for s in d["stocks"]))
+        with open(os.path.join(ROOT, "psx-mufap", "dashboard", "app.js"), encoding="utf-8") as f:
+            self.assertIn("made-up prices", f.read())   # the banner on every tab says so too
 
     def test_shows_every_kind_of_advice(self):
         m = self.committed["mine"]
