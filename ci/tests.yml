@@ -1,12 +1,21 @@
 name: tests
+# Free on a public repo; kept lean anyway: docs-only changes don't run it, a newer push
+# cancels the older run, and no job can take longer than 10 minutes.
 on:
   push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE", "zips/**", "psx-mufap/dashboard/icons/**"]
   pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE", "psx-mufap/dashboard/icons/**"]
 permissions:
   contents: read
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         python: ["3.8", "3.12"]
