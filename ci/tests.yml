@@ -4,9 +4,9 @@ name: tests
 on:
   push:
     branches: [main]
-    paths-ignore: ["**.md", "docs/**", "LICENSE", "zips/**", "psx-mufap/dashboard/icons/**"]
+    paths-ignore: ["**.md", "docs/**", "LICENSE", "zips/**", "feed/**", "psx-mufap/dashboard/icons/**"]
   pull_request:
-    paths-ignore: ["**.md", "docs/**", "LICENSE", "psx-mufap/dashboard/icons/**"]
+    paths-ignore: ["**.md", "docs/**", "LICENSE", "feed/**", "psx-mufap/dashboard/icons/**"]
 permissions:
   contents: read
 concurrency:

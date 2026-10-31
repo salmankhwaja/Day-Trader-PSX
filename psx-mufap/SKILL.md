@@ -263,6 +263,8 @@ Rules:
 
 `portfolio.py` is a ledger of what the user actually bought and sold, at which broker, and
 what it cost. It never contacts a broker. Keep it separate from the paper account.
+The website (GitHub Pages) keeps the same ledger in the browser: its **Data › Export ledger.json**
+goes into `<home>/portfolio/ledger.json`, and the user can import yours there; the format is identical.
 
 Recording trades the user tells you about ("I bought 500 OGDC at 298 through AKD yesterday"):
 - Ask for anything missing that matters: the date, the broker, and the actual charges from the

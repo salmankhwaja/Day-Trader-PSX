@@ -66,7 +66,9 @@ FILES = {"/": ("index.html", "text/html; charset=utf-8"),
          "/app.js": ("app.js", "text/javascript; charset=utf-8"),
          "/theme.js": ("theme.js", "text/javascript; charset=utf-8"),
          "/data.json": ("data.json", "application/json"),
-         "/sample-data.json": ("sample-data.json", "application/json")}
+         "/sample-data.json": ("sample-data.json", "application/json"),
+         "/ledger.js": ("ledger.js", "text/javascript; charset=utf-8"),
+         "/webfeed.js": ("webfeed.js", "text/javascript; charset=utf-8")}
 
 
 def r4(x):
@@ -365,6 +367,9 @@ def cmd_build(a, h, cfg):
             js = f.read()
         with open(os.path.join(UI_DIR, "theme.js"), encoding="utf-8") as f:
             page = page.replace('<script src="theme.js"></script>', "<script>%s</script>" % f.read())
+        for fn in ("ledger.js", "webfeed.js"):   # inlined too, so the one file needs nothing beside it
+            with open(os.path.join(UI_DIR, fn), encoding="utf-8") as f:
+                page = page.replace('<script src="%s"></script>' % fn, "<script>%s</script>" % f.read())
         inline = "<script>window.PKM_DATA=%s;</script>\n<script>%s</script>" % (
             blob.replace("</", "<\\/"), js)
         page = page.replace('<script src="app.js"></script>', inline)
@@ -374,7 +379,7 @@ def cmd_build(a, h, cfg):
         return 0
     out = os.path.join(h, "dashboard")
     os.makedirs(out, exist_ok=True)
-    for fn in ("index.html", "app.js", "theme.js", "sample-data.json"):   # sample: the made-up market (Data › Try sample data)
+    for fn in ("index.html", "app.js", "theme.js", "ledger.js", "webfeed.js", "sample-data.json"):   # sample: the made-up market (Data › Try sample data)
         shutil.copyfile(os.path.join(UI_DIR, fn), os.path.join(out, fn))
     with open(os.path.join(out, "data.json"), "w", encoding="utf-8") as f:
         f.write(blob)

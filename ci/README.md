@@ -1,10 +1,15 @@
 # GitHub Actions workflows (not enabled yet)
 
+`feed.yml` is the website's price feed: it fetches PSX and MUFAP prices on a schedule (and when
+you press *Run workflow*) and commits them, encrypted with the `PSX_DATA_KEY` secret, to `feed/`.
+See [the website](../docs/REFERENCE.md#the-website-prices-by-github-action-holdings-in-your-browser).
+Enable it like the others, after adding the secret.
+
 `tests.yml` runs the test suite on Python 3.8 and 3.12 on every push to `main` and on pull requests
 (not for docs-only changes; a newer push cancels the older run). `release.yml` publishes
 `psx-mufap.zip` (the file people add to Claude as a skill) whenever a `v*` tag is pushed.
 
-To enable them, move both files into `.github/workflows/`, either on GitHub (open the file,
+To enable them, move the files into `.github/workflows/`, either on GitHub (open the file,
 copy it, then *Add file → Create new file* named `.github/workflows/tests.yml`) or locally:
 
 ```bash

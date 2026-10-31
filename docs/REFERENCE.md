@@ -34,14 +34,15 @@ Every command, setting and detail behind the skills. New here? Start with the
 7. [How the suggestions work](#how-the-suggestions-work)
 8. [Run it on a schedule](#run-it-on-a-schedule)
 9. [Run it on your Android phone](#run-it-on-your-android-phone)
-10. [Settings](#settings)
-11. [Brokers and their charges](#brokers-and-their-charges)
-12. [Troubleshooting](#troubleshooting)
-13. [FAQ](#faq)
-14. [Data terms](#data-terms)
-15. [Honest limits](#honest-limits)
-16. [Repo layout](#repo-layout)
-17. [Contributing](#contributing)
+10. [The website: prices by GitHub Action, holdings in your browser](#the-website-prices-by-github-action-holdings-in-your-browser)
+11. [Settings](#settings)
+12. [Brokers and their charges](#brokers-and-their-charges)
+13. [Troubleshooting](#troubleshooting)
+14. [FAQ](#faq)
+15. [Data terms](#data-terms)
+16. [Honest limits](#honest-limits)
+17. [Repo layout](#repo-layout)
+18. [Contributing](#contributing)
 
 ---
 
@@ -1042,6 +1043,65 @@ No timer, no background dashboard, but very easy:
 
 ---
 
+## The website: prices by GitHub Action, holdings in your browser
+
+No Termux, no computer: GitHub fetches the prices, and the dashboard on GitHub Pages keeps your
+holdings in your browser. The Python tools keep working alongside it.
+
+**How it works**
+
+| Piece | Where | What it does |
+|---|---|---|
+| `tools/web_feed.py` | GitHub Actions (`.github/workflows/feed.yml`, a copy of `ci/feed.yml`) | Fetches PSX's market watch (every share in one request), the KSE-100 history, the payouts page, a fifth of the company pages (each share weekly) and the MUFAP table. Runs the same ranking, dividend, fund and backtest code as the CLI over a year of history, and writes `feed/` |
+| `feed/status.json` | public | when it last ran, how many shares and sessions, errors. No prices |
+| `feed/psx/YYYY-MM.enc.json` | encrypted | one file per month, every share's close and volume. Only the current month changes day to day, so the repo grows by roughly 100-300 KB a trading day |
+| `feed/summary.enc.json`, `feed/meta.enc.json` | encrypted | the ranked market, sectors, dividends, MUFAP funds, buy ideas; names, sectors, Shariah flags, P/E |
+| `feed/latest.enc.json` | encrypted | today's prices in PK Wealth's format, so PK Wealth on the same site uses this feed |
+| `psx-mufap/dashboard/webfeed.js` | your browser | asks for the passphrase, derives the key (PBKDF2-SHA256, 310,000 rounds) and decrypts. "Keep this device unlocked" stores the key as a non-extractable WebCrypto key, never the passphrase |
+| `psx-mufap/dashboard/ledger.js` | your browser | your holdings: the same arithmetic as `portfolio.py` and `advice.py` (FIFO lots, charges from `brokers.json`, GREEN/RED, stops, SELL/TRIM/REVIEW/HOLD, sizing, order tickets). A test checks the two agree to the paisa |
+
+PSX numbers are published only encrypted (AES-256-GCM): PSX restricts redistribution of its data.
+Without the `PSX_DATA_KEY` secret the workflow fetches nothing and the page offers the sample data
+and **Load data file** only. A file is rewritten only when its content changed, so quiet runs
+commit nothing.
+
+**Set it up**
+
+1. *Settings › Secrets and variables › Actions › New repository secret:* `PSX_DATA_KEY`, a long
+   passphrase. Changing it later re-encrypts the feed from scratch on the next run, and every
+   device asks for the new one.
+2. Copy `ci/feed.yml` to `.github/workflows/feed.yml` (on GitHub: open the file, copy it, *Add
+   file › Create new file*).
+3. *Settings › Pages › Deploy from a branch › `main` / `/ (root)`.*
+4. *Actions › feed › Run workflow*, mode **backfill**: a year of history and every company page,
+   about 20 minutes, once. Normal runs take 1-3 minutes.
+5. Open `https://<you>.github.io/Day-Trader-PSX/`, enter the passphrase, **My portfolio › Start:
+   pick your broker**, then add trades, funds, cash and dividends.
+
+**Schedule** (Pakistan time): 12:15 and 16:45 Monday to Friday (a midday price, then the close),
+22:45 Monday to Friday and Saturday for MUFAP NAVs. On a public repo standard runners are free;
+each run is capped at 10 minutes (40 for a backfill) and a newer run waits for the older one. A
+holiday is spotted (every price and volume unchanged) and not recorded as a session.
+
+**Refresh prices now** (the bar at the top, or Data) opens the workflow's page on GitHub: tap
+*Run workflow* while signed in. The site keeps no GitHub token, so nobody else can start runs
+from it. Reload the page when the run is done.
+
+**Your holdings** live in this browser's IndexedDB, on this device only. **Data** has:
+
+| Button | Does |
+|---|---|
+| Save backup | everything, encrypted with the passphrase you type (AES-256-GCM, PBKDF2 310,000 rounds); empty passphrase = a plain file |
+| Restore or import… | a backup (replaces), a `ledger.json` from `portfolio.py` (replaces), or a trades CSV (adds; duplicates skipped) |
+| Export trades CSV | `date,side,symbol,qty,price,broker,commission,taxes,other,note,stop,time`, the same as `portfolio.py export` |
+| Export ledger.json | drop it into `pkmarket/portfolio/` and the Python tools see the same holdings |
+| Erase holdings on this device | starts over (save a backup first) |
+| Lock this device | forgets the stored key; the passphrase is asked again |
+
+What the website does differently from the CLI: no live intraday prices (the feed's last run is
+the price), no paper account, no PakistaniBulls second opinion, and buy ideas come from the feed's
+market-wide backtest, sized to your cash in the browser.
+
 ## Settings
 
 `config.json` in your data folder. `pkdata.py init` creates it; anything you leave out comes from
@@ -1307,11 +1367,15 @@ psx-mufap/                      the skill and the tools
 │                               (saved theme before first paint), manifest, sw.js and icons/ (installable
 │                               and offline when served from GitHub Pages), sample-data.json (the
 │                               made-up market behind "Try sample data")
+│                               ledger.js (your holdings in the browser, same maths as portfolio.py),
+│                               webfeed.js (unlocks and reads feed/)
 └── references/                 strategy and data-source notes
 psx-scanner/ … psx-insiders/   the 11 desk skills: SKILL.md + scripts/ (a synced copy of the code
                                 each needs) + brokers.json
 tools/sync_skills.py            copies the shared code into each desk skill (and checks it)
 tools/make_sample.py            builds dashboard/sample-data.json: a made-up market, funds and portfolio
+tools/web_feed.py               the website's price feed: fetch PSX + MUFAP, publish feed/ encrypted
+feed/                           written by the feed workflow (encrypted; status.json is public)
 tests/                          offline tests on synthetic data and trimmed page samples
 zips/                           one zip per skill, to add in the Claude app (built by tools/sync_skills.py)
 docs/REFERENCE.md               this manual (README.md is the short front door)

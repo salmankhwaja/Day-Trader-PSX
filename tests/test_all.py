@@ -1274,6 +1274,133 @@ class TestSample(unittest.TestCase):
         self.assertIn("pkm_sample", js)
 
 
+def _fake_portal(now):
+    """A stand-in for the PSX portal and MUFAP, from the fixtures (history cut off at `now`)."""
+    def get(url, timeout=30, data=None):
+        rd = lambda n: open(os.path.join(FIX, n), encoding="utf-8").read()  # noqa: E731
+        if url.endswith("/market-watch"):
+            return rd("psx-market-watch.html")
+        if "/timeseries/eod/" in url:
+            d = json.loads(rd("psx-%s.json" % url.rsplit("/", 1)[1]))
+            d["data"] = [r for r in d["data"] if r[0] < now - 86400 * 3]
+            return json.dumps(d)
+        if url.endswith("/symbols"):
+            return json.dumps([{"symbol": "SYN%02d" % k, "name": "Synthetic %d" % k} for k in range(12)])
+        if url == P.PAYOUTS_URL:
+            return rd("psx-payouts.html")
+        if "/company/" in url:
+            return rd("psx-company-OGDC.html")
+        if url == pkdata.MUFAP_URL:
+            return rd("mufap-2026-10-26.md")
+        raise IOError("unexpected " + url)
+    return get
+
+
+class TestWebFeed(unittest.TestCase):
+    """tools/web_feed.py: what the GitHub Action publishes for the website (and PK Wealth)."""
+
+    def setUp(self):
+        import time
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import web_feed
+        self.W = web_feed
+        self.feed = tempfile.mkdtemp()
+        self.patches = [unittest.mock.patch.object(web_feed, "FEED", self.feed), unittest.mock.patch.object(web_feed, "MIN_QUOTES", 5),
+                        unittest.mock.patch.object(web_feed, "MIN_FUNDS", 5), unittest.mock.patch.object(C, "http_get", _fake_portal(time.time())),
+                        unittest.mock.patch.dict(os.environ, {"PSX_DATA_KEY": "test passphrase"})]
+        for x in self.patches:
+            x.start()
+
+    def tearDown(self):
+        for x in self.patches:
+            x.stop()
+        shutil.rmtree(self.feed)
+
+    def test_off_without_the_secret(self):
+        with unittest.mock.patch.dict(os.environ, {"PSX_DATA_KEY": ""}):
+            run(self.W.main, [])
+        self.assertEqual(sorted(os.listdir(self.feed)), ["status.json"])   # nothing from PSX, not even encrypted
+        self.assertFalse(json.load(open(os.path.join(self.feed, "status.json")))["psx"]["available"])
+
+    def test_publishes_encrypted_and_commits_only_changes(self):
+        try:
+            import cryptography  # noqa: F401
+        except ImportError:
+            self.skipTest("pip install cryptography")
+        run(self.W.main, [])
+        st = json.load(open(os.path.join(self.feed, "status.json")))
+        self.assertTrue(st["psx"]["available"])
+        self.assertLessEqual(len(st["psx"]["months"]), self.W.KEEP_MONTHS)
+        for root_, _, files in os.walk(self.feed):     # PSX numbers never in the clear
+            for f in files:
+                if f.endswith(".enc.json"):
+                    doc = json.load(open(os.path.join(root_, f)))
+                    self.assertIn("AES-256-GCM", doc["enc"])
+                    self.assertNotIn("SYN07", json.dumps(doc))
+        store = self.W.Store("test passphrase")
+        summ = store.load("summary.enc.json")
+        self.assertEqual({s["symbol"] for s in summ["stocks"]}, {"SYN%02d" % k for k in range(12)})
+        self.assertIn("fund_index", summ)
+        self.assertIn("vol_window", summ["settings"])
+        lt = json.load(open(os.path.join(self.feed, "latest.enc.json")))   # PK Wealth's own format
+        self.assertEqual(lt["format"], "pk-wealth-psx")
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        key = self.W.derive("test passphrase", self.W.unb64(lt["salt"]), lt["iterations"])
+        items = json.loads(AESGCM(key).decrypt(self.W.unb64(lt["iv"]), self.W.unb64(lt["data"]), None))["items"]
+        self.assertIn("current", items["SYN07"])
+        rc, out = run(self.W.main, [])                 # same prices again: nothing to commit
+        self.assertIn("changed: nothing", out)
+        kd = json.load(open(os.path.join(self.feed, "key.json")))
+        with self.assertRaises(Exception):             # a wrong passphrase opens nothing
+            self.W.unseal(json.load(open(os.path.join(self.feed, "summary.enc.json"))), self.W.derive("wrong", self.W.unb64(kd["salt"])))
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not installed")
+class TestBrowserLedger(Market):
+    """psx-mufap/dashboard/ledger.js gives the same numbers as portfolio.py and advice.py."""
+
+    def test_same_as_python(self):
+        import subprocess
+        run(PF.main, ["--home", self.h, "broker", "add", "Finqalab", "--preset", "finqalab", "--default"])
+        run(PF.main, ["--home", self.h, "broker", "add", "AKD", "--preset", "akd"])
+        run(PF.main, ["--home", self.h, "cash", "deposit", "900000", "--date", "2025-01-01"])
+        rows = {s: C.read_prices(C.price_path(self.h, s)) for s in ("SYN01", "SYN05", "SYN07", "SYN11")}
+
+        def buy(sym, qty, ago, *extra):
+            run(PF.main, ["--home", self.h, "buy", sym, str(qty), str(rows[sym][-ago]["close"]), "--date", rows[sym][-ago]["date"]] + list(extra))
+        buy("SYN01", 300, 200, "--time", "10:05")
+        buy("SYN07", 100, 40, "--broker", "AKD")
+        buy("SYN07", 50, 10, "--commission", "12.5")
+        buy("SYN11", 200, 30)
+        run(PF.main, ["--home", self.h, "sell", "SYN07", "60", str(rows["SYN07"][-5]["close"]), "--date", rows["SYN07"][-5]["date"], "--broker", "AKD"])
+        buy("SYN05", 80, 90)
+        run(PF.main, ["--home", self.h, "stop", "SYN05", "1.5"])
+        lg = PF.load(self.h)
+        s = PF.summary(self.h, lg)
+        rv = A.review_holdings(self.h, self.cfg, lg, s)
+        S = {k: A.setting(self.cfg, k) for k in list(A.SHOWN) + ["vol_window", "trend_fast", "trend_slow", "review_lag_pct", "stop_limit_gap"]}
+        prices = {x: [{"date": r["date"], "close": r["close"]} for r in rows_] for x, rows_ in
+                  ((x, C.read_prices(C.price_path(self.h, x))) for x in {e["symbol"] for e in lg["entries"] if e.get("symbol")})}
+        inp = os.path.join(self.h, "in.json")
+        with open(inp, "w") as f:
+            json.dump({"lg": lg, "S": S, "b3": A._bench_3m(self.h, self.cfg), "prices": prices}, f)
+        js = ("const L=require(%r);const I=JSON.parse(require('fs').readFileSync(process.argv[1]));"
+              "const last=s=>{const r=I.prices[s];return r&&r.length?{price:r[r.length-1].close,date:r[r.length-1].date}:null};"
+              "const s=L.summary(I.lg,last,()=>null,'2026-10-31');"
+              "console.log(JSON.stringify({s,rv:L.review(I.lg,s,x=>I.prices[x],I.S,I.b3,null,'2026-10-31')}))") % os.path.join(ROOT, "psx-mufap", "dashboard", "ledger.js")
+        out = json.loads(subprocess.check_output(["node", "-e", js, inp]))
+        for k in ("value", "cost", "unrealised", "realised", "fees", "cash"):
+            self.assertAlmostEqual(s[k], out["s"][k], places=1, msg=k)
+        for a, b in zip(s["holdings"], out["s"]["holdings"]):
+            self.assertEqual((a["symbol"], a["qty"], a["status"], a["first_buy"]), (b["symbol"], b["qty"], b["status"], b["first_buy"]))
+            self.assertAlmostEqual(a["net_pl"], b["net_pl"], places=1)
+        self.assertEqual([x["pnl"] for x in s["sales"]], [x["pnl"] for x in out["s"]["sales"]])
+        for a, b in zip(rv, out["rv"]):
+            self.assertEqual({k: a.get(k) for k in ("symbol", "action", "stop", "target", "why")},
+                             {k: b.get(k) for k in ("symbol", "action", "stop", "target", "why")})
+        self.assertGreater(len({r["action"] for r in rv}), 1)
+
+
 class TestWatchlist(Market):
     def test_add_remove_set_top_and_checks(self):
         run(WL.main, ["--home", self.h, "add", "SYN08", "NOPE"])

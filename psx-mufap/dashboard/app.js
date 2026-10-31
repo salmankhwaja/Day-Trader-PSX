@@ -592,6 +592,11 @@
 
   function renderMine() {
     var M = D.mine;
+    if (SOURCE === "feed") {
+      renderEditor();
+      Array.prototype.forEach.call($("v-mine").children, function (c) { if (c.id !== "mi-edit") c.style.display = M ? "" : "none"; });
+      if (!M) return;
+    }
     if (!M) {
       $("v-mine").innerHTML = '<div class="empty">No trades recorded yet. Add your broker and trades:<br><code>portfolio.py broker add NAME --commission-pct 0.15</code><br>' +
         '<code>portfolio.py buy SYMBOL QTY PRICE --broker NAME --date YYYY-MM-DD --commission X</code><br>or import a CSV: <code>portfolio.py import trades.csv</code></div>';
@@ -678,8 +683,8 @@
           "<td class='l' style='white-space:normal;min-width:220px'>" + esc(i.strategy) + " " + esc(JSON.stringify(i.params || {})) +
           ": out-of-sample " + pct(i.oos_cagr) + " a year vs buy-and-hold " + pct(i.oos_buyhold_cagr) + "</td></tr>";
       }).join("") : "<tr><td class='l muted' colspan='11'>No buy ideas: nothing passed every check, or portfolio.py advise has not run yet.</td></tr>");
-    $("mi-buynote").textContent = (M.advice_date ? "From the run of " + M.advice_date + ". " : "") +
-      (M.second_opinion ? "PakistaniBulls: their candlestick-pattern signals (read " + M.second_opinion + "), a different method shown for comparison, for your own use only. " :
+    $("mi-buynote").textContent = (M.advice_date ? (SOURCE === "feed" ? "Backtested by the site's feed run of " : "From the run of ") + M.advice_date + ". " : "") +
+      (SOURCE === "feed" ? "" : M.second_opinion ? "PakistaniBulls: their candlestick-pattern signals (read " + M.second_opinion + "), a different method shown for comparison, for your own use only. " :
         "Add a second opinion: signals.py pakistanibulls --from-file PAGE.html. ") +
       "Size risks " + (st.risk_per_trade * 100).toFixed(1) + "% of your capital between entry and stop, at most " + Math.round(st.max_position_pct * 100) +
       "% in one stock. Rule-based suggestions from past prices, not investment advice; nothing is ordered for you.";
@@ -1075,7 +1080,7 @@
     D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
     $("meta").textContent = (SOURCE === "sample" ? "Sample data · " : "Built " + D.generated + " · ") + D.stocks.length +
       " shares (" + D.scope + ") · prices to " + (D.calendar[D.calendar.length - 1] || "–");
-    if (SOURCE === "sample") sampleBar(); else checkFreshness();
+    if (SOURCE === "sample") sampleBar(); else if (SOURCE === "feed") feedBar(); else checkFreshness();
     var fromHash = (location.hash.match(/compare=([^&]*)/) || [])[1];
     var saved = fromHash ? decodeURIComponent(fromHash).split(",") : (store("compare") || []);
     var slots = store("slots") || {};
@@ -1142,6 +1147,7 @@
     if ($("ld-sample")) $("ld-sample").onclick = startSample;
   }
   function renderData() {
+    if (SOURCE === "feed") return renderFeedData();
     var src = { server: "your dashboard server (data.json next to this page)", file: "the one-file dashboard you opened",
       device: "a file you loaded on this device", sample: "sample data: made-up companies, funds and prices" }[SOURCE];
     $("dt-card").innerHTML = "<h2>Your data</h2>" +
@@ -1173,6 +1179,298 @@
       else showLoader(reason);
     }).catch(function () { showLoader(reason); });
   }
+  // ---------------------------------------------------------------- the site's price feed + your holdings in this browser
+  // On GitHub Pages a GitHub Action (tools/web_feed.py) publishes PSX and MUFAP prices, encrypted, in
+  // feed/. Your passphrase unlocks them here. Your holdings are a ledger kept in this browser's IndexedDB
+  // (the same format as portfolio.py's ledger.json), never uploaded; Data has import, export and backup.
+  var FEED_ST = null, FEED = null, FEED_KEY = null, LEDGER = null, PRESETS = null;
+  function repoInfo() {
+    var host = location.hostname.match(/^([a-z0-9-]+)\.github\.io$/i), seg = location.pathname.split("/").filter(Boolean)[0];
+    return host && seg ? { owner: host[1], repo: seg } : { owner: "salmankhwaja", repo: "Day-Trader-PSX" };
+  }
+  function runUrl() { var r = repoInfo(); return "https://github.com/" + r.owner + "/" + r.repo + "/actions/workflows/feed.yml"; }
+  function ago(iso) {
+    var t = Date.parse(iso || ""); if (isNaN(t)) return "–";
+    var m = Math.round((Date.now() - t) / 60000);
+    return m < 60 ? m + " min ago" : m < 2880 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " days ago";
+  }
+  function startWeb(reason) {
+    if (!window.WebFeed || !window.Ledger || location.protocol === "file:") return fromDevice(reason);
+    WebFeed.status().then(function (st) {
+      FEED_ST = st;
+      if (!(st && st.psx && st.psx.available)) return fromDevice(reason);
+      return IDB.get("feedkey").then(function (stored) {
+        if (!stored) return IDB.get("data").then(function (rec) { return rec ? fromDevice(reason) : showUnlock(); });
+        return WebFeed.stillValid(stored).then(function (ok) {
+          if (ok) return openFeed(stored.key);
+          return IDB.del("feedkey").then(function () { showUnlock("The site's passphrase has changed: enter the new one."); });
+        });
+      });
+    }).catch(function () { fromDevice(reason); });
+  }
+  function showUnlock(note) {
+    $("tabs").hidden = true; document.querySelector("main").hidden = true;
+    var L = $("loader"), ps = (FEED_ST || {}).psx || {};
+    L.hidden = false;
+    L.innerHTML = '<div class="card"><h2>Unlock prices</h2><p class="muted">This site publishes PSX and MUFAP prices ' +
+      "for " + num(ps.shares || 0) + " shares (" + esc(ps.first || "") + " to " + esc(ps.last || "") + "), encrypted, because PSX " +
+      "doesn't allow its data to be republished. Enter the passphrase set as the <code>PSX_DATA_KEY</code> secret of this repo. " +
+      "It is checked here, on this device; nothing is sent anywhere.</p>" +
+      '<form id="ul-form" autocomplete="on"><input type="text" name="username" value="psx-feed" autocomplete="username" hidden>' +
+      '<input type="password" id="ul-pass" autocomplete="current-password" placeholder="Passphrase" style="width:100%;padding:10px" required>' +
+      '<label class="small" style="display:block;margin-top:8px"><input type="checkbox" id="ul-keep" checked> Keep this device unlocked ' +
+      '<span class="muted">(stores a locked key in this browser, never the passphrase)</span></label>' +
+      '<div class="row-actions"><button class="btn big" type="submit">Unlock</button></div></form>' +
+      '<p class="note" id="ul-msg">' + esc(note || "") + "</p>" +
+      '<p class="small">No passphrase? <button class="linkbtn" id="ul-sample">Try the sample data</button> · ' +
+      '<button class="linkbtn" id="ul-file">load a data file instead</button></p></div>';
+    $("ul-sample").onclick = startSample;
+    $("ul-file").onclick = function () { showLoader(""); };
+    $("ul-form").onsubmit = function (e) {
+      e.preventDefault();
+      var btn = e.target.querySelector("button[type=submit]");
+      btn.disabled = true; $("ul-msg").textContent = "Checking…";
+      WebFeed.unlock($("ul-pass").value).then(function (k) {
+        return ($("ul-keep").checked ? IDB.set("feedkey", k) : Promise.resolve()).then(function () { return openFeed(k.key); });
+      }).catch(function (err) { btn.disabled = false; $("ul-msg").textContent = err.message === "wrong passphrase" ? "That passphrase didn't unlock the prices." : "Couldn't unlock: " + err.message; });
+    };
+    setTimeout(function () { if ($("ul-pass")) $("ul-pass").focus(); }, 50);
+  }
+  function openFeed(key) {
+    FEED_KEY = key;
+    $("loader").hidden = false;
+    $("loader").innerHTML = '<div class="card"><h2>Loading prices…</h2><p class="muted">Decrypting on this device.</p></div>';
+    return Promise.all([WebFeed.load(key, FEED_ST), IDB.get("ledger"), fetch("../brokers.json").then(function (r) { return r.json(); })]).then(function (x) {
+      FEED = x[0]; LEDGER = Ledger.normalise(x[1] || Ledger.empty()); PRESETS = x[2];
+      SOURCE = "feed";
+      $("loader").hidden = true; $("tabs").hidden = false; document.querySelector("main").hidden = false;
+      boot(WebFeed.build(FEED, LEDGER, Ledger));
+    }).catch(function (e) { showUnlock("Couldn't load the prices: " + e.message); });
+  }
+  function rebuild() {
+    D = WebFeed.build(FEED, LEDGER, Ledger);
+    bySym = {}; D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
+    var on = Object.keys(views).filter(function (k) { return $("v-" + k).classList.contains("on"); })[0] || "mine";
+    rendered = {}; show(on);
+  }
+  function saveLedger() { return IDB.set("ledger", LEDGER).then(rebuild); }
+  function feedBar() {
+    var el = $("fresh"), st = FEED_ST || {}, ps = st.psx || {}, mf = st.mufap || {};
+    el.hidden = false; el.className = "fresh";
+    el.innerHTML = "Prices: PSX close <b>" + esc(ps.last || "–") + "</b>" + (mf.date ? " · MUFAP " + esc(mf.date) : "") +
+      " · feed updated " + esc(ago(st.updated)) + ' · <a href="' + runUrl() + '" target="_blank" rel="noopener">Refresh prices now</a>' +
+      ' · <span class="muted">your holdings stay in this browser</span>';
+    $("livebar").hidden = true;
+  }
+  function download(name, text, type) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: type || "application/octet-stream" }));
+    a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function todayISO() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function fmsg(id, text, ok) { var el = $(id); if (el) { el.textContent = text; el.className = "note " + (ok ? "pos" : "neg"); } }
+
+  // ---- My portfolio: add trades, funds, cash and dividends here
+  var EDIT = { form: null };
+  function brokerOptions() {
+    var names = Object.keys(LEDGER.brokers);
+    return names.map(function (n) { return '<option' + (n === LEDGER.default_broker ? " selected" : "") + ">" + esc(n) + "</option>"; }).join("");
+  }
+  function presetOptions() {
+    return Object.keys(PRESETS.brokers).sort().map(function (k) {
+      return '<option value="' + esc(k) + '"' + (k === "finqalab" ? " selected" : "") + ">" + esc(PRESETS.brokers[k].name || k) + "</option>";
+    }).join("");
+  }
+  function renderEditor() {
+    var box = $("mi-edit");
+    if (!box) { box = document.createElement("div"); box.id = "mi-edit"; $("v-mine").insertBefore(box, $("v-mine").firstChild); }
+    var n = LEDGER.entries.length, hasB = Object.keys(LEDGER.brokers).length > 0, f = EDIT.form;
+    var head = '<div class="card" style="margin-bottom:12px"><h2>Your holdings <span class="muted" style="text-transform:none;letter-spacing:0">· kept in this browser only</span></h2>' +
+      (n ? "" : '<p class="muted">Add what you hold and every tab works it out: green or red after charges, stop-losses, what to sell, trim or hold, and buy ideas sized to your cash. ' +
+        "Already use the Python tools? <b>Data › Import</b> takes your <code>ledger.json</code> or a trades CSV.</p>") +
+      '<div class="row-actions">' +
+      (hasB ? '<button class="btn" data-f="trade">+ Buy or sell</button><button class="btn ghost" data-f="fund">+ Mutual fund</button>' +
+        '<button class="btn ghost" data-f="cash">+ Cash</button><button class="btn ghost" data-f="div">+ Dividend</button>' +
+        '<button class="btn ghost" data-f="list">Entries (' + n + ")</button>" : "") +
+      '<button class="btn ghost" data-f="broker">' + (hasB ? "Brokers" : "Start: pick your broker") + "</button></div>";
+    var body = "";
+    if (!hasB || f === "broker") {
+      body = '<form id="ed-broker" class="edform"><label>Broker <select id="eb-preset">' + presetOptions() + "</select></label>" +
+        '<label>Name it <input id="eb-name" placeholder="e.g. Finqalab" required></label>' +
+        '<button class="btn" type="submit">Add broker</button>' +
+        (hasB ? '<p class="small muted">Yours: ' + Object.keys(LEDGER.brokers).map(function (k) { return esc(k) + (k === LEDGER.default_broker ? " (default)" : ""); }).join(", ") + "</p>" : "") +
+        '<p class="small muted">Charges are estimated from the broker\'s published tariff (brokers.json); enter the real ones from your contract note when you have them.</p><p id="ed-msg"></p></form>';
+    } else if (f === "trade") {
+      body = '<form id="ed-trade" class="edform"><label>Side <select id="et-side"><option value="buy">Buy</option><option value="sell">Sell</option></select></label>' +
+        '<label>Symbol <input id="et-sym" list="ed-syms" autocapitalize="characters" required placeholder="MEBL"></label>' +
+        '<label>Qty <input id="et-qty" inputmode="numeric" required></label><label>Price <input id="et-px" inputmode="decimal" required></label>' +
+        '<label>Date <input id="et-date" type="date" value="' + todayISO() + '" required></label><label>Time <input id="et-time" type="time"></label>' +
+        "<label>Broker <select id=\"et-broker\">" + brokerOptions() + "</select></label>" +
+        '<details><summary class="small">Charges from the contract note, stop-loss, note (optional)</summary>' +
+        '<label>Commission <input id="et-c" inputmode="decimal"></label><label>Taxes <input id="et-t" inputmode="decimal"></label>' +
+        '<label>Other (CDC, levies) <input id="et-o" inputmode="decimal"></label><label>Your stop-loss <input id="et-stop" inputmode="decimal"></label>' +
+        '<label>Note <input id="et-note"></label></details><button class="btn" type="submit">Save</button><p id="ed-msg"></p>' +
+        '<datalist id="ed-syms">' + D.stocks.map(function (x) { return '<option value="' + esc(x.symbol) + '">' + esc(x.name || "") + "</option>"; }).join("") + "</datalist></form>";
+    } else if (f === "fund") {
+      var FI = D.fund_index || {};
+      body = '<form id="ed-fund" class="edform"><label>Side <select id="ef-side"><option value="buy">Invest</option><option value="sell">Redeem</option></select></label>' +
+        '<label>Fund <input id="ef-fund" list="ed-funds" required></label><label>Amount (PKR) <input id="ef-amt" inputmode="decimal" required></label>' +
+        '<label>NAV <input id="ef-nav" inputmode="decimal" required></label><label>Date <input id="ef-date" type="date" value="' + todayISO() + '" required></label>' +
+        '<label>Load % <input id="ef-load" inputmode="decimal" placeholder="0"></label><button class="btn" type="submit">Save</button><p id="ed-msg"></p>' +
+        '<datalist id="ed-funds">' + Object.keys(FI).sort().map(function (k) { return '<option value="' + esc(k) + '">' + esc(FI[k].category) + "</option>"; }).join("") + "</datalist></form>";
+    } else if (f === "cash") {
+      body = '<form id="ed-cash" class="edform"><label>Kind <select id="ec-kind"><option value="1">Deposit</option><option value="-1">Withdrawal</option></select></label>' +
+        '<label>Amount (PKR) <input id="ec-amt" inputmode="decimal" required></label><label>Date <input id="ec-date" type="date" value="' + todayISO() + '" required></label>' +
+        '<button class="btn" type="submit">Save</button><p class="small muted">Cash lets buy ideas respect what you can actually spend.</p><p id="ed-msg"></p></form>';
+    } else if (f === "div") {
+      body = '<form id="ed-div" class="edform"><label>Symbol <input id="ed-dsym" autocapitalize="characters" required></label>' +
+        '<label>Received, after tax (PKR) <input id="ed-damt" inputmode="decimal" required></label><label>Date <input id="ed-ddate" type="date" value="' + todayISO() + '" required></label>' +
+        '<button class="btn" type="submit">Save</button><p id="ed-msg"></p></form>';
+    } else if (f === "list") {
+      var E = Ledger.ordered(LEDGER.entries).reverse();
+      body = '<div class="tablewrap" style="max-height:50vh"><table><tr><th class="l">Date</th><th class="l">Entry</th><th>Amount</th><th class="l">Broker</th><th></th></tr>' +
+        (E.length ? E.map(function (e) {
+          var what = e.type === "buy" || e.type === "sell" ? "<b class='" + (e.type === "buy" ? "pos" : "neg") + "'>" + e.type.toUpperCase() + "</b> " + esc(e.symbol) + " " + num(e.qty) + " @ " + num(e.price, 2) :
+            e.type === "fund_buy" || e.type === "fund_sell" ? (e.type === "fund_buy" ? "Invest " : "Redeem ") + esc(e.fund) :
+            e.type === "cash" ? (e.amount >= 0 ? "Deposit" : "Withdrawal") : e.type === "dividend" ? "Dividend " + esc(e.symbol) : esc(e.type);
+          var amt = e.type === "buy" || e.type === "sell" ? pkr(e.qty * e.price) : pkr(e.amount != null ? e.amount : e.net);
+          return "<tr>" + cell(esc(e.date) + (e.time ? " " + esc(e.time) : ""), "l") + cell(what, "l") + cell(amt) + cell(esc(e.broker || ""), "l") +
+            cell('<button class="btn ghost small" data-del="' + e.id + '">Delete</button>') + "</tr>";
+        }).join("") : "<tr><td class='l muted' colspan='5'>Nothing recorded yet.</td></tr>") + "</table></div><p id=\"ed-msg\"></p>";
+    }
+    box.innerHTML = head + body + "</div>";
+    box.querySelectorAll("[data-f]").forEach(function (b) { b.onclick = function () { EDIT.form = EDIT.form === b.dataset.f ? null : b.dataset.f; renderEditor(); }; });
+    var done = function (msg) { EDIT.form = null; saveLedger().then(function () { fmsg("ed-msg", msg, true); }); };
+    var guard = function (fn) { return function (e) { e.preventDefault(); try { fn(); } catch (err) { fmsg("ed-msg", err.message, false); } }; };
+    if ($("ed-broker")) $("ed-broker").onsubmit = guard(function () {
+      var name = $("eb-name").value.trim(); if (!name) throw new Error("name the broker");
+      Ledger.addBroker(LEDGER, PRESETS, name, $("eb-preset").value, true); EDIT.form = "trade"; IDB.set("ledger", LEDGER).then(rebuild);
+    });
+    if ($("eb-preset")) $("eb-preset").onchange = function () { if (!$("eb-name").value) $("eb-name").value = (PRESETS.brokers[$("eb-preset").value].name || "").split(" (")[0]; };
+    if ($("eb-preset") && !$("eb-name").value) $("eb-preset").onchange();
+    if ($("et-sym")) $("et-sym").onchange = function () { var x = bySym[$("et-sym").value.trim().toUpperCase()]; if (x && !$("et-px").value) $("et-px").value = x.close; };
+    if ($("ed-trade")) $("ed-trade").onsubmit = guard(function () {
+      var e = Ledger.recordTrade(LEDGER, PRESETS, { side: $("et-side").value, symbol: $("et-sym").value, qty: $("et-qty").value, price: $("et-px").value,
+        date: $("et-date").value, time: $("et-time").value, broker: $("et-broker").value, commission: $("et-c").value, taxes: $("et-t").value,
+        other: $("et-o").value, stop: $("et-stop").value, note: $("et-note").value });
+      done("Saved: " + e.type + " " + e.qty + " " + e.symbol + " @ " + e.price + (e.estimated.length ? " (charges estimated)" : ""));
+    });
+    if ($("ef-fund")) $("ef-fund").onchange = function () { var x = (D.fund_index || {})[$("ef-fund").value]; if (x && !$("ef-nav").value) $("ef-nav").value = x.nav; };
+    if ($("ed-fund")) $("ed-fund").onsubmit = guard(function () {
+      var x = (D.fund_index || {})[$("ef-fund").value];
+      Ledger.recordFund(LEDGER, { side: $("ef-side").value, fund: $("ef-fund").value, amount: $("ef-amt").value, nav: $("ef-nav").value,
+        date: $("ef-date").value, load_pct: $("ef-load").value, category: x ? x.category : null });
+      done("Saved.");
+    });
+    if ($("ed-cash")) $("ed-cash").onsubmit = guard(function () {
+      Ledger.recordCash(LEDGER, (+$("ec-kind").value) * parseFloat(String($("ec-amt").value).replace(/,/g, "")), $("ec-date").value); done("Saved.");
+    });
+    if ($("ed-div")) $("ed-div").onsubmit = guard(function () { Ledger.recordDividend(LEDGER, $("ed-dsym").value, $("ed-damt").value, $("ed-ddate").value); done("Saved."); });
+    box.querySelectorAll("[data-del]").forEach(function (b) {
+      b.onclick = function () {
+        if (!confirm("Delete this entry?")) return;
+        try { Ledger.remove(LEDGER, +b.dataset.del); EDIT.form = "list"; saveLedger(); } catch (err) { fmsg("ed-msg", err.message, false); }
+      };
+    });
+  }
+
+  // ---- Data: prices, and your holdings in and out (like PK Wealth)
+  function b64(u8) { var s = ""; for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); }
+  function unb64(s) { var b = atob(s), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+  function passKey(pass, salt, iterations, use) {
+    return crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]).then(function (base) {
+      return crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: iterations, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, [use]);
+    });
+  }
+  function backup(pass) {
+    var stamp = todayISO();
+    if (!pass) return Promise.resolve(download("psx-holdings-backup-" + stamp + ".json", JSON.stringify({ format: "psx-desk-backup", v: 1, enc: "none", ledger: LEDGER }), "application/json"));
+    var salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), it = 310000;
+    return passKey(pass, salt, it, "encrypt").then(function (k) {
+      return crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, k, new TextEncoder().encode(JSON.stringify(LEDGER)));
+    }).then(function (ct) {
+      download("psx-holdings-backup-" + stamp + ".json", JSON.stringify({ format: "psx-desk-backup", v: 1, enc: "AES-256-GCM/PBKDF2-SHA256", iterations: it,
+        salt: b64(salt), iv: b64(iv), data: b64(new Uint8Array(ct)) }), "application/json");
+    });
+  }
+  /** A backup, a ledger.json from portfolio.py, or a trades CSV. Backups and ledgers replace; CSV rows are added. */
+  function importText(text, pass) {
+    var t = String(text).replace(/^﻿/, "").trim();
+    if (t.charAt(0) !== "{") {
+      var r = Ledger.importCSV(LEDGER, PRESETS, t);
+      return saveLedger().then(function () {
+        return "Added " + r.added + " trades" + (r.skipped ? ", skipped " + r.skipped + " already there" : "") + (r.errors.length ? "; problems: " + r.errors.slice(0, 5).join("; ") : "") + ".";
+      });
+    }
+    var o = JSON.parse(t);
+    var take = function (lg) {
+      if (LEDGER.entries.length && !confirm("Replace the " + LEDGER.entries.length + " entries on this device with the " + lg.entries.length + " in the file?")) return "Nothing changed.";
+      LEDGER = Ledger.importLedger(lg);
+      return saveLedger().then(function () { return "Loaded " + LEDGER.entries.length + " entries."; });
+    };
+    if (o.format === "psx-desk-backup" && o.enc !== "none") {
+      if (!pass) return Promise.reject(new Error("this backup is encrypted: type its passphrase in the box first"));
+      return passKey(pass, unb64(o.salt), o.iterations, "decrypt").then(function (k) {
+        return crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(o.iv) }, k, unb64(o.data));
+      }).then(function (pt) { return take(JSON.parse(new TextDecoder().decode(pt))); }, function (e) {
+        if (e && /entries/.test(e.message || "")) throw e;
+        throw new Error("that passphrase didn't open the backup");
+      });
+    }
+    return Promise.resolve(take(o.format === "psx-desk-backup" ? o.ledger : o));
+  }
+  var PASSBOX = "";   // the backup passphrase box keeps its text when the tab redraws (not stored anywhere)
+  function renderFeedData() {
+    var st = FEED_ST || {}, ps = st.psx || {}, mf = st.mufap || {}, n = LEDGER.entries.length;
+    var errs = (st.errors || []).slice(0, 4).map(function (e) { return "<li><span>" + esc(e.source) + "</span><span class='muted small'>" + esc(e.error) + "</span></li>"; }).join("");
+    $("dt-card").innerHTML = "<h2>Prices</h2>" +
+      '<ul class="list"><li><span>Source</span><span>this site\'s feed (GitHub Action), decrypted on this device</span></li>' +
+      "<li><span>PSX</span><span>" + num(ps.shares || 0) + " shares · " + esc(ps.first || "–") + " to " + esc(ps.last || "–") + " (" + num(ps.sessions || 0) + " sessions)</span></li>" +
+      "<li><span>MUFAP</span><span>" + num(mf.funds || 0) + " funds · " + esc(mf.date || "–") + "</span></li>" +
+      "<li><span>Feed updated</span><span>" + esc(ago(st.updated)) + "</span></li></ul>" +
+      (errs ? '<p class="small muted">Last run had problems:</p><ul class="list">' + errs + "</ul>" : "") +
+      '<div class="row-actions"><a class="btn" href="' + runUrl() + '" target="_blank" rel="noopener">Refresh prices now</a>' +
+      '<button class="btn ghost" id="fd-lock">Lock this device</button></div>' +
+      '<p class="note">Refresh opens the price workflow on GitHub: tap <b>Run workflow</b> (you need to be signed in as the repo owner). ' +
+      "New prices arrive in 1–3 minutes; then reload this page. It also runs by itself at 12:15, 16:45 and 22:45 on weekdays. No token is ever stored on this site.</p>" +
+      '<h2 style="margin-top:18px">Your holdings</h2>' +
+      "<p>" + num(n) + " entries, kept <b>only in this browser on this device</b> (IndexedDB). Nothing is uploaded: not to GitHub, not to anyone. " +
+      "Another phone or computer has its own copy, so move them with a backup. Clearing this site's data in the browser erases them.</p>" +
+      '<label class="small">Backup passphrase <input type="password" id="fd-pass" autocomplete="new-password" placeholder="for encrypted backups" style="width:100%;max-width:320px"></label>' +
+      '<div class="row-actions"><button class="btn" id="fd-backup">Save backup</button><button class="btn ghost" id="fd-import">Restore or import…</button></div>' +
+      '<div class="row-actions"><button class="btn ghost" id="fd-csv">Export trades CSV</button><button class="btn ghost" id="fd-ledger">Export ledger.json</button>' +
+      '<button class="btn danger" id="fd-erase">Erase holdings on this device</button></div><p id="fd-msg"></p>' +
+      '<p class="note"><b>Save backup</b>: everything, encrypted with the passphrase above (leave it empty for a plain file). <b>Restore or import</b> takes a backup, ' +
+      "a <code>ledger.json</code> from <code>portfolio.py</code> (Termux or computer) or a trades CSV (<code>" + Ledger.FIELDS.join(",") + "</code>). " +
+      "<b>ledger.json</b> goes the other way: put it in your <code>pkmarket/portfolio/</code> folder and the Python tools see the same holdings.</p>" +
+      '<p class="note">PSX market data is for personal use: don\'t republish it.</p>';
+    $("fd-pass").value = PASSBOX;
+    $("fd-pass").oninput = function () { PASSBOX = $("fd-pass").value; };
+    $("fd-backup").onclick = function () { backup($("fd-pass").value).then(function () { fmsg("fd-msg", "Backup saved to your downloads.", true); }); };
+    $("fd-csv").onclick = function () { download("psx-trades-" + todayISO() + ".csv", Ledger.exportCSV(LEDGER), "text/csv"); };
+    $("fd-ledger").onclick = function () { download("ledger.json", JSON.stringify(LEDGER, null, 1), "application/json"); };
+    $("fd-import").onclick = function () {
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".json,.csv,application/json,text/csv";
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        f.text().then(function (t) { return importText(t, $("fd-pass").value); })
+          .then(function (m) { fmsg("fd-msg", m, true); }, function (e) { fmsg("fd-msg", "Couldn't import: " + e.message, false); });
+      };
+      inp.click();
+    };
+    $("fd-erase").onclick = function () {
+      if (!confirm("Erase every holding and entry on this device? Save a backup first if unsure.")) return;
+      LEDGER = Ledger.empty(); saveLedger().then(function () { fmsg("fd-msg", "Erased.", true); });
+    };
+    $("fd-lock").onclick = function () { IDB.del("feedkey").then(function () { location.reload(); }); };
+    if (location.protocol !== "file:") {
+      $("dt-card").insertAdjacentHTML("beforeend", '<p class="note">Want to see what every tab can do? <button class="linkbtn" id="dt-sample">Try the sample data</button>. Your own data stays as it is.</p>');
+      $("dt-sample").onclick = startSample;
+    }
+  }
+
   // ---------------------------------------------------------------- sample data
   // sample-data.json is a made-up market (tools/make_sample.py): sample companies, funds, a sample
   // portfolio and paper account, so every tab can be explored before loading your own data.
@@ -1209,6 +1507,6 @@
     if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json();
   }).then(function (d) { SOURCE = "server"; boot(d); }).catch(function (e) {
     // A 404 is normal on GitHub Pages (the repo never holds data): no need to mention it.
-    fromDevice(location.protocol === "file:" || /^404\b/.test(e.message) ? "" : "No data.json next to this page (" + e.message + ").");
+    startWeb(location.protocol === "file:" || /^404\b/.test(e.message) ? "" : "No data.json next to this page (" + e.message + ").");
   });
 })();

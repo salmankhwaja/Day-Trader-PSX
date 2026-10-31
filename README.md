@@ -237,7 +237,7 @@ standard library only: nothing to `pip install`.
 | **iPhone or iPad** | ask anything, look at your dashboard | the Claude app (skills come with your account) and your backup zip in Files; open your computer's dashboard over Tailscale, or the one-file `dashboard.html` |
 | **Android, chat only** | the same as iPhone | the Claude app and your backup zip in Downloads |
 | **Android, the whole thing** | everything a computer does, no computer needed | Termux from F-Droid, about 20 minutes: [Android guide](docs/REFERENCE.md#run-it-on-your-android-phone) |
-| **Any phone, in the browser** | the dashboard, installable, seven themes | [GitHub Pages](#the-dashboard-on-github-pages): open the page, load your `data.json`, done |
+| **Any phone, in the browser** | everything: prices fetched for you, holdings added on the page, advice, backups | [GitHub Pages](#the-dashboard-on-github-pages): no Termux, no computer |
 
 On Android with Termux the morning update, alerts and the dashboard run on the phone itself, and
 home-screen buttons do the common jobs. Advice and holdings print as short cards, one per share,
@@ -247,41 +247,49 @@ instead of tables that wrap off the screen (`--view table` if you miss them).
 
 ## The dashboard on GitHub Pages
 
-The dashboard is plain HTML and JavaScript, so GitHub can host it for free: open it in any
-browser, add it to your home screen, and it works offline. Live copy:
+The whole thing in a browser, no Termux and no computer needed: a GitHub Action fetches PSX and
+MUFAP prices for you, and you add your holdings on the website. Live copy:
 **https://salmankhwaja.github.io/Day-Trader-PSX/**
 
 > [!NOTE]
-> **The page is public; your numbers are not.** This repo holds no data, so the Pages copy opens
-> empty and asks for your file. What you load is kept in that browser on that device (IndexedDB)
-> and never uploaded: not to GitHub, not to anyone. **Forget data on this device** (Data tab)
-> wipes it.
+> **The page is public; your numbers are not.** Prices are published only *encrypted* (PSX
+> doesn't allow its data to be republished) and unlock with your passphrase on your device.
+> Your holdings live **only in this browser on this device** (IndexedDB): never uploaded, not to
+> GitHub, not to anyone. Move them between devices with **Data › Save backup** (encrypted) and
+> **Restore**.
 
-**Switch it on** (once, for this repo or your fork): *Settings › Pages › Build and deployment ›
-Deploy from a branch › `main` / `/ (root)` › Save.* A minute later the page is at
-`https://<your-username>.github.io/Day-Trader-PSX/`. Every push to `main` updates it.
+**Set it up once** (for this repo or your fork):
 
-**Just looking?** Tap *or try sample data to explore*. It opens a made-up market (sample
-companies, sample funds, a sample portfolio and paper account) so every tab has something to
-show, with a banner saying so. **Exit sample** goes back; your own data is never touched.
+1. **A passphrase:** *Settings › Secrets and variables › Actions › New repository secret*, name
+   `PSX_DATA_KEY`, value: a long passphrase you'll remember. It encrypts the prices.
+2. **The price workflow:** copy [`ci/feed.yml`](ci/feed.yml) to `.github/workflows/feed.yml`
+   (see [ci/README.md](ci/README.md)).
+3. **Pages:** *Settings › Pages › Deploy from a branch › `main` / `/ (root)` › Save.*
+4. **First fill:** *Actions › feed › Run workflow*, mode **backfill** (about 20 minutes: a year of
+   history for every share). After that it runs by itself.
+5. Open the page, enter the passphrase, then **My portfolio › Start: pick your broker**, and add
+   your buys and sells, funds and cash.
 
-**Feed it your data:**
+**Prices:** every weekday at 12:15, after the close at 16:45, and MUFAP NAVs at 22:45 (and
+Saturday). **Refresh prices now** (top of the page, or Data) opens the workflow on GitHub: tap
+*Run workflow* and the new prices land in 1-3 minutes. No token is kept on the site. Cost: nothing
+(standard runners are free on public repos); each run takes 1-3 minutes and commits only when a
+price changed.
 
-1. Make the file where your data lives:
-   ```bash
-   python3 psx-mufap/scripts/dashboard.py build
-   ```
-   It writes `dashboard/data.json` in your data folder: **Internal storage › pkmarket ›
-   dashboard** on Android, `~/pkmarket/dashboard/` on a computer. (The daily update's one-file
-   `dashboard.html` works too.)
-2. Open the Pages link, tap **Load data file** and pick it.
-3. Fresher numbers? Build again, then **Data › Load a newer data file**.
+**Your holdings, in and out:** Data saves an encrypted backup, restores one, imports a trades CSV
+or the `ledger.json` from the Python tools, and exports both. Same format both ways, so Termux,
+your computer and the website can share one portfolio.
 
-**What it can't do:** GitHub Pages only serves files; it can't run Python. So there is no
-**Fetch now** and no **Live prices** there: the page shows what your file holds, as of when you
-built it. For those two, run `dashboard.py serve` on your computer or phone
-([how](docs/REFERENCE.md#step-7-open-your-dashboard)). Advice, stop-losses and green/red are all
-in the file, so everything else works.
+**PK Wealth too:** [PK Wealth](https://github.com/salmankhwaja/WealthTracker) on the same Pages
+site reads this feed's `feed/latest.enc.json`, so PSX prices are fetched once for both apps,
+unlocked by the same passphrase.
+
+**Just looking?** Tap *Try the sample data*: a made-up market, sample funds and a sample portfolio,
+with a banner saying so. **Exit sample** goes back; your own data is never touched.
+
+**The Python way still works.** Termux and the computer tools are unchanged: build `data.json`
+(`python3 psx-mufap/scripts/dashboard.py build`) and **Load data file**, or run
+`dashboard.py serve` for live prices ([how](docs/REFERENCE.md#step-7-open-your-dashboard)).
 
 ---
 

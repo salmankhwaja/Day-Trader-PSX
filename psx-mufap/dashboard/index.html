@@ -130,6 +130,15 @@ label.ck { display: inline-flex; gap: 6px; align-items: center; color: var(--tex
 .fresh a { color: var(--accent); cursor: pointer; }
 .fresh.sample { background: var(--surface-2); color: var(--text); border: 1px dashed var(--accent); line-height: 1.6; }
 .fresh.sample .row-actions { margin-top: 6px; }
+.edform { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; margin-top: 12px; }
+.edform label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-2); min-width: 120px; flex: 1 1 140px; }
+.edform input, .edform select { padding: 8px; font-size: 15px; }
+.edform details { flex-basis: 100%; }
+.edform details[open] { display: flex; flex-wrap: wrap; gap: 10px 12px; }
+.edform details summary { flex-basis: 100%; cursor: pointer; color: var(--accent); }
+.edform p { flex-basis: 100%; margin: 0; }
+.btn.small { padding: 3px 8px; font-size: 12px; }
+a.btn { text-decoration: none; display: inline-block; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
 #livebar { margin-top: 8px; }
 .st { display: inline-block; font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 999px; color: #fff; white-space: nowrap; }
@@ -364,6 +373,8 @@ input.numeric { font-variant-numeric: tabular-nums; }
   <p class="note">Research and practice only, not investment advice. Paper trades are never real orders. Data: PSX Data Portal and MUFAP, for personal use; do not republish.</p>
 </main>
 <script id="chartjs" async src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="sha512-CQBWl4fJHWbryGE+Pc7UAxWMUMNMWzWxF4SQo9CgkJIN1kx6djDQZjh3Y8SZ1d+6I+1zze6Z7kHXO7q3UyZAWw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="ledger.js"></script>
+<script src="webfeed.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

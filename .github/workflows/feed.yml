@@ -1,0 +1,54 @@
+name: feed
+# The website's price feed (tools/web_feed.py): PSX market watch (every share in one request), the
+# KSE-100, dividends, a fifth of the company pages and MUFAP, published ENCRYPTED in feed/ with the
+# PSX_DATA_KEY secret. PK Wealth on the same GitHub Pages site reads feed/latest.enc.json too.
+#
+# Cost: nothing on a public repo (standard runners are free there). Kept lean anyway: about 16
+# short runs a week (1-3 minutes each), a commit only when a price actually changed, a 10-minute
+# cap per run (40 for the one-time backfill), and a newer run waits rather than piling up.
+on:
+  schedule:
+    - cron: "15 7 * * 1-5"    # Mon-Fri 12:15 PKT: a midday price for both sites
+    - cron: "45 11 * * 1-5"   # Mon-Fri 16:45 PKT: after the close (Friday's closes at 16:30)
+    - cron: "45 17 * * 1-5"   # Mon-Fri 22:45 PKT: MUFAP NAVs, published in the evening
+    - cron: "45 17 * * 6"     # Saturday: Friday's late NAVs
+  workflow_dispatch:          # the website's "Refresh prices now" opens this workflow's Run button
+    inputs:
+      mode:
+        description: "normal, mufap-only, or backfill (first run: a year of history, ~20 minutes)"
+        default: normal
+        type: choice
+        options: [normal, mufap-only, backfill]
+permissions:
+  contents: write
+concurrency:
+  group: feed
+  cancel-in-progress: false
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.mode == 'backfill' && 40 || 10 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q "cryptography>=42"
+      - name: Fetch
+        env:
+          PSX_DATA_KEY: ${{ secrets.PSX_DATA_KEY }}
+          MODE: ${{ inputs.mode || '' }}
+          SCHEDULE: ${{ github.event.schedule || '' }}
+        run: |
+          ARGS=""
+          if [ "$MODE" = "backfill" ]; then ARGS="--backfill"; fi
+          if [ "$MODE" = "mufap-only" ] || [ "$SCHEDULE" = "45 17 * * 1-5" ] || [ "$SCHEDULE" = "45 17 * * 6" ]; then ARGS="--mufap-only"; fi
+          python3 tools/web_feed.py $ARGS
+      - name: Commit if changed
+        run: |
+          git config user.name "feed-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add feed
+          if git diff --cached --quiet; then echo "no changes"; exit 0; fi
+          git commit -q -m "feed: $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do git pull --rebase --autostash -q origin main && git push -q && exit 0; sleep 5; done
+          exit 1
