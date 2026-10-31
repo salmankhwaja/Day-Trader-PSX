@@ -1052,7 +1052,7 @@ holdings in your browser. The Python tools keep working alongside it.
 
 | Piece | Where | What it does |
 |---|---|---|
-| `tools/web_feed.py` | GitHub Actions (`.github/workflows/feed.yml`, a copy of `ci/feed.yml`) | Fetches PSX's market watch (every share in one request), the KSE-100 history, the payouts page, a fifth of the company pages (each share weekly) and the MUFAP table. Runs the same ranking, dividend, fund and backtest code as the CLI over a year of history, and writes `feed/` |
+| `tools/web_feed.py` | GitHub Actions (`.github/workflows/feed.yml`; `ci/feed.yml` is a copy) | Fetches PSX's market watch (every share in one request), the KSE-100 history, the payouts page, a fifth of the company pages (each share weekly) and the MUFAP table. Runs the same ranking, dividend, fund and backtest code as the CLI over a year of history, and writes `feed/` |
 | `feed/status.json` | public | when it last ran, how many shares and sessions, errors. No prices |
 | `feed/psx/YYYY-MM.enc.json` | encrypted | one file per month, every share's close and volume. Only the current month changes day to day, so the repo grows by roughly 100-300 KB a trading day |
 | `feed/summary.enc.json`, `feed/meta.enc.json` | encrypted | the ranked market, sectors, dividends, MUFAP funds, buy ideas; names, sectors, Shariah flags, P/E |
@@ -1070,8 +1070,8 @@ commit nothing.
 1. *Settings › Secrets and variables › Actions › New repository secret:* `PSX_DATA_KEY`, a long
    passphrase. Changing it later re-encrypts the feed from scratch on the next run, and every
    device asks for the new one.
-2. Copy `ci/feed.yml` to `.github/workflows/feed.yml` (on GitHub: open the file, copy it, *Add
-   file › Create new file*).
+2. The workflow is already in `.github/workflows/feed.yml` (in a fork, enable Actions when
+   GitHub asks). Without the secret it runs, fetches nothing and commits nothing.
 3. *Settings › Pages › Deploy from a branch › `main` / `/ (root)`.*
 4. *Actions › feed › Run workflow*, mode **backfill**: a year of history and every company page,
    about 20 minutes, once. Normal runs take 1-3 minutes.

@@ -3,7 +3,8 @@
 `feed.yml` is the website's price feed: it fetches PSX and MUFAP prices on a schedule (and when
 you press *Run workflow*) and commits them, encrypted with the `PSX_DATA_KEY` secret, to `feed/`.
 See [the website](../docs/REFERENCE.md#the-website-prices-by-github-action-holdings-in-your-browser).
-Enable it like the others, after adding the secret.
+It is already enabled, in `.github/workflows/feed.yml` (this folder keeps a copy); add the secret to
+switch it on.
 
 `tests.yml` runs the test suite on Python 3.8 and 3.12 on every push to `main` and on pull requests
 (not for docs-only changes; a newer push cancels the older run). `release.yml` publishes

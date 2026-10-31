@@ -262,8 +262,8 @@ MUFAP prices for you, and you add your holdings on the website. Live copy:
 
 1. **A passphrase:** *Settings › Secrets and variables › Actions › New repository secret*, name
    `PSX_DATA_KEY`, value: a long passphrase you'll remember. It encrypts the prices.
-2. **The price workflow:** copy [`ci/feed.yml`](ci/feed.yml) to `.github/workflows/feed.yml`
-   (see [ci/README.md](ci/README.md)).
+2. **The price workflow** is already on (`.github/workflows/feed.yml`); in a fork, enable Actions
+   when GitHub asks. Until the secret exists it fetches nothing.
 3. **Pages:** *Settings › Pages › Deploy from a branch › `main` / `/ (root)` › Save.*
 4. **First fill:** *Actions › feed › Run workflow*, mode **backfill** (about 20 minutes: a year of
    history for every share). After that it runs by itself.

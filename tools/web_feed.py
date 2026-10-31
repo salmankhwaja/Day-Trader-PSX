@@ -409,12 +409,20 @@ def main(argv=None):
     ap.add_argument("--backfill", action="store_true", help="also a year of history and every company page (~20 min)")
     ap.add_argument("--mufap-only", action="store_true", help="fund NAVs only (the evening run)")
     a = ap.parse_args(argv)
-    status = read_json(path("status.json"), {}) or {}
+    old_status = read_json(path("status.json"), {}) or {}
+    status = dict(old_status)
     status.update({"format": "psx-desk-feed", "v": 1, "updated": now_iso(), "errors": []})
+
+    def write_status():
+        """Only when something besides the time changed, so a quiet run commits nothing at all."""
+        same = {k: v for k, v in status.items() if k not in ("updated", "changed")} == \
+            {k: v for k, v in old_status.items() if k not in ("updated", "changed")}
+        if not same or status.get("changed") or not old_status:
+            write_json(path("status.json"), status)
     passphrase = os.environ.get("PSX_DATA_KEY", "")
     if not passphrase:
         status["psx"] = {"available": False, "note": "Set the PSX_DATA_KEY repository secret to switch the feed on."}
-        write_json(path("status.json"), status)
+        write_status()
         print("PSX_DATA_KEY is not set: nothing fetched. The feed stays off.")
         return 0
     errors = status["errors"]
@@ -463,7 +471,7 @@ def main(argv=None):
                      "shares": len(meta.get("shares", {})), "companies": len(meta.get("companies", {}))}
     status["mufap"] = {"date": (meta.get("mufap") or {}).get("date"), "funds": len((meta.get("mufap") or {}).get("funds") or [])}
     status["changed"] = store.changed
-    write_json(path("status.json"), status)
+    write_status()
     print("feed: %d sessions (%s .. %s), %d shares, MUFAP %s; changed: %s; %d errors" % (
         len(days), status["psx"]["first"], status["psx"]["last"], status["psx"]["shares"], status["mufap"]["date"],
         ", ".join(store.changed) or "nothing", len(errors)))

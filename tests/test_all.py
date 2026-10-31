@@ -1348,8 +1348,10 @@ class TestWebFeed(unittest.TestCase):
         key = self.W.derive("test passphrase", self.W.unb64(lt["salt"]), lt["iterations"])
         items = json.loads(AESGCM(key).decrypt(self.W.unb64(lt["iv"]), self.W.unb64(lt["data"]), None))["items"]
         self.assertIn("current", items["SYN07"])
-        rc, out = run(self.W.main, [])                 # same prices again: nothing to commit
+        before = {f: os.path.getmtime(os.path.join(r_, f)) for r_, _, fs in os.walk(self.feed) for f in fs if f != "prints.json"}
+        rc, out = run(self.W.main, [])                 # same prices again: nothing to commit, status.json included
         self.assertIn("changed: nothing", out)
+        self.assertEqual(before, {f: os.path.getmtime(os.path.join(r_, f)) for r_, _, fs in os.walk(self.feed) for f in fs if f != "prints.json"})
         kd = json.load(open(os.path.join(self.feed, "key.json")))
         with self.assertRaises(Exception):             # a wrong passphrase opens nothing
             self.W.unseal(json.load(open(os.path.join(self.feed, "summary.enc.json"))), self.W.derive("wrong", self.W.unb64(kd["salt"])))
