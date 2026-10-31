@@ -261,6 +261,10 @@ browser, add it to your home screen, and it works offline. Live copy:
 Deploy from a branch › `main` / `/ (root)` › Save.* A minute later the page is at
 `https://<your-username>.github.io/Day-Trader-PSX/`. Every push to `main` updates it.
 
+**Just looking?** Tap *or try sample data to explore*. It opens a made-up market (sample
+companies, sample funds, a sample portfolio and paper account) so every tab has something to
+show, with a banner saying so. **Exit sample** goes back; your own data is never touched.
+
 **Feed it your data:**
 
 1. Make the file where your data lives:

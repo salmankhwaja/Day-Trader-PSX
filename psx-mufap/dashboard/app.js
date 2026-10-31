@@ -1073,9 +1073,9 @@
   function boot(data) {
     D = data;
     D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
-    $("meta").textContent = "Built " + D.generated + " · " + D.stocks.length + " shares (" + D.scope + ") · prices to " +
-      (D.calendar[D.calendar.length - 1] || "–");
-    checkFreshness();
+    $("meta").textContent = (SOURCE === "sample" ? "Sample data · " : "Built " + D.generated + " · ") + D.stocks.length +
+      " shares (" + D.scope + ") · prices to " + (D.calendar[D.calendar.length - 1] || "–");
+    if (SOURCE === "sample") sampleBar(); else checkFreshness();
     var fromHash = (location.hash.match(/compare=([^&]*)/) || [])[1];
     var saved = fromHash ? decodeURIComponent(fromHash).split(",") : (store("compare") || []);
     var slots = store("slots") || {};
@@ -1119,7 +1119,7 @@
         var d = parseDataFile(txt);
         if (!validData(d)) throw new Error("this file has no dashboard data");
         return IDB.set("data", { data: d, name: f.name, loaded: new Date().toISOString() });
-      }).then(function () { location.reload(); })
+      }).then(function () { sampleFlag(false); location.reload(); })
         .catch(function (e) { alert("Couldn't load that file: " + e.message); });
     };
     inp.click();
@@ -1136,21 +1136,32 @@
     L.innerHTML = '<div class="card"><h2>Load your data</h2><p class="muted">This copy of the dashboard has no data of its own: ' +
       "PSX market data and your ledger never go in the repo. Load your own file and it stays on this device.</p>" + howToMake() +
       '<div class="row-actions"><button class="btn big" id="ld-pick">Load data file</button></div>' +
+      (location.protocol === "file:" ? "" : '<p><button class="linkbtn" id="ld-sample">or try sample data to explore</button></p>') +
       (reason ? '<p class="note">' + esc(reason) + "</p>" : "") + "</div>";
     $("ld-pick").onclick = pickFile;
+    if ($("ld-sample")) $("ld-sample").onclick = startSample;
   }
   function renderData() {
-    var src = { server: "your dashboard server (data.json next to this page)", file: "the one-file dashboard you opened", device: "a file you loaded on this device" }[SOURCE];
+    var src = { server: "your dashboard server (data.json next to this page)", file: "the one-file dashboard you opened",
+      device: "a file you loaded on this device", sample: "sample data: made-up companies, funds and prices" }[SOURCE];
     $("dt-card").innerHTML = "<h2>Your data</h2>" +
       '<ul class="list"><li><span>Source</span><span>' + esc(src) + "</span></li>" +
       "<li><span>Built</span><span>" + esc(D.generated || "–") + "</span></li>" +
       "<li><span>Prices up to</span><span>" + esc(D.calendar[D.calendar.length - 1] || "–") + "</span></li>" +
       "<li><span>Shares</span><span>" + num(D.stocks.length) + " (" + esc(D.scope || "") + ")</span></li>" +
       (LOADED_AT ? "<li><span>Loaded</span><span>" + esc(LOADED_AT.name) + " · " + esc(new Date(LOADED_AT.loaded).toLocaleString()) + "</span></li>" : "") +
-      "</ul>" + (SOURCE === "server" ? '<p class="note">Served by <code>dashboard.py serve</code>. To refresh, run the daily update or use the refresh banner.</p>' :
+      "</ul>" + (SOURCE === "sample" ? '<div class="row-actions"><button class="btn" id="dt-pick">Load my data file</button>' +
+        '<button class="btn ghost" id="dt-exit">Exit sample</button></div>' + howToMake() :
+      SOURCE === "server" ? '<p class="note">Served by <code>dashboard.py serve</code>. To refresh, run the daily update or use the refresh banner.</p>' :
       '<div class="row-actions"><button class="btn" id="dt-pick">Load a newer data file</button>' +
       (SOURCE === "device" ? '<button class="btn danger" id="dt-forget">Forget data on this device</button>' : "") + "</div>" + howToMake()) +
       '<p class="note">Your data never leaves this device. PSX market data is for personal use: don\'t republish it.</p>';
+    if (SOURCE !== "sample" && location.protocol !== "file:") {
+      $("dt-card").insertAdjacentHTML("beforeend", '<p class="note">Want to see what every tab can do? ' +
+        '<button class="linkbtn" id="dt-sample">Try the sample data</button>. Your own data stays as it is.</p>');
+      $("dt-sample").onclick = startSample;
+    }
+    if ($("dt-exit")) $("dt-exit").onclick = exitSample;
     if ($("dt-pick")) $("dt-pick").onclick = pickFile;
     if ($("dt-forget")) $("dt-forget").onclick = function () {
       if (confirm("Remove the loaded data from this device?")) IDB.del("data").then(function () { location.reload(); });
@@ -1162,8 +1173,38 @@
       else showLoader(reason);
     }).catch(function () { showLoader(reason); });
   }
+  // ---------------------------------------------------------------- sample data
+  // sample-data.json is a made-up market (tools/make_sample.py): sample companies, funds, a sample
+  // portfolio and paper account, so every tab can be explored before loading your own data.
+  // Sample mode lasts for this browser tab only (sessionStorage) and never touches your own data.
+  function sampleFlag(on) {
+    try { if (on === undefined) return sessionStorage.getItem("pkm_sample") === "1";
+      if (on) sessionStorage.setItem("pkm_sample", "1"); else sessionStorage.removeItem("pkm_sample"); } catch (e) { return false; }
+  }
+  function startSample() { sampleFlag(true); location.reload(); }
+  function exitSample() { sampleFlag(false); location.reload(); }
+  function fromSample() {
+    return fetch("sample-data.json", { cache: "no-cache" }).then(function (r) {
+      if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json();
+    }).then(function (d) {
+      if (!validData(d)) throw new Error("not dashboard data");
+      SOURCE = "sample"; window.PKM_DATA = d; $("tabs").hidden = false; document.querySelector("main").hidden = false;
+      $("loader").hidden = true; boot(d);
+    }).catch(function (e) { sampleFlag(false); showLoader("The sample data couldn't load (" + e.message + ")."); });
+  }
+  function sampleBar() {
+    var el = $("fresh"), S = D.sample || {};
+    el.hidden = false; el.className = "fresh sample";
+    el.innerHTML = "<b>Sample data.</b> " + esc(S.note || "Every company, fund and price here is made up.") +
+      " Not real PSX or MUFAP data, and not advice." + (S.as_of ? " Prices to " + esc(S.as_of) + "." : "") +
+      '<div class="row-actions"><button class="btn" id="sb-pick">Load my data</button>' +
+      '<button class="btn ghost" id="sb-exit">Exit sample</button></div>';
+    $("sb-pick").onclick = pickFile; $("sb-exit").onclick = exitSample;
+    $("livebar").hidden = true;
+  }
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(function () {});
   if (window.PKM_DATA) { SOURCE = "file"; boot(window.PKM_DATA); }
+  else if (sampleFlag()) fromSample();
   else fetch("data.json", { cache: "no-store" }).then(function (r) {
     if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json();
   }).then(function (d) { SOURCE = "server"; boot(d); }).catch(function (e) {

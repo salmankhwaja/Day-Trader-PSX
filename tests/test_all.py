@@ -1221,6 +1221,58 @@ class TestCards(Market):
         self.assertIn("| Stock |", out)  # tables stay the default off Android
 
 
+class TestSample(unittest.TestCase):
+    """The dashboard's sample data: made up, labelled, current with the generator and the dashboard."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import make_sample
+        cls.MS = make_sample
+        with open(make_sample.OUT, encoding="utf-8") as f:
+            cls.committed = json.load(f)
+        out = os.path.join(tempfile.mkdtemp(), "s.json")
+        cls.fresh = make_sample.build(out)
+        shutil.rmtree(os.path.dirname(out))
+
+    def test_made_up_and_labelled(self):
+        d = self.committed
+        self.assertIn("made up", d["sample"]["note"])
+        for s in d["stocks"]:
+            self.assertTrue(s["symbol"].startswith("Z"), s["symbol"])
+            self.assertIn("Sample", s["name"])
+        for s in C.DEFAULT_CONFIG["watchlist"]:   # no real ticker sneaks in
+            self.assertNotIn(s, {x["symbol"] for x in d["stocks"]})
+        for cat in d["funds"]["categories"].values():
+            for f in cat["funds"]:
+                self.assertTrue(f["fund"].startswith("Sample"), f["fund"])
+
+    def test_shows_every_kind_of_advice(self):
+        m = self.committed["mine"]
+        self.assertTrue({"SELL", "TRIM", "HOLD"} <= {h["action"] for h in m["holdings"]})
+        self.assertTrue(m["buy_ideas"] and m["tickets"] and m["funds"])
+        self.assertTrue(any(len({l["status"] for l in h["lots"]}) > 1 for h in m["holdings"]))  # green and red buys
+        self.assertGreater(len(self.committed["portfolio"]["marks"]), 50)
+
+    def test_committed_file_is_current(self):
+        a, b = self.committed, self.fresh
+        msg = "sample-data.json is stale: run python3 tools/make_sample.py"
+        self.assertEqual(sorted(a), sorted(b), msg)
+        self.assertEqual(sorted(a["mine"]), sorted(b["mine"]), msg)
+        self.assertEqual([(s["symbol"], s["close"]) for s in a["stocks"]], [(s["symbol"], s["close"]) for s in b["stocks"]], msg)
+        self.assertEqual([(h["symbol"], h["action"]) for h in a["mine"]["holdings"]],
+                         [(h["symbol"], h["action"]) for h in b["mine"]["holdings"]], msg)
+
+    def test_shipped_with_the_dashboard(self):
+        self.assertIn("/sample-data.json", dashboard.FILES)
+        with open(os.path.join(ROOT, "psx-mufap", "dashboard", "sw.js")) as f:
+            self.assertIn("sample-data.json", f.read())
+        with open(os.path.join(ROOT, "psx-mufap", "dashboard", "app.js")) as f:
+            js = f.read()
+        self.assertIn('fetch("sample-data.json"', js)
+        self.assertIn("pkm_sample", js)
+
+
 class TestWatchlist(Market):
     def test_add_remove_set_top_and_checks(self):
         run(WL.main, ["--home", self.h, "add", "SYN08", "NOPE"])

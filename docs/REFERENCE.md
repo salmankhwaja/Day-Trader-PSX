@@ -969,6 +969,16 @@ data.json**). The file is kept in that browser's storage on that device and neve
 the page to your home screen and it opens offline too. Fetch and Live need `dashboard.py serve`,
 so the Pages copy shows what the file holds.
 
+**Try it with sample data first.** Under **Load data file** there's *or try sample data to
+explore*; on any copy you can also go to **Data › Try the sample data**. It opens a made-up
+market: 18 sample companies in 10 sectors (symbols start with Z, names say *Sample*), a sample
+index, 12 sample MUFAP funds, a sample portfolio that shows every verdict (TRIM, SELL, HOLD, a
+buy idea, order tickets, one share bought twice with one purchase green and one red) and a paper
+account with four months of history. A banner on every tab says it's sample data. **Exit sample**
+returns to your own data or the empty page; sample mode lasts for that browser tab only and
+never touches the data you loaded. None of it is real PSX or MUFAP data: the repo can't hold
+that. `python3 tools/make_sample.py` rebuilds it (bump `END` in that file to move its dates).
+
 When the data is older than today, the strip under the tabs offers **Fetch now** or **Use stored
 data**; tick *remember my choice* and it won't ask again. Tick **Live prices** during market hours
 to see your holdings, buy ideas and the price calculator at today's prices (see
@@ -1294,11 +1304,13 @@ psx-mufap/                      the skill and the tools
 │   └── android_setup.sh        one-command setup in Termux
 ├── dashboard/                  index.html + app.js (Chart.js 4.4.1 from cdnjs, pinned with SRI), theme.js
 │                               (saved theme before first paint), manifest, sw.js and icons/ (installable
-│                               and offline when served from GitHub Pages)
+│                               and offline when served from GitHub Pages), sample-data.json (the
+│                               made-up market behind "Try sample data")
 └── references/                 strategy and data-source notes
 psx-scanner/ … psx-insiders/   the 11 desk skills: SKILL.md + scripts/ (a synced copy of the code
                                 each needs) + brokers.json
 tools/sync_skills.py            copies the shared code into each desk skill (and checks it)
+tools/make_sample.py            builds dashboard/sample-data.json: a made-up market, funds and portfolio
 tests/                          offline tests on synthetic data and trimmed page samples
 zips/                           one zip per skill, to add in the Claude app (built by tools/sync_skills.py)
 docs/REFERENCE.md               this manual (README.md is the short front door)
