@@ -137,25 +137,25 @@
     store("theme", ok);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", css("--surface") || "#1d4ed8");
-    Array.prototype.forEach.call($("theme-menu").children, function (b) { b.setAttribute("aria-checked", String(b.getAttribute("data-t") === ok)); });
+    Array.prototype.forEach.call($("theme").children, function (b) {
+      var on = b.getAttribute("data-t") === ok;
+      b.classList.toggle("active", on); b.setAttribute("aria-checked", String(on));
+    });
     if (rerender) Object.keys(rendered).forEach(function (k) { if ($("v-" + k).classList.contains("on")) views[k](); });  // charts read the colours
   }
-  (function setupThemes() {
-    var btn = $("theme"), menu = $("theme-menu");
-    menu.innerHTML = THEMES.map(function (t) {
-      return '<button role="menuitemradio" aria-checked="false" data-t="' + t[0] + '"><span class="swatch swatch-' + t[0] + '"></span>' + t[1] + "</button>";
+  (function setupThemes() {   // CyberWatch-style: one tap on a coloured dot
+    var row = $("theme");
+    row.innerHTML = THEMES.map(function (t) {
+      return '<button type="button" class="sw sw-' + t[0] + '" role="radio" aria-checked="false" data-t="' + t[0] +
+        '" title="' + t[1] + '" aria-label="' + t[1] + ' theme"></button>';
     }).join("");
-    function close() { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); }
-    btn.onclick = function (e) { e.stopPropagation(); menu.hidden = !menu.hidden; btn.setAttribute("aria-expanded", String(!menu.hidden)); };
-    menu.onclick = function (e) { var b = e.target.closest("[data-t]"); if (b) { applyTheme(b.getAttribute("data-t"), true); close(); } };
-    document.addEventListener("click", function (e) { if (!menu.hidden && !menu.contains(e.target)) close(); });
-    document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+    row.onclick = function (e) { var b = e.target.closest("[data-t]"); if (b) applyTheme(b.getAttribute("data-t"), true); };
     applyTheme(document.documentElement.getAttribute("data-theme") || store("theme") || "auto", false);
   })();
   function tickClock() {
     var d = new Date();
-    $("clock").innerHTML = "<b>" + esc(d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })) + "</b><br>" +
-      esc(d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }));
+    $("clock").innerHTML = "<b>" + esc(d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })) + "</b><br><span class='cd'>" +
+      esc(d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })) + "</span>";
   }
   tickClock(); setInterval(tickClock, 15000);
 

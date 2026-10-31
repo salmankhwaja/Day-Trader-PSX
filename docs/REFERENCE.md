@@ -941,8 +941,9 @@ home-screen buttons use.
 In Chrome, go to **http://127.0.0.1:8787**, then Chrome menu › **Add to Home screen**.
 Congratulations: you now have a trading terminal that cost less than a samosa.
 
-The header shows the time and date and a theme button: Auto (follows your phone), Light, Dark,
-Blue Gray, Black, Terminal or Red, remembered per device. On a phone the tabs sit at the bottom;
+The header shows the time and date and a row of coloured dots, one per theme, as in CyberWatch:
+tap a dot to switch. Auto (follows your phone), Light, Dark, Blue Gray, Black, Terminal and Red;
+the choice is remembered per device. On a phone the date hides to make room for the dots. On a phone the tabs sit at the bottom;
 swipe the bar for Funds, Risk & SIP and Data. Number boxes (the SIP calculator, say) show commas
 as you type: `50,000`.
 

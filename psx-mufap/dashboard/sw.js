@@ -1,7 +1,7 @@
 // Offline cache for the GitHub Pages copy of the dashboard. Data is never cached here:
 // it lives in this browser's IndexedDB after you load your own data.json. (sample-data.json is
 // the made-up market, safe to cache: it is part of the repo.) Bump VERSION on release.
-const VERSION = 'psxdash-v3';
+const VERSION = 'psxdash-v4';
 const SHELL = ['./', 'index.html', 'app.js', 'theme.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'sample-data.json'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

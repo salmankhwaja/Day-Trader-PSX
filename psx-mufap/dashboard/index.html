@@ -146,27 +146,36 @@ tr.grp td { background: var(--surface-2); font-weight: 600; text-align: left; }
 .dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--s3); margin-right: 4px; vertical-align: middle; }
 @media (max-width: 600px) { .bar .btn { margin-left: auto; } .hide-m { display: none; } .bar .meta { display: none; } main { padding: 12px; } .kpi .v { font-size: 19px; } }
 
-/* ---------- WealthTracker-style chrome: header, clock, theme menu, bottom tabs on phones ---------- */
+/* ---------- WealthTracker-style chrome: header, clock, theme dots, bottom tabs on phones ---------- */
 .brand { display: flex; align-items: center; gap: 8px; }
 .brand svg { width: 26px; height: 26px; flex: none; }
 nav#tabs[hidden], main[hidden] { display: none; }
 .top-right { display: flex; align-items: center; gap: 10px; margin-left: 12px; }
 .clock { font-size: 12px; color: var(--muted); text-align: right; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .clock b { color: var(--text); font-weight: 600; }
-.theme-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; width: 36px; height: 34px; cursor: pointer; display: grid; place-items: center; color: var(--text); }
-.theme-menu { position: absolute; right: 12px; top: 54px; z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 6px; min-width: 200px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
-.theme-menu[hidden] { display: none; }
-.theme-menu button { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 9px 10px; border-radius: 8px; cursor: pointer; text-align: left; color: var(--text); font: inherit; }
-.theme-menu button[aria-checked="true"] { background: var(--surface-2); font-weight: 700; }
-.theme-menu button:hover { background: var(--surface-2); }
-.swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(128,128,128,.4); flex: none; }
-.swatch-auto { background: linear-gradient(135deg, #f4f6f5 50%, #0d1413 50%); }
-.swatch-light { background: linear-gradient(135deg, #ffffff 50%, #1d4ed8 50%); }
-.swatch-dark { background: linear-gradient(135deg, #1a1a19 50%, #3987e5 50%); }
-.swatch-bluegray { background: linear-gradient(135deg, #243041 50%, #60a5fa 50%); }
-.swatch-black { background: linear-gradient(135deg, #000000 50%, #f5f5f5 50%); }
-.swatch-terminal { background: linear-gradient(135deg, #030803 50%, #3dff7a 50%); }
-.swatch-red { background: linear-gradient(135deg, #271317 50%, #ff6b6b 50%); }
+/* Theme switcher: CyberWatch-style one-tap dots. Each dot is the theme's accent inside a ring of
+   its background; the active one gets a ring of its own. */
+.swatches { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.sw { width: 19px; height: 19px; padding: 0; border-radius: 50%; cursor: pointer; border: 2px solid transparent;
+      transition: all .2s; flex-shrink: 0; outline-offset: 2px; }
+.sw:hover { transform: scale(1.2); }
+.sw.active { border-color: var(--text-2); }
+.sw:focus-visible { outline: 2px solid var(--accent); }
+.sw-auto { background: radial-gradient(circle, #60a5fa 0 3.5px, transparent 4px), linear-gradient(135deg, #f4f6f5 50%, #0d1413 50%); box-shadow: 0 0 0 1px rgba(128,128,128,.35); }
+.sw-light { background: #1d4ed8; box-shadow: inset 0 0 0 var(--ring, 5px) #ffffff, 0 0 0 1px rgba(128,128,128,.35); }
+.sw-dark { background: #3987e5; box-shadow: inset 0 0 0 var(--ring, 5px) #121211; }
+.sw-bluegray { background: #60a5fa; box-shadow: inset 0 0 0 var(--ring, 5px) #1b2430; }
+.sw-black { background: #f5f5f5; box-shadow: inset 0 0 0 var(--ring, 5px) #000000, 0 0 0 1px rgba(128,128,128,.35); }
+.sw-terminal { background: #3dff7a; box-shadow: inset 0 0 0 var(--ring, 5px) #030803; }
+.sw-red { background: #ff6b6b; box-shadow: inset 0 0 0 var(--ring, 5px) #1a0c0f; }
+@media (max-width: 640px) {   /* phones: one row of dots; the clock keeps the time only (as CyberWatch does) */
+  .swatches { flex-wrap: nowrap; gap: 4px; }
+  .sw { width: 16px; height: 16px; }
+  .sw-light, .sw-dark, .sw-bluegray, .sw-black, .sw-terminal, .sw-red { --ring: 4px; }
+  .clock .cd { display: none; }
+  .top-right { gap: 8px; margin-left: auto; }
+}
+@media (max-width: 380px) { .bar h1 { display: none; } }   /* small phones: the logo alone, so all seven dots fit */
 :root[data-theme="terminal"] .kpi .v::before { content: "$ "; color: var(--muted); font-size: .8em; }
 nav button .ico { display: none; }
 ::placeholder { color: var(--muted); opacity: .55; }
@@ -200,11 +209,8 @@ input.numeric { font-variant-numeric: tabular-nums; }
     <div class="meta" id="meta"></div>
     <div class="top-right">
       <div class="clock" id="clock"></div>
-      <button class="theme-btn" id="theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
-      </button>
+      <div class="swatches" id="theme" role="radiogroup" aria-label="Theme"></div>
     </div>
-    <div class="theme-menu" id="theme-menu" role="menu" hidden></div>
   </div>
   <nav id="tabs" role="tablist">
     <button data-v="overview" class="on"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg></span>Overview</button>

@@ -1270,6 +1270,7 @@ class TestSample(unittest.TestCase):
         with open(os.path.join(ROOT, "psx-mufap", "dashboard", "app.js")) as f:
             js = f.read()
         self.assertIn('fetch("sample-data.json"', js)
+        self.assertIn('class="sw sw-', js)   # theme switcher: CyberWatch-style one-tap dots
         self.assertIn("pkm_sample", js)
 
 
