@@ -1097,6 +1097,17 @@ holiday is spotted (every price and volume unchanged) and not recorded as a sess
 *Run workflow* while signed in. The site keeps no GitHub token, so nobody else can start runs
 from it. Reload the page when the run is done.
 
+**Start from a clean slate.** On a blank browser (no data file, no passphrase) the start page's
+first button is **Start my portfolio**: pick your broker and add shares, mutual funds, cash and
+dividends straight away. With no market data yet, shares are valued at your last trade or a price
+you type (**Update prices**), funds at your last NAV, one you type, or, on a `github.io` site that
+also hosts PK Wealth, today's MUFAP NAV from its public price file. The tabs that need market data
+(Overview, Screener, Compare, Paper, Dividends, Funds) stay hidden; My portfolio, Risk & SIP and Data
+work. Rules that need no price history apply at once (position size and TRIM, minimum stop
+distance, cash reserve, your risk appetite); trend, volatility stops and buy ideas wait for price
+history. Load a data file or unlock the site's prices later and everything you added stays. The
+choice is remembered on that device.
+
 **Adding and editing transactions on the page.** *My portfolio* has a holdings card wherever the data
 lives in your browser (the feed, a loaded `data.json` or `dashboard.html`, or the sample):
 

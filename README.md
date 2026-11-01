@@ -276,6 +276,9 @@ Saturday). **Refresh prices now** (top of the page, or Data) opens the workflow 
 (standard runners are free on public repos); each run takes 1-3 minutes and commits only when a
 price changed.
 
+**No data file yet?** Tap **Start my portfolio** on the start page: a clean slate where you add your
+shares and funds straight away; load market data later and nothing is lost.
+
 **Your portfolio on the page:** *My portfolio* adds and edits buys, sells, mutual funds, cash and
 dividends (charges and fund units worked out as you type; one-tap Buy / Sell on each holding), and
 lets you pick your **risk appetite** (Conservative to Very aggressive, or the 8-question quiz): the

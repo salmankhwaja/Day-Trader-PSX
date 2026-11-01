@@ -1249,7 +1249,10 @@ class TestSample(unittest.TestCase):
                 self.assertIn(f["fund"], names)
         self.assertFalse(any("Sample" in s["name"] for s in d["stocks"]))
         with open(os.path.join(ROOT, "psx-mufap", "dashboard", "app.js"), encoding="utf-8") as f:
-            self.assertIn("made-up prices", f.read())   # the banner on every tab says so too
+            js = f.read()
+        self.assertIn("made-up prices", js)   # the banner on every tab says so too
+        self.assertIn('id="ld-blank"', js)     # a blank browser can start a portfolio without any data file
+        self.assertIn("function startBlank", js)
 
     def test_shows_every_kind_of_advice(self):
         m = self.committed["mine"]

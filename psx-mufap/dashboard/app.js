@@ -1094,11 +1094,17 @@
   }
 
   // ---------------------------------------------------------------- boot
+  var BLANK_TABS = ["mine", "risk", "data"];
   function boot(data) {
     D = data;
     D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
-    $("meta").textContent = (SOURCE === "sample" ? "Sample data · " : "Built " + D.generated + " · ") + D.stocks.length +
+    $("meta").textContent = SOURCE === "blank" ? "Your portfolio · no market data loaded" :
+      (SOURCE === "sample" ? "Sample data · " : "Built " + D.generated + " · ") + D.stocks.length +
       " shares (" + D.scope + ") · prices to " + (D.calendar[D.calendar.length - 1] || "–");
+    Array.prototype.forEach.call($("tabs").querySelectorAll("[data-v]"), function (b) {
+      b.hidden = SOURCE === "blank" && BLANK_TABS.indexOf(b.getAttribute("data-v")) < 0;
+    });
+    if (SOURCE === "blank") { blankBar(); show("mine"); return; }
     if (SOURCE === "sample" || D.sample) sampleBar(); else if (SOURCE === "feed") feedBar(); else checkFreshness();
     var fromHash = (location.hash.match(/compare=([^&]*)/) || [])[1];
     var saved = fromHash ? decodeURIComponent(fromHash).split(",") : (store("compare") || []);
@@ -1159,12 +1165,17 @@
     var L = $("loader"); L.hidden = false;
     L.innerHTML = '<div class="card"><h2>Your PSX &amp; MUFAP desk</h2><p>Rankings, compare, your portfolio with sell, trim or hold, ' +
       "dividends, MUFAP funds and a SIP planner, in one place.</p>" + privacyNote() +
+      '<div class="row-actions"><button class="btn big" id="ld-blank">Start my portfolio</button></div>' +
+      '<p class="small muted" style="margin-top:6px">A clean slate: add your shares, mutual funds, cash and dividends straight away. ' +
+      "Prices come from your trades (or what you type) until you load market data.</p>" +
+      '<h2 style="margin-top:18px">Or load your data</h2>' +
       '<p class="muted">This copy of the dashboard has no data of its own: PSX market data and your ledger never go in the repo. ' +
-      "Load your own file, or try the sample to see every tab working.</p>" + howToMake() +
-      '<div class="row-actions"><button class="btn big" id="ld-pick">Load data file</button></div>' +
+      "Load your own file for the full desk (rankings, compare, advice with price history), or try the sample to see every tab working.</p>" + howToMake() +
+      '<div class="row-actions"><button class="btn ghost" id="ld-pick">Load data file</button></div>' +
       (location.protocol === "file:" ? "" : '<p><button class="linkbtn" id="ld-sample">or try sample data to explore</button></p>') +
       (reason ? '<p class="note">' + esc(reason) + "</p>" : "") + "</div>";
     $("ld-pick").onclick = pickFile;
+    $("ld-blank").onclick = function () { startBlank(true); };
     if ($("ld-sample")) $("ld-sample").onclick = startSample;
   }
   function privacyNote() {
@@ -1207,7 +1218,8 @@
   function renderData() {
     if (SOURCE === "feed") return renderFeedData();
     var src = { server: "your dashboard server (data.json next to this page)", file: "the one-file dashboard you opened",
-      device: "a file you loaded on this device", sample: "sample data: real PSX and MUFAP names, made-up prices" }[SOURCE];
+      device: "a file you loaded on this device", sample: "sample data: real PSX and MUFAP names, made-up prices",
+      blank: "a clean slate on this device: your own entries, no market data loaded" }[SOURCE];
     $("dt-card").innerHTML = "<h2>Your data</h2>" +
       '<ul class="list"><li><span>Source</span><span>' + esc(src) + "</span></li>" +
       "<li><span>Built</span><span>" + esc(D.generated || "–") + "</span></li>" +
@@ -1237,7 +1249,7 @@
   function fromDevice(reason) {
     return IDB.get("data").then(function (rec) {
       if (rec && validData(rec.data)) { SOURCE = "device"; LOADED_AT = rec; window.PKM_DATA = rec.data; return start(rec.data); }
-      else showLoader(reason);
+      return IDB.get("blank").then(function (b) { return b ? startBlank(false) : showLoader(reason); });
     }).catch(function () { showLoader(reason); });
   }
   // ---------------------------------------------------------------- the site's price feed + your holdings in this browser
@@ -1261,7 +1273,9 @@
       FEED_ST = st;
       if (!(st && st.psx && st.psx.available)) return fromDevice(reason);
       return IDB.get("feedkey").then(function (stored) {
-        if (!stored) return IDB.get("data").then(function (rec) { return rec ? fromDevice(reason) : showUnlock(); });
+        if (!stored) return IDB.get("data").then(function (rec) {
+          return rec ? fromDevice(reason) : IDB.get("blank").then(function (b) { return b ? startBlank(false) : showUnlock(); });
+        });
         return WebFeed.stillValid(stored).then(function (ok) {
           if (ok) return openFeed(stored.key);
           return IDB.del("feedkey").then(function () { showUnlock("The site's passphrase has changed: enter the new one."); });
@@ -1283,9 +1297,11 @@
       '<span class="muted">(stores a locked key in this browser, never the passphrase)</span></label>' +
       '<div class="row-actions"><button class="btn big" type="submit">Unlock</button></div></form>' +
       '<p class="note" id="ul-msg">' + esc(note || "") + "</p>" +
-      '<p class="small">No passphrase? <button class="linkbtn" id="ul-sample">Try the sample data</button> · ' +
+      '<p class="small">No passphrase? <button class="linkbtn" id="ul-blank">Start your portfolio without prices</button> · ' +
+      '<button class="linkbtn" id="ul-sample">try the sample data</button> · ' +
       '<button class="linkbtn" id="ul-file">load a data file instead</button></p></div>';
     $("ul-sample").onclick = startSample;
+    $("ul-blank").onclick = function () { startBlank(true); };
     $("ul-file").onclick = function () { showLoader(""); };
     $("ul-form").onsubmit = function (e) {
       e.preventDefault();
@@ -1367,11 +1383,15 @@
     d.risk = Object.assign({}, base.risk || {});
     if (LEDGER && LEDGER.entries.length) {
       var today = base.sample ? base.sample.as_of : todayISO();
+      var blank = SOURCE === "blank";
       var owned = WebFeed.applyLedger(d, LEDGER, Ledger, {
-        S: WebFeed.settingsFor(base, prof), rowsOf: WebFeed.rowsFromSeries(base),
-        ideas: base.ideas || ((base.mine || {}).buy_ideas) || [], fundIndex: W.fund_index || {}, categories: (base.funds || {}).categories,
+        S: WebFeed.settingsFor(base, prof), rowsOf: blank ? blankRows() : WebFeed.rowsFromSeries(base),
+        ideas: base.ideas || ((base.mine || {}).buy_ideas) || [], fundIndex: blank ? blankNavs(W.fund_index) : W.fund_index || {}, categories: (base.funds || {}).categories,
         bench3m: ((base.benchmark || {}).metrics || {})["3m"], today: today, advice_date: base.generated, profile: prof });
       d.stocks.forEach(function (x) { x.owned = !!owned[x.symbol]; });
+      if (blank && d.mine) (d.mine.funds || []).forEach(function (f) {   // no MUFAP table to rank against on a clean slate
+        if (f.action === "NO DATA") { f.action = "HOLD"; f.why = "valued at your NAV; ranking within its category needs MUFAP data (load a data file)"; }
+      });
       (d.dividend_calendar || []).forEach(function (x) { x.held = !!owned[x.symbol]; });
     } else if (canEdit()) d.mine = null;   // an empty browser portfolio: nothing to show yet
     var P = (W.profiles || {})[prof] || {}, S = WebFeed.settingsFor(base, prof);
@@ -1469,6 +1489,85 @@
       "or open the GitHub Pages copy, load your data and add them there.</p></div>";
   }
 
+
+  // ---------------------------------------------------------------- a clean slate: your portfolio with no data file
+  // Start my portfolio works on a blank browser: no data file, no passphrase. Shares are valued at your
+  // last trade or a price you type ("Update prices"); funds at your last NAV, a NAV you type, or, on a
+  // github.io site that also hosts PK Wealth, the MUFAP NAVs it publishes. Advice that needs price
+  // history (trend, volatility stops, buy ideas) waits for market data; the rules that don't (position
+  // size, minimum stop distance, cash reserve) apply now. Loading a data file later keeps everything.
+  var MANUAL = {};   // {SYMBOL or fund name: {price, date}} typed in clean-slate mode
+  function startBlank(fresh) {
+    SOURCE = "blank";
+    var web = fetch("sample-data.json", { cache: "no-cache" }).then(function (r) { return r.json(); }).then(function (x) {
+      var w = Object.assign({}, x.web || {}); delete w.ledger; w.fund_index = {}; return w;   // profiles, quiz, broker tariffs: not market data
+    });
+    var navs = /\.github\.io$/i.test(location.hostname)
+      ? fetch(location.origin + "/WealthTracker/data/prices.json", { cache: "no-cache" }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+      : Promise.resolve(null);
+    return Promise.all([web, navs, IDB.get("prices").catch(function () { return null; }), fresh ? IDB.set("blank", true) : null]).then(function (x) {
+      MANUAL = x[2] || {};
+      var idx = {}, items = (((x[1] || {}).funds) || {}).items || [];
+      items.forEach(function (f) { if (f.fund && f.nav) idx[f.fund] = { nav: f.nav, date: f.date, category: f.category || null, amc: f.amc || null }; });
+      x[0].fund_index = idx;
+      $("loader").hidden = true; $("tabs").hidden = false; document.querySelector("main").hidden = false;
+      return start({ generated: todayISO(), scope: "your portfolio", calendar: [], series: {}, stocks: [], sectors: [], benchmark: { symbol: "KSE100", metrics: null },
+        notes: {}, dividend_calendar: [], portfolio: null, proposal: null, funds: null, mine: null, risk: {}, market: null, web: x[0] });
+    }).catch(function (e) { showLoader("Couldn't start an empty portfolio (" + e.message + ")."); });
+  }
+  function blankRows() {
+    var last = {};
+    Ledger.ordered(LEDGER.entries).forEach(function (e) { if ((e.type === "buy" || e.type === "sell") && e.price) last[e.symbol] = { date: e.date, close: e.price }; });
+    Object.keys(MANUAL).forEach(function (k) { var m = MANUAL[k]; if (m && m.symbol && (!last[k] || m.date >= last[k].date)) last[k] = { date: m.date, close: m.price }; });
+    return function (sym) { return last[sym] ? [last[sym]] : []; };
+  }
+  function blankNavs(feedIdx) {
+    var idx = Object.assign({}, feedIdx || {});
+    Ledger.ordered(LEDGER.entries).forEach(function (e) {
+      if ((e.type === "fund_buy" || e.type === "fund_sell") && e.nav && (!idx[e.fund] || e.date >= idx[e.fund].date)) idx[e.fund] = { nav: e.nav, date: e.date, category: (idx[e.fund] || {}).category || e.category || null };
+    });
+    Object.keys(MANUAL).forEach(function (k) { var m = MANUAL[k]; if (m && m.fund && (!idx[k] || m.date >= idx[k].date)) idx[k] = { nav: m.price, date: m.date, category: (idx[k] || {}).category || null }; });
+    return idx;
+  }
+  function blankBar() {
+    var el = $("fresh"), n = Object.keys(fundIndex()).length;
+    el.hidden = false; el.className = "fresh";
+    el.innerHTML = "<b>Your portfolio, from a clean slate.</b> Shares are valued at your last trade or a price you type (<i>Update prices</i>)" +
+      (n ? "; funds at today's MUFAP NAV (" + num(n) + " funds, via PK Wealth)" : "; funds at your last NAV or one you type") +
+      ". Trend, volatility stops and buy ideas need price history: load a data file or unlock the site's prices, and everything you add here stays." +
+      '<div class="row-actions"><button class="btn" id="bb-pick">Load a data file</button>' +
+      (FEED_ST && FEED_ST.psx && FEED_ST.psx.available ? '<button class="btn ghost" id="bb-unlock">Unlock prices</button>' : "") + "</div>";
+    $("bb-pick").onclick = pickFile;
+    if ($("bb-unlock")) $("bb-unlock").onclick = function () { IDB.del("blank").then(function () { location.reload(); }); };
+    $("livebar").hidden = true;
+  }
+  function renderPrices(box) {   // clean-slate mode: type today's price for each share and NAV for each fund
+    var M = D.mine || {}, HS = M.holdings || [], FS = M.funds || [];
+    if (!HS.length && !FS.length) return '<p class="muted">Add a holding first.</p>';
+    return '<form id="ed-prices" class="edform"><h3 class="edh">Update prices</h3>' +
+      '<p class="small muted">Today\'s price per share, or a fund\'s NAV. Leave a box as it is to keep the last one.</p>' +
+      HS.map(function (h) { return '<label>' + esc(h.symbol) + ' <span class="muted">last ' + esc(h.price_date || "") + '</span><input type="number" data-price-sym="' + esc(h.symbol) + '" data-was="' + v(h.price) + '" value="' + v(h.price) + '"></label>'; }).join("") +
+      FS.map(function (f) { var x = blankNavs(fundIndex())[f.fund] || {}; return '<label>' + esc(f.fund) + ' <span class="muted">NAV ' + esc(x.date || "") + '</span><input type="number" data-price-fund="' + esc(f.fund) + '" data-was="' + v(x.nav) + '" value="' + v(x.nav) + '"></label>'; }).join("") +
+      '<label>As of <input type="date" id="ep-date" value="' + todayISO() + '"></label>' +
+      '<div class="row-actions"><button class="btn" type="submit">Save prices</button><button class="btn ghost" type="button" data-cancel="1">Cancel</button></div></form>';
+  }
+  function wirePrices(done) {
+    var form = $("ed-prices"); if (!form) return;
+    form.onsubmit = function (e) {
+      e.preventDefault();
+      var date = $("ep-date").value || todayISO(), n = 0;
+      form.querySelectorAll("[data-price-sym],[data-price-fund]").forEach(function (inp) {
+        var p = parseFloat(String(inp.value).replace(/,/g, "")); if (!(p > 0)) return;
+        if (p === parseFloat(inp.getAttribute("data-was"))) return;   // untouched: keep the last price
+        var sym = inp.getAttribute("data-price-sym"), fund = inp.getAttribute("data-price-fund"), key = sym || fund;
+        var old = MANUAL[key];
+        if (old && old.price === p && old.date === date) return;
+        MANUAL[key] = sym ? { symbol: sym, price: p, date: date } : { fund: fund, price: p, date: date }; n++;
+      });
+      IDB.set("prices", MANUAL).then(function () { done(n ? "Updated " + n + " price" + (n > 1 ? "s" : "") + "." : "Nothing changed."); });
+    };
+  }
+
   // ---- My portfolio: add trades, funds, cash and dividends here
   var EDIT = { form: null, prefill: null, editId: null };
   function brokerOptions(pick) {
@@ -1494,7 +1593,8 @@
       '<div class="row-actions">' +
       (hasB ? '<button class="btn" data-f="trade">+ Buy or sell shares</button><button class="btn ghost" data-f="fund">+ Mutual fund</button>' +
         '<button class="btn ghost" data-f="cash">+ Cash</button><button class="btn ghost" data-f="div">+ Dividend</button>' +
-        '<button class="btn ghost" data-f="list">Transactions (' + n + ")</button>" : "") +
+        '<button class="btn ghost" data-f="list">Transactions (' + n + ")</button>" +
+        (SOURCE === "blank" && n ? '<button class="btn ghost" data-f="prices">Update prices</button>' : "") : "") +
       '<button class="btn ghost" data-f="broker">' + (hasB ? "Brokers" : "Start: pick your broker") + "</button></div>";
     // One tap from what you hold: buy more, sell, invest more, redeem
     if (hasB && (HS.length || FS.length) && !f) {
@@ -1530,7 +1630,8 @@
         '<label>Other (CDC, levies) <input id="et-o" type="number" placeholder="estimated if empty" value="' + v(P.other) + '"></label><label>Your stop-loss <input id="et-stop" type="number" placeholder="worked out if empty" value="' + v(P.stop) + '"></label>' +
         '<label>Note <input id="et-note" placeholder="e.g. contract note #1234" value="' + v(P.note) + '"></label></details>' +
         '<p class="small muted" id="et-calc"></p>' + save + '' +
-        '<datalist id="ed-syms">' + D.stocks.map(function (x) { return '<option value="' + esc(x.symbol) + '">' + esc(x.name || "") + "</option>"; }).join("") + "</datalist></form>";
+        '<datalist id="ed-syms">' + (D.stocks.length ? D.stocks.map(function (x) { return '<option value="' + esc(x.symbol) + '">' + esc(x.name || "") + "</option>"; }) :
+          Object.keys(LEDGER.entries.reduce(function (a, e) { if (e.symbol) a[e.symbol] = 1; return a; }, {})).map(function (k) { return '<option value="' + esc(k) + '">'; })).join("") + "</datalist></form>";
     } else if (f === "fund") {
       var FI = fundIndex();
       body = '<form id="ed-fund" class="edform"><h3 class="edh">' + (editing ? "Edit fund transaction" : P.side === "sell" ? "Redeem from a fund" : "Mutual fund") + "</h3>" +
@@ -1554,6 +1655,8 @@
         '<label>Received, after tax (PKR) <input id="ed-damt" type="number" required placeholder="e.g. 12,000" value="' + v(P.net) + '"></label>' +
         '<label>Date <input id="ed-ddate" type="date" value="' + v(P.date || todayISO()) + '" required></label>' + save + '' +
         '<datalist id="ed-syms2">' + HS.map(function (h) { return '<option value="' + esc(h.symbol) + '">'; }).join("") + "</datalist></form>";
+    } else if (f === "prices") {
+      body = renderPrices();
     } else if (f === "list") {
       var E = Ledger.ordered(LEDGER.entries).reverse();
       body = '<div class="tablewrap" style="max-height:55vh"><table><tr><th class="l">Date</th><th class="l">Transaction</th><th>Amount</th><th class="l hide-m">Broker</th><th></th></tr>' +
@@ -1651,6 +1754,7 @@
         date: $("ef-date").value, load_pct: $("ef-load").value, category: x ? x.category : null });
       return "Saved: " + (e.type === "fund_buy" ? "invested " : "redeemed ") + pkr(e.amount) + " in " + e.fund + " (" + num(e.units, 4) + " units).";
     });
+    wirePrices(function (msg) { reset(); saveLedger().then(function () { fmsg("ed-msg", msg, true); }); });
     if ($("ed-cash")) $("ed-cash").onsubmit = guard(function () {
       Ledger.recordCash(LEDGER, (+$("ec-kind").value) * parseFloat(String($("ec-amt").value).replace(/,/g, "")), $("ec-date").value); return "Saved.";
     });
