@@ -1497,6 +1497,7 @@
   // history (trend, volatility stops, buy ideas) waits for market data; the rules that don't (position
   // size, minimum stop distance, cash reserve) apply now. Loading a data file later keeps everything.
   var MANUAL = {};   // {SYMBOL or fund name: {price, date}} typed in clean-slate mode
+  var BLANK_MKT = null; // PK Wealth's public prices.json as fetched this visit (fund NAVs, its "updated" time)
   function startBlank(fresh) {
     SOURCE = "blank";
     var web = fetch("sample-data.json", { cache: "no-cache" }).then(function (r) { return r.json(); }).then(function (x) {
@@ -1506,7 +1507,7 @@
       ? fetch(location.origin + "/WealthTracker/data/prices.json", { cache: "no-cache" }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
       : Promise.resolve(null);
     return Promise.all([web, navs, IDB.get("prices").catch(function () { return null; }), fresh ? IDB.set("blank", true) : null]).then(function (x) {
-      MANUAL = x[2] || {};
+      MANUAL = x[2] || {}; BLANK_MKT = x[1];
       var idx = {}, items = (((x[1] || {}).funds) || {}).items || [];
       items.forEach(function (f) { if (f.fund && f.nav) idx[f.fund] = { nav: f.nav, date: f.date, category: f.category || null, amc: f.amc || null }; });
       x[0].fund_index = idx;
@@ -1535,11 +1536,23 @@
     el.innerHTML = "<b>Your portfolio, from a clean slate.</b> Shares are valued at your last trade or a price you type (<i>Update prices</i>)" +
       (n ? "; funds at today's MUFAP NAV (" + num(n) + " funds, via PK Wealth)" : "; funds at your last NAV or one you type") +
       ". Trend, volatility stops and buy ideas need price history: load a data file or unlock the site's prices, and everything you add here stays." +
+      "<br>" + blankMarketLine() +
       '<div class="row-actions"><button class="btn" id="bb-pick">Load a data file</button>' +
       (FEED_ST && FEED_ST.psx && FEED_ST.psx.available ? '<button class="btn ghost" id="bb-unlock">Unlock prices</button>' : "") + "</div>";
     $("bb-pick").onclick = pickFile;
     if ($("bb-unlock")) $("bb-unlock").onclick = function () { IDB.del("blank").then(function () { location.reload(); }); };
     $("livebar").hidden = true;
+  }
+  // Where the site's prices stand: when the scheduled job last fetched them, and that the next run
+  // replaces them on its own. Nothing here can start a fetch: only the repo owner can run the job.
+  function blankMarketLine() {
+    var m = BLANK_MKT || {}, f = m.funds || {}, st = FEED_ST || {}, ps = st.psx || {}, bits = [];
+    if (f.count) bits.push("MUFAP NAVs dated " + esc(f.latest_date || "?") + " (fetched " + ago(m.updated) + ")");
+    else bits.push("MUFAP NAVs: none here (they come from PK Wealth on the same github.io site)");
+    if (st.updated) bits.push(ps.available ? "PSX closes fetched " + ago(st.updated) + " (unlock to use them)" : "PSX closes: the site's PSX feed is off");
+    return '<span class="small">Site prices: ' + bits.join(" · ") +
+      ". A scheduled job refreshes them on weekdays (midday, after the close, and late evening for NAVs) and Saturday night; " +
+      "each visit picks up the newest. A NAV you type is used until the site has a newer one; your transactions are never changed.</span>";
   }
   function renderPrices(box) {   // clean-slate mode: type today's price for each share and NAV for each fund
     var M = D.mine || {}, HS = M.holdings || [], FS = M.funds || [];

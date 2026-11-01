@@ -1108,6 +1108,13 @@ distance, cash reserve, your risk appetite); trend, volatility stops and buy ide
 history. Load a data file or unlock the site's prices later and everything you added stays. The
 choice is remembered on that device.
 
+The clean-slate banner also says where the site's prices stand: the date of the MUFAP NAVs and when
+they were fetched, and whether the PSX feed is on. A scheduled GitHub Actions job refreshes them
+(weekdays at midday, after the close and late evening for NAVs; Saturday night) and each visit picks
+up the newest. A NAV you type is used until the site has a newer one; your transactions are never
+changed. Visitors can't start a fetch: the job runs on its schedule or when the repo owner presses
+*Run workflow* in the Actions tab.
+
 **Adding and editing transactions on the page.** *My portfolio* has a holdings card wherever the data
 lives in your browser (the feed, a loaded `data.json` or `dashboard.html`, or the sample):
 
