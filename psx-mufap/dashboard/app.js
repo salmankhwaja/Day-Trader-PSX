@@ -1547,7 +1547,17 @@
   // replaces them on its own. Nothing here can start a fetch: only the repo owner can run the job.
   function blankMarketLine() {
     var m = BLANK_MKT || {}, f = m.funds || {}, st = FEED_ST || {}, ps = st.psx || {}, bits = [];
-    if (f.count) bits.push("MUFAP NAVs dated " + esc(f.latest_date || "?") + " (fetched " + ago(m.updated) + ")");
+    if (f.count) {
+      // MUFAP lists each NAV with its validity date. Most funds carry the last dealing day, but some
+      // money-market and cash funds already list the next one (a Friday NAV valid on Monday), so the
+      // newest date is misleading: show the date most funds carry, and say how many are ahead of it.
+      var cnt = {}, main = null, ahead = 0;
+      (f.items || []).forEach(function (i) { if (i.date) cnt[i.date] = (cnt[i.date] || 0) + 1; });
+      Object.keys(cnt).forEach(function (d) { if (main == null || cnt[d] > cnt[main]) main = d; });
+      Object.keys(cnt).forEach(function (d) { if (main && d > main) ahead += cnt[d]; });
+      bits.push("MUFAP NAVs as of " + esc(main || f.latest_date || "?") + " (fetched " + ago(m.updated) + ")" +
+        (ahead ? "; " + ahead + " funds, mostly money-market, already list a later date: MUFAP shows the day each NAV applies to" : ""));
+    }
     else bits.push("MUFAP NAVs: none here (they come from PK Wealth on the same github.io site)");
     if (st.updated) bits.push(ps.available ? "PSX closes fetched " + ago(st.updated) + " (unlock to use them)" : "PSX closes: the site's PSX feed is off");
     return '<span class="small">Site prices: ' + bits.join(" · ") +
