@@ -1448,6 +1448,23 @@ class TestBrowserLedger(Market):
         self.assertGreater(len({r["action"] for r in rv}), 1)
 
 
+class TestWorkflows(unittest.TestCase):
+    """Every workflow file parses: one bad line and GitHub silently drops the whole workflow."""
+
+    def test_yaml(self):
+        try:
+            import yaml
+        except ImportError:
+            self.skipTest("pip install pyyaml")
+        for d in (".github/workflows", "ci"):
+            for f in sorted(os.listdir(os.path.join(ROOT, d))) if os.path.isdir(os.path.join(ROOT, d)) else []:
+                if f.endswith(".yml"):
+                    with open(os.path.join(ROOT, d, f)) as fh:
+                        y = yaml.safe_load(fh)
+                    self.assertIn("jobs", y, f)
+                    self.assertTrue(y.get(True) or y.get("on"), f)   # YAML reads a bare `on:` as True
+
+
 class TestWatchlist(Market):
     def test_add_remove_set_top_and_checks(self):
         run(WL.main, ["--home", self.h, "add", "SYN08", "NOPE"])
