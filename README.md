@@ -268,7 +268,8 @@ MUFAP prices for you, and you add your holdings on the website. Live copy:
 4. **First fill:** *Actions › feed › Run workflow*, mode **backfill** (about 20 minutes: a year of
    history for every share). After that it runs by itself.
 5. Open the page, enter the passphrase, then **My portfolio › Start: pick your broker**, and add
-   your buys and sells, funds and cash.
+   your buys and sells, funds and cash. Old trades are easy: pick the date and the price fills in
+   with that day's close (fix it to your actual fill if it differs).
 
 **Prices:** on weekdays at 10:37, 13:07, after the close and 06:23 the next morning, plus MUFAP NAVs
 at 22:23 (and Saturday), all Pakistan time. Change any of it, and the timeouts, in

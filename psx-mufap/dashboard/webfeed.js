@@ -204,7 +204,25 @@
     };
   }
 
-  var api = { BASE: BASE, status: status, unlock: unlock, stillValid: stillValid, load: load, open: open, history: history, build: build, applyLedger: applyLedger, settingsFor: settingsFor, rowsFromSeries: rowsFromSeries };
+  /** A share's close on a date, or on the last trading day before it (weekend, holiday) up to 10 days
+   *  back: {date, close} or null. From the feed's monthly files, else a data.json's series/calendar. */
+  function closeOn(months, D, sym, date) {
+    sym = String(sym || "").trim().toUpperCase();
+    if (!sym || !/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return null;
+    var earliest = new Date(Date.parse(date + "T00:00:00Z") - 10 * 864e5).toISOString().slice(0, 10), i, d;
+    var ms = Object.keys(months || {}).filter(function (m) { return m <= date.slice(0, 7) && m >= earliest.slice(0, 7); }).sort().reverse();
+    for (var a = 0; a < ms.length; a++) {
+      var M = months[ms[a]], k = (M.syms || []).indexOf(sym);
+      if (k < 0) continue;
+      var days = Object.keys(M.days || {}).filter(function (x) { return x <= date && x >= earliest; }).sort().reverse();
+      for (i = 0; i < days.length; i++) { var c = M.days[days[i]].c[k]; if (c != null) return { date: days[i], close: c }; }
+    }
+    var v = D && (D.series || {})[sym], cal = (D && D.calendar) || [];
+    if (v) for (i = cal.length - 1; i >= 0; i--) { d = cal[i]; if (d <= date && d >= earliest && v[i] != null) return { date: d, close: v[i] }; }
+    return null;
+  }
+
+  var api = { BASE: BASE, closeOn: closeOn, status: status, unlock: unlock, stillValid: stillValid, load: load, open: open, history: history, build: build, applyLedger: applyLedger, settingsFor: settingsFor, rowsFromSeries: rowsFromSeries };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.WebFeed = api;
 })(typeof self !== "undefined" ? self : this);

@@ -1645,8 +1645,9 @@
         '<label>Side <select id="et-side"><option value="buy"' + (P.side !== "sell" ? " selected" : "") + '>Buy</option><option value="sell"' + (P.side === "sell" ? " selected" : "") + ">Sell</option></select></label>" +
         '<label>Symbol <input id="et-sym" list="ed-syms" autocapitalize="characters" required placeholder="e.g. MEBL" value="' + v(P.symbol) + '"></label>' +
         '<label>Shares <input id="et-qty" type="number" required placeholder="e.g. 500" value="' + v(P.qty) + '"></label>' +
-        '<label>Price per share <input id="et-px" type="number" required placeholder="e.g. 253.50" value="' + v(P.price) + '"></label>' +
         '<label>Date <input id="et-date" type="date" value="' + v(P.date || todayISO()) + '" required></label><label>Time <input id="et-time" type="time" value="' + v(P.time) + '"></label>' +
+        '<label>Price per share <input id="et-px" type="number" step="any" required placeholder="e.g. 253.50" value="' + v(P.price) + '"></label>' +
+        '<p class="small muted" id="et-pxnote"></p>' +
         '<label>Broker <select id="et-broker">' + brokerOptions(P.broker) + "</select></label>" +
         '<details' + (P.commission != null || P.stop ? " open" : "") + '><summary class="small">Charges from the contract note, stop-loss, note (optional)</summary>' +
         '<label>Commission <input id="et-c" type="number" placeholder="estimated if empty" value="' + v(P.commission) + '"></label><label>Taxes <input id="et-t" type="number" placeholder="estimated if empty" value="' + v(P.taxes) + '"></label>' +
@@ -1745,7 +1746,28 @@
         (side === "buy" ? "you pay about " + pkr(q * p + fees) : "you receive about " + pkr(q * p - fees)) + ". Your contract note wins.";
     };
     if ($("et-sym")) {
-      $("et-sym").onchange = function () { var x = bySym[$("et-sym").value.trim().toUpperCase()]; if (x && !$("et-px").value) { $("et-px").value = groupNum(x.close); } tradeCalc(); };
+      // Price from the date: the day's close from the year of prices on file (the last trading day
+      // before it for a weekend or holiday). Fills the box while it's empty or still holds a filled-in
+      // close; a price you type stays. Your contract note's fill price is the one to keep.
+      var autoPx = null;
+      var pricePick = function () {
+        var sym = $("et-sym").value.trim().toUpperCase(), date = $("et-date").value, note = $("et-pxnote");
+        if (!sym) { note.textContent = ""; return; }
+        var r = WebFeed.closeOn(FEED && FEED.months, D, sym, date), mine = $("et-px").value && $("et-px").value !== autoPx;
+        if (!r) {
+          var x = bySym[sym];
+          if (x && x.close && date === todayISO() && !mine) { $("et-px").value = autoPx = groupNum(x.close); note.textContent = "Latest price filled in; type your fill price if it differs."; }
+          else note.textContent = date ? "No price on file for " + sym + " around " + date + " (prices go back about a year); type the price you paid." : "";
+          return;
+        }
+        var when = r.date === date ? "Close on " + r.date : "Close on " + r.date + " (last trading day before " + date + ")";
+        if (!mine) { $("et-px").value = autoPx = groupNum(r.close); note.textContent = when + " filled in: " + r.close + ". Type your actual fill price if it differs."; }
+        else note.textContent = when + ": " + r.close + " (your price kept).";
+      };
+      $("et-sym").onchange = function () { pricePick(); tradeCalc(); };
+      $("et-date").addEventListener("change", function () { pricePick(); tradeCalc(); });
+      $("et-px").addEventListener("input", function () { if ($("et-px").value === "") autoPx = null; });
+      if (!editing) pricePick();
       ["et-qty", "et-px", "et-side", "et-broker"].forEach(function (k) { $(k).addEventListener("input", tradeCalc); $(k).addEventListener("change", tradeCalc); });
       tradeCalc();
     }

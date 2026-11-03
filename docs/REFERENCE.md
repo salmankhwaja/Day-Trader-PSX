@@ -1161,7 +1161,7 @@ lives in your browser (the feed, a loaded `data.json` or `dashboard.html`, or th
 
 | Button | Records |
 |---|---|
-| + Buy or sell shares | side, symbol (suggested from the market), shares, price per share, date, time, broker; charges are estimated from the broker's tariff and shown before you save (commission, tax, CDC and levies, what you pay or receive); the contract note's charges and your own stop-loss are optional |
+| + Buy or sell shares | side, symbol (suggested from the market), shares, date, time, price per share, broker. Pick a past date and the price fills in with that day's close from the year of prices on file (the last trading day before it for a weekend or holiday); type your contract note's fill price over it if it differs, and a price you type is never replaced; charges are estimated from the broker's tariff and shown before you save (commission, tax, CDC and levies, what you pay or receive); the contract note's charges and your own stop-loss are optional |
 | + Mutual fund | invest or redeem: fund (from MUFAP's list), amount, NAV (filled from MUFAP for recent dates; type it from your statement for older ones), load %; the units are worked out as you type |
 | + Cash · + Dividend | deposits and withdrawals with your broker; dividends received after tax |
 | Transactions | every entry, newest first, each with **Edit** and **Delete**. An edit replaces the entry; if the new one can't stand (selling shares you didn't hold then), nothing changes |

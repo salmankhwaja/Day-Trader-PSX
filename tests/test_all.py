@@ -1372,6 +1372,28 @@ class TestWebFeed(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
+class TestPriceOnDate(unittest.TestCase):
+    """The trade form fills the price from the date: that day's close, else the last trading day before."""
+
+    def test_close_on(self):
+        import subprocess
+        js = ("const W=require(%r);const M={'2025-07':{syms:['AAA','BBB'],days:{'2025-07-21':{c:[16.1,300],v:[1,1]},"
+              "'2025-07-22':{c:[16.43,null],v:[1,0]},'2025-07-25':{c:[16.9,305],v:[1,1]}}},'2025-08':{syms:['BBB'],days:{'2025-08-01':{c:[310],v:[1]}}}};"
+              "const t=(s,d,D)=>W.closeOn(D?null:M,D||null,s,d);"
+              "console.log(JSON.stringify([t('aaa','2025-07-22'),t('AAA','2025-07-27'),t('BBB','2025-07-22'),t('AAA','2025-08-03'),"
+              "t('AAA','2025-08-20'),t('ZZZ','2025-07-22'),t('CC','2025-07-23',{calendar:['2025-07-21','2025-07-22'],series:{CC:[5,6]}})]))"
+              ) % os.path.join(ROOT, "psx-mufap", "dashboard", "webfeed.js")
+        out = json.loads(subprocess.check_output(["node", "-e", js]))
+        self.assertEqual(out[0], {"date": "2025-07-22", "close": 16.43})   # the day itself, symbol in any case
+        self.assertEqual(out[1]["date"], "2025-07-25")                    # a Sunday: Friday's close
+        self.assertEqual(out[2]["close"], 300)                            # not traded that day: the day before
+        self.assertEqual(out[3]["date"], "2025-07-25")                    # across a month end
+        self.assertIsNone(out[4])                                         # more than 10 days without a price
+        self.assertIsNone(out[5])                                         # unknown share
+        self.assertEqual(out[6], {"date": "2025-07-22", "close": 6})      # a data.json's series (sample, local)
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not installed")
 class TestBrowserAdvice(unittest.TestCase):
     """The web page's portfolio and advice (webfeed.applyLedger on a data.json) match the Python run,
     and the risk appetite you pick in the page changes the advice the way the profiles say."""
