@@ -1065,6 +1065,7 @@ holdings in your browser. The Python tools keep working alongside it.
 | `tools/web_feed.py` | GitHub Actions (`.github/workflows/feed.yml`; `ci/feed.yml` is a copy) | Fetches PSX's market watch (every share in one request), the KSE-100 history, the payouts page, a fifth of the company pages (each share weekly) and the MUFAP table. Runs the same ranking, dividend, fund and backtest code as the CLI over a year of history, and writes `feed/` |
 | `feed/status.json` | public | when it last ran, how many shares and sessions, errors. No prices |
 | `feed/psx/YYYY-MM.enc.json` | encrypted | one file per month, every share's close and volume. Only the current month changes day to day, so the repo grows by roughly 100-300 KB a trading day |
+| `feed/mufap/YYYY-MM.enc.json` | encrypted | one file per month, every fund's MUFAP NAV by validity date, so a fund transaction's date fills in that day's NAV. MUFAP publishes only today's NAVs, so this history grows from the feed's first run (no year-long backfill is possible) |
 | `feed/summary.enc.json`, `feed/meta.enc.json` | encrypted | the ranked market, sectors, dividends, MUFAP funds, buy ideas; names, sectors, Shariah flags, P/E |
 | `feed/latest.enc.json` | encrypted | today's prices in PK Wealth's format, so PK Wealth on the same site uses this feed |
 | `psx-mufap/dashboard/webfeed.js` | your browser | asks for the passphrase, derives the key (PBKDF2-SHA256, 310,000 rounds) and decrypts. "Keep this device unlocked" stores the key as a non-extractable WebCrypto key, never the passphrase |
@@ -1162,7 +1163,7 @@ lives in your browser (the feed, a loaded `data.json` or `dashboard.html`, or th
 | Button | Records |
 |---|---|
 | + Buy or sell shares | side, symbol (suggested from the market), shares, date, time, price per share, broker. Pick a past date and the price fills in with that day's close from the year of prices on file (the last trading day before it for a weekend or holiday); type your contract note's fill price over it if it differs, and a price you type is never replaced; charges are estimated from the broker's tariff and shown before you save (commission, tax, CDC and levies, what you pay or receive); the contract note's charges and your own stop-loss are optional |
-| + Mutual fund | invest or redeem: fund (from MUFAP's list), amount, NAV (filled from MUFAP for recent dates; type it from your statement for older ones), load %; the units are worked out as you type |
+| + Mutual fund | invest or redeem: fund (from MUFAP's list), amount, date, NAV (filled in with the fund's MUFAP NAV for that date, or the last one before it, from the NAV history the feed keeps, or PK Wealth's on the same site; the history starts when the feed did, so for older dates type it from your statement; a NAV you type is never replaced), load %; the units are worked out as you type |
 | + Cash · + Dividend | deposits and withdrawals with your broker; dividends received after tax |
 | Transactions | every entry, newest first, each with **Edit** and **Delete**. An edit replaces the entry; if the new one can't stand (selling shares you didn't hold then), nothing changes |
 | Under the buttons | one chip per holding with **Buy** / **Sell** (Sell fills in the whole position, or the trim size when the advice is TRIM) and per fund with **Invest** / **Redeem** |

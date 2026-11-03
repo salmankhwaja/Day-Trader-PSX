@@ -1356,6 +1356,11 @@ class TestWebFeed(unittest.TestCase):
         self.assertLessEqual(set(meta["shares"]), {"SYN%02d" % k for k in range(12)} | {"KSE100"})
         self.assertTrue(meta["companies"])
         self.assertIn("vol_window", summ["settings"])
+        for m in st["mufap"]["months"]:                # a year of fund NAVs, for the NAV on a past date
+            nav = store.load("mufap/%s.enc.json" % m)
+            self.assertEqual(nav["month"], m)
+            self.assertTrue(all(len(d["c"]) == len(nav["syms"]) for d in nav["days"].values()))
+
         lt = json.load(open(os.path.join(self.feed, "latest.enc.json")))   # PK Wealth's own format
         self.assertEqual(lt["format"], "pk-wealth-psx")
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -1369,6 +1374,19 @@ class TestWebFeed(unittest.TestCase):
         kd = json.load(open(os.path.join(self.feed, "key.json")))
         with self.assertRaises(Exception):             # a wrong passphrase opens nothing
             self.W.unseal(json.load(open(os.path.join(self.feed, "summary.enc.json"))), self.W.derive("wrong", self.W.unb64(kd["salt"])))
+
+    def test_nav_history_months(self):
+        meta = {"navs": {"Fund A": {"2026-11-02": 10.5, "2026-11-04": 10.6, "2024-01-02": 9.0},
+                         "Fund B": {"2026-10-30": 101.0}, "Old Fund": {"2024-03-01": 5.0}}}
+        self.W.prune_navs(meta, dt.date(2026, 11, 3))
+        self.assertNotIn("Old Fund", meta["navs"])                    # older than the months kept: dropped
+        self.assertNotIn("2024-01-02", meta["navs"]["Fund A"])
+        files = self.W.nav_months(meta, self.W.wanted_months(dt.date(2026, 11, 3)))
+        self.assertEqual(sorted(files), ["2026-10", "2026-11"])
+        nov = files["2026-11"]
+        self.assertEqual(nov["syms"], ["Fund A"])
+        self.assertEqual(nov["days"]["2026-11-04"]["c"], [10.6])     # dated by MUFAP's validity date
+        self.assertEqual(files["2026-10"]["days"]["2026-10-30"]["c"], [101.0])
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
@@ -1391,6 +1409,12 @@ class TestPriceOnDate(unittest.TestCase):
         self.assertIsNone(out[4])                                         # more than 10 days without a price
         self.assertIsNone(out[5])                                         # unknown share
         self.assertEqual(out[6], {"date": "2025-07-22", "close": 6})      # a data.json's series (sample, local)
+        js2 = ("const W=require(%r);const N={'2026-11':{syms:['Meezan Islamic Fund'],days:{'2026-11-02':{c:[81.2]},'2026-11-04':{c:[81.5]}}}};"
+               "console.log(JSON.stringify([W.closeOn(N,null,'Meezan Islamic Fund','2026-11-03',true),W.closeOn(N,null,'Meezan Islamic Fund','2026-11-03')]))"
+               ) % os.path.join(ROOT, "psx-mufap", "dashboard", "webfeed.js")
+        nav = json.loads(subprocess.check_output(["node", "-e", js2]))
+        self.assertEqual(nav[0], {"date": "2026-11-02", "close": 81.2})   # a fund's NAV: the last before the date
+        self.assertIsNone(nav[1])                                         # fund names keep their case
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")

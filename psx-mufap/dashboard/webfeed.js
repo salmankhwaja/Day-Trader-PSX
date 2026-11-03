@@ -52,14 +52,15 @@
       return open(kd.check, stored.key).then(function (t) { return t === CHECK; }, function () { return false; });
     });
   }
-  /** {summary, months: {YYYY-MM: {syms, days}}} */
+  /** {summary, months: {YYYY-MM: {syms, days}}, navMonths: {YYYY-MM: {syms: fund names, days}}} */
   function load(key, st) {
-    var months = ((st && st.psx && st.psx.months) || []).slice();
-    return Promise.all([getJSON("summary.enc.json").then(function (d) { return open(d, key); })].concat(months.map(function (m) {
-      return getJSON("psx/" + m + ".enc.json").then(function (d) { return open(d, key); });
-    }))).then(function (all) {
-      var out = { summary: all[0], months: {} };
+    var months = ((st && st.psx && st.psx.months) || []).slice(), navs = ((st && st.mufap && st.mufap.months) || []).slice();
+    var get = function (f) { return getJSON(f).then(function (d) { return open(d, key); }); };
+    return Promise.all([get("summary.enc.json")].concat(months.map(function (m) { return get("psx/" + m + ".enc.json"); }))
+      .concat(navs.map(function (m) { return get("mufap/" + m + ".enc.json").catch(function () { return null; }); }))).then(function (all) {
+      var out = { summary: all[0], months: {}, navMonths: {} };
       months.forEach(function (m, i) { out.months[m] = all[i + 1]; });
+      navs.forEach(function (m, i) { if (all[months.length + 1 + i]) out.navMonths[m] = all[months.length + 1 + i]; });
       return out;
     });
   }
@@ -205,9 +206,11 @@
   }
 
   /** A share's close on a date, or on the last trading day before it (weekend, holiday) up to 10 days
-   *  back: {date, close} or null. From the feed's monthly files, else a data.json's series/calendar. */
-  function closeOn(months, D, sym, date) {
-    sym = String(sym || "").trim().toUpperCase();
+   *  back: {date, close} or null. From the feed's monthly files, else a data.json's series/calendar.
+   *  Also a fund's NAV from the monthly NAV files (same shape, fund names as syms): pass keepCase. */
+  function closeOn(months, D, sym, date, keepCase) {
+    sym = String(sym || "").trim();
+    if (!keepCase) sym = sym.toUpperCase();
     if (!sym || !/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return null;
     var earliest = new Date(Date.parse(date + "T00:00:00Z") - 10 * 864e5).toISOString().slice(0, 10), i, d;
     var ms = Object.keys(months || {}).filter(function (m) { return m <= date.slice(0, 7) && m >= earliest.slice(0, 7); }).sort().reverse();

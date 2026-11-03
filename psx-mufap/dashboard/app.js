@@ -1602,6 +1602,29 @@
       return '<option value="' + esc(k) + '"' + (k === "finqalab" ? " selected" : "") + ">" + esc(PRESETS.brokers[k].name || k) + "</option>";
     }).join("");
   }
+  // A fund's NAV on a date: the feed's NAV history when unlocked, else PK Wealth's public one on this site.
+  var PKW_NAVS = {};
+  function navMonthsNear(date) {
+    var t = Date.parse(date + "T00:00:00Z"); if (isNaN(t)) return [];
+    return [date.slice(0, 7), new Date(t - 10 * 864e5).toISOString().slice(0, 7)].filter(function (m, i, a) { return a.indexOf(m) === i; });
+  }
+  function navOn(fund, date) {
+    var mine = FEED && FEED.navMonths ? WebFeed.closeOn(FEED.navMonths, null, fund, date, true) : null;
+    if (mine || !/github\.io$/.test(location.hostname)) return Promise.resolve(mine);
+    return Promise.all(navMonthsNear(date).map(function (m) {
+      if (!(m in PKW_NAVS)) PKW_NAVS[m] = fetch(location.origin + "/WealthTracker/data/navs/" + m + ".json", { cache: "no-cache" })
+        .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+      return PKW_NAVS[m].then(function (x) { return [m, x]; });
+    })).then(function (got) {
+      var ms = {}; got.forEach(function (g) { if (g[1]) ms[g[0]] = g[1]; });
+      return WebFeed.closeOn(ms, null, fund, date, true);
+    });
+  }
+  function navFirst() {   // the earliest NAV on file, for the "no NAV that far back" note
+    var ms = FEED && FEED.navMonths ? Object.keys(FEED.navMonths).sort() : [], a = FEED_ST && FEED_ST.mufap && FEED_ST.mufap.first;
+    var b = ms.length ? Object.keys(FEED.navMonths[ms[0]].days).sort()[0] : null;
+    return a || b || (((BLANK_MKT || {}).nav_history) || {}).first || null;
+  }
   function fundIndex() { return D.fund_index || (D.web || {}).fund_index || ((BASE || {}).web || {}).fund_index || {}; }
   function v(x) { return x == null ? "" : esc(String(x)); }
   function renderEditor() {
@@ -1662,10 +1685,11 @@
         '<label>Side <select id="ef-side"><option value="buy"' + (P.side !== "sell" ? " selected" : "") + '>Invest</option><option value="sell"' + (P.side === "sell" ? " selected" : "") + ">Redeem</option></select></label>" +
         '<label>Fund <input id="ef-fund" list="ed-funds" required placeholder="e.g. Meezan Islamic Fund" value="' + v(P.fund) + '"></label>' +
         '<label>Amount (PKR) <input id="ef-amt" type="number" required placeholder="e.g. 100,000" value="' + v(P.amount) + '"></label>' +
-        '<label>NAV <input id="ef-nav" type="number" required placeholder="from MUFAP, or your statement" value="' + v(P.nav) + '"></label>' +
         '<label>Date <input id="ef-date" type="date" value="' + v(P.date || todayISO()) + '" required></label>' +
+        '<label>NAV <input id="ef-nav" type="number" step="any" required placeholder="from MUFAP, or your statement" value="' + v(P.nav) + '"></label>' +
+        '<p class="small muted" id="ef-navnote"></p>' +
         '<label>Load % <input id="ef-load" type="number" placeholder="0" value="' + v(P.load_pct) + '"></label>' +
-        '<p class="small muted" id="ef-calc">For an older date, type that day\'s NAV from your fund statement.</p>' + save + '' +
+        '<p class="small muted" id="ef-calc"></p>' + save + '' +
         '<datalist id="ed-funds">' + Object.keys(FI).sort().map(function (k) { return '<option value="' + esc(k) + '">' + esc(FI[k].category) + "</option>"; }).join("") + "</datalist></form>";
     } else if (f === "cash") {
       body = '<form id="ed-cash" class="edform"><h3 class="edh">' + (editing ? "Edit cash entry" : "Cash with your broker") + "</h3>" +
@@ -1780,18 +1804,40 @@
     var fundCalc = function () {
       if (!$("ef-calc")) return;
       var a = parseFloat(String($("ef-amt").value).replace(/,/g, "")), nv0 = parseFloat(String($("ef-nav").value).replace(/,/g, "")), ld = parseFloat($("ef-load").value) || 0;
-      var x = fundIndex()[$("ef-fund").value];
-      var hint = x ? "MUFAP NAV " + num(x.nav, 4) + " on " + x.date + " (" + x.category + "). " : "";
       if (a > 0 && nv0 > 0) {
         var units = $("ef-side").value === "sell" ? a / (nv0 * (1 - ld / 100)) : a * (1 - ld / 100) / nv0;
-        $("ef-calc").textContent = hint + groupNum(String(a)) + " ÷ " + nv0 + (ld ? " (after " + ld + "% load)" : "") + " = " + num(units, 4) + " units.";
-      } else $("ef-calc").textContent = hint + "For an older date, type that day's NAV from your fund statement.";
+        $("ef-calc").textContent = groupNum(String(a)) + " ÷ " + nv0 + (ld ? " (after " + ld + "% load)" : "") + " = " + num(units, 4) + " units.";
+      } else $("ef-calc").textContent = "";
     };
     if ($("ef-fund")) {
-      $("ef-fund").onchange = function () { var x = fundIndex()[$("ef-fund").value]; if (x && !$("ef-nav").value) $("ef-nav").value = x.nav; fundCalc(); };
-      $("ef-date").onchange = function () { var x = fundIndex()[$("ef-fund").value]; if (x && $("ef-date").value < x.date && String($("ef-nav").value) === String(x.nav)) $("ef-nav").value = ""; fundCalc(); };
+      // NAV from the date: the fund's MUFAP NAV for that day (or the last one before it), from the NAV
+      // history the feed keeps (or PK Wealth's public one on the same site). Fills the box while it's
+      // empty or still holds a filled-in NAV; a NAV you type stays.
+      var autoNav = null, navAsk = 0;
+      var navPick = function () {
+        var fund = $("ef-fund").value.trim(), date = $("ef-date").value, note = $("ef-navnote"), ask = ++navAsk;
+        if (!fund) { note.textContent = ""; return; }
+        navOn(fund, date).then(function (r) {
+          if (ask !== navAsk) return;
+          var mine = $("ef-nav").value && $("ef-nav").value !== autoNav, x = fundIndex()[fund];
+          if (!r && x && x.nav && date >= x.date) r = { date: x.date, close: x.nav };   // today's NAV, dated ahead
+          if (!r) {
+            note.textContent = navFirst() ? "No NAV on file for this fund on " + date + " (NAV history starts " + navFirst() + "); type the NAV from your fund statement."
+              : "Type the NAV from your fund statement.";
+            if (!mine && autoNav) { $("ef-nav").value = ""; autoNav = null; }
+            fundCalc(); return;
+          }
+          var when = "MUFAP NAV for " + r.date + (r.date !== date ? " (the last before " + date + ")" : "");
+          if (!mine) { $("ef-nav").value = autoNav = groupNum(r.close); note.textContent = when + " filled in: " + r.close + ". Your statement's NAV wins if it differs."; }
+          else note.textContent = when + ": " + r.close + " (your NAV kept).";
+          fundCalc();
+        });
+      };
+      $("ef-fund").onchange = navPick;
+      $("ef-date").onchange = navPick;
+      $("ef-nav").addEventListener("input", function () { if ($("ef-nav").value === "") autoNav = null; });
       ["ef-amt", "ef-nav", "ef-load", "ef-side"].forEach(function (k) { $(k).addEventListener("input", fundCalc); $(k).addEventListener("change", fundCalc); });
-      fundCalc();
+      if (!editing) navPick(); else fundCalc();
     }
     if ($("ed-fund")) $("ed-fund").onsubmit = guard(function () {
       var x = fundIndex()[$("ef-fund").value];

@@ -235,6 +235,31 @@ def wanted_months(today):
     return set(out)
 
 
+def prune_navs(meta, today=None):
+    """Drop NAVs older than the months kept (and funds left with none)."""
+    first = min(wanted_months(today or dt.date.today()))
+    hist = meta.get("navs") or {}
+    for name in list(hist):
+        hist[name] = {d: v for d, v in hist[name].items() if d[:7] >= first}
+        if not hist[name]:
+            del hist[name]
+
+
+def nav_months(meta, keep):
+    """meta["navs"] {fund: {date: nav}} -> monthly NAV files in the share files' shape:
+    {"month", "syms": [fund names], "days": {date: {"c": [navs]}}}, for the NAV on a past date."""
+    out = {}
+    for name in sorted(meta.get("navs") or {}):
+        for d, nav in meta["navs"][name].items():
+            if d[:7] in keep and nav is not None:
+                out.setdefault(d[:7], {}).setdefault(d, {})[name] = nav
+    files = {}
+    for m, days in out.items():
+        names = sorted({n for v in days.values() for n in v})
+        files[m] = {"month": m, "syms": names, "days": {d: {"c": [days[d].get(n) for n in names]} for d in sorted(days)}}
+    return files
+
+
 # ---------------------------------------------------------------- the run
 
 def fetch_market(store, months, meta, errors, backfill=False, save_every=None):
@@ -379,11 +404,9 @@ def fetch_mufap(meta, errors):
                 raise ValueError("only %d funds parsed" % len(funds))
             meta["mufap"] = {"date": date, "funds": funds}
             hist = meta.setdefault("navs", {})
-            for f in funds:   # NAV history for fund backtests and charts, last 260 reports
+            for f in funds:   # NAV history (backtests, charts, the NAV on a past date), kept history_months
                 hist.setdefault(f["fund"], {})[f.get("validity_date") or date] = f["nav"]
-            for name, h in hist.items():
-                if len(h) > 260:
-                    hist[name] = dict(sorted(h.items())[-260:])
+            prune_navs(meta)
             return
         except Exception as e:  # noqa: BLE001
             errors.append({"source": "mufap " + url, "error": repr(e)[:160]})
@@ -541,6 +564,10 @@ def main(argv=None):
         else:
             os.remove(path("psx", name))   # older than a year: dropped
             store.prints.pop("psx/" + name, None)
+    for name in sorted(os.listdir(path("mufap"))) if os.path.isdir(path("mufap")) else []:
+        if name.replace(".enc.json", "") not in keep:
+            os.remove(path("mufap", name))
+            store.prints.pop("mufap/" + name, None)
     snap = None
 
     def checkpoint():
@@ -548,6 +575,8 @@ def main(argv=None):
         for m, obj in sorted(months.items()):
             if m in keep:
                 store.save("psx/%s.enc.json" % m, obj)
+        for m, obj in sorted(nav_months(meta, keep).items()):
+            store.save("mufap/%s.enc.json" % m, obj)
         store.save("meta.enc.json", meta)
         store.close()
 
@@ -585,7 +614,10 @@ def main(argv=None):
     status["psx"] = {"available": bool(months), "months": sorted(m for m in months), "sessions": len(days),
                      "first": days[0] if days else None, "last": days[-1] if days else None,
                      "shares": len(meta.get("shares", {})), "companies": len(meta.get("companies", {}))}
-    status["mufap"] = {"date": (meta.get("mufap") or {}).get("date"), "funds": len((meta.get("mufap") or {}).get("funds") or [])}
+    navm = nav_months(meta, keep)
+    status["mufap"] = {"date": (meta.get("mufap") or {}).get("date"), "funds": len((meta.get("mufap") or {}).get("funds") or []),
+                       "months": sorted(navm), "first": min((d for v in navm.values() for d, x in v["days"].items()
+                                                                if sum(n is not None for n in x["c"]) >= 50), default=None)}
     status["changed"] = store.changed
     write_status()
     print("feed: %d sessions (%s .. %s), %d shares, MUFAP %s; changed: %s; %d errors" % (
