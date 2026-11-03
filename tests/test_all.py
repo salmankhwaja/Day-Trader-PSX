@@ -1314,6 +1314,7 @@ class TestWebFeed(unittest.TestCase):
         self.feed = tempfile.mkdtemp()
         fake = _fake_portal(time.time())
         self.patches = [unittest.mock.patch.object(web_feed, "mufap_get", lambda u, timeout=60: fake(pkdata.MUFAP_URL)),
+                        unittest.mock.patch.object(C, "_fetch", lambda url, timeout, data, headers: fake(url)),
                         unittest.mock.patch.object(web_feed, "FEED", self.feed), unittest.mock.patch.object(web_feed, "MIN_QUOTES", 5),
                         unittest.mock.patch.object(web_feed, "MIN_FUNDS", 5), unittest.mock.patch.object(C, "http_get", _fake_portal(time.time())),
                         unittest.mock.patch.dict(os.environ, {"PSX_DATA_KEY": "test passphrase"})]
@@ -1350,6 +1351,9 @@ class TestWebFeed(unittest.TestCase):
         summ = store.load("summary.enc.json")
         self.assertEqual({s["symbol"] for s in summ["stocks"]}, {"SYN%02d" % k for k in range(12)})
         self.assertIn("fund_index", summ)
+        meta = store.load("meta.enc.json")   # only shares on the market watch: no bonds, no pages for them
+        self.assertLessEqual(set(meta["shares"]), {"SYN%02d" % k for k in range(12)} | {"KSE100"})
+        self.assertTrue(meta["companies"])
         self.assertIn("vol_window", summ["settings"])
         lt = json.load(open(os.path.join(self.feed, "latest.enc.json")))   # PK Wealth's own format
         self.assertEqual(lt["format"], "pk-wealth-psx")

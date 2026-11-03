@@ -4,8 +4,8 @@ name: feed
 # PSX_DATA_KEY secret. PK Wealth on the same GitHub Pages site reads feed/latest.enc.json too.
 #
 # Cost: nothing on a public repo (standard runners are free there). Kept lean anyway: about 30
-# short runs a week (1-3 minutes each), a commit only when a price actually changed, a 10-minute
-# cap per run (40 for the one-time backfill), and a newer run waits rather than piling up.
+# short runs a week (1-3 minutes each), a commit only when a price actually changed, a 15-minute
+# cap per run (45 for the one-time backfill), and a newer run waits rather than piling up.
 on:
   schedule:                   # Pakistan time = UTC+5. Odd minutes: GitHub delays (and sometimes drops) runs at busy :00/:15/:30/:45
     - cron: "37 5 * * 1-5"    # 10:37 PKT  morning prices
@@ -29,13 +29,15 @@ concurrency:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.mode == 'backfill' && 40 || 10 }}
+    timeout-minutes: ${{ inputs.mode == 'backfill' && 45 || 15 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -q "cryptography>=42"
       - name: Fetch
+        timeout-minutes: ${{ inputs.mode == 'backfill' && 38 || 11 }}   # under the job's limit, so the commit below still runs
+        continue-on-error: true
         env:
           PSX_DATA_KEY: ${{ secrets.PSX_DATA_KEY }}
           MODE: ${{ inputs.mode || '' }}
@@ -46,7 +48,8 @@ jobs:
           if [ "$MODE" = "mufap-only" ] || [ "$SCHEDULE" = "23 17 * * 1-6" ]; then ARGS="--mufap-only"; fi
           if [ "$MODE" = "probe" ]; then ARGS="--probe"; fi
           python3 tools/web_feed.py $ARGS
-      - name: Commit if changed
+      - name: Commit if changed (also after a fetch that ran out of time: what it saved is kept)
+        if: always()
         run: |
           git config user.name "feed-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

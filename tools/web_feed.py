@@ -50,7 +50,9 @@ import psxinfo as P  # noqa: E402
 FEED = os.path.join(ROOT, "feed")
 ITER = 310000                 # PBKDF2 iterations (same as PK Wealth)
 KEEP_MONTHS = 13              # history kept: a year and a month
-COMPANY_SHARE = 5             # refresh 1/5 of the company pages per run: each share weekly
+COMPANY_BUDGET = 240          # seconds per run for company pages (P/E, 52-week range, dividends): the least
+COMPANY_BUDGET_BACKFILL = 600  # recently fetched first, so all ~500 are refreshed over a few runs, then weekly
+COMPANY_RETRY_DAYS = 7        # a page PSX can't serve (it answers 500) is skipped for a week
 CHECK_TEXT = b"psx-feed-ok"
 INDEX = "KSE100"
 MIN_FUNDS = 20               # same for the MUFAP table
@@ -229,7 +231,7 @@ def wanted_months(today):
 
 # ---------------------------------------------------------------- the run
 
-def fetch_market(store, months, meta, errors, backfill=False):
+def fetch_market(store, months, meta, errors, backfill=False, save_every=None):
     """Market watch (one request) for today's prices; the KSE-100 history; optionally a year of
     every share's history."""
     try:
@@ -266,6 +268,8 @@ def fetch_market(store, months, meta, errors, backfill=False):
             rows = [r for r in pkdata.parse_psx(C.http_get(pkdata.PSX_EOD % s)) if r["date"] >= since]
             put_rows(months, s, rows)
             prog.step(s)
+            if save_every and prog.n % 100 == 0:
+                save_every()   # a long backfill keeps what it has, even if the run is cut short
         except Exception as e:  # noqa: BLE001
             prog.step(s, ok=False)
             errors.append({"source": "psx history %s" % s, "error": repr(e)[:160]})
@@ -273,34 +277,45 @@ def fetch_market(store, months, meta, errors, backfill=False):
 
 
 def fetch_names(meta, errors):
+    """Names for the shares on the market watch. PSX's /symbols list also holds ~500 bonds, sukuks and
+    other instruments with no prices and no company page: those are not added."""
+    shares = meta.setdefault("shares", {})
     try:
         for x in json.loads(C.http_get(C.PSX_HOST + "/symbols")):
-            if isinstance(x, dict) and x.get("symbol"):
-                meta.setdefault("shares", {}).setdefault(str(x["symbol"]).upper(), {})["name"] = x.get("name") or ""
+            sym = str((x or {}).get("symbol") or "").upper() if isinstance(x, dict) else ""
+            if sym in shares:
+                shares[sym]["name"] = x.get("name") or shares[sym].get("name") or ""
     except Exception as e:  # noqa: BLE001
         errors.append({"source": "psx symbols (names)", "error": repr(e)[:160]})
 
 
-def fetch_companies(meta, errors, everything=False):
-    """A fifth of the company pages each run (all with --backfill): P/E, 52-week range, dividends."""
-    shares = sorted(meta.get("shares", {}))
-    if not shares:
-        return
-    if everything:
-        todo = shares
-    else:
-        part = dt.date.today().toordinal() % COMPANY_SHARE
-        todo = [s for i, s in enumerate(shares) if i % COMPANY_SHARE == part]
-    comps = meta.setdefault("companies", {})
-    prog = C.Progress("company pages", len(todo))
+def fetch_companies(meta, errors, traded, budget):
+    """Company pages for traded shares only, least recently fetched first, until `budget` seconds are
+    spent; the rest follow on the next runs. One try each: a page PSX can't serve isn't retried."""
+    import time
+    comps, failed = meta.setdefault("companies", {}), meta.setdefault("company_failed", {})
+    today = dt.date.today()
+    skip = {s for s, d in failed.items() if (today - dt.date.fromisoformat(d)).days < COMPANY_RETRY_DAYS}
+    todo = sorted((s for s in traded if s not in skip and s != INDEX), key=lambda s: ((comps.get(s) or {}).get("fetched") or "", s))
+    todo = [s for s in todo if (comps.get(s) or {}).get("fetched") != today.isoformat()]
+    t0, done, bad = time.time(), 0, 0
+    print("company pages: %d to refresh, %d s budget this run" % (len(todo), budget), file=sys.stderr)
     for s in todo:
+        if time.time() - t0 > budget:
+            break
         try:
-            c = P.parse_company(C.http_get(C.PSX_HOST + "/company/" + s), s)
+            page = C._fetch(C.PSX_HOST + "/company/" + s, 30, None, {"Accept": "text/html"})
+            c = P.parse_company(page, s)
             comps[s] = {k: c.get(k) for k in ("name", "sector", "tags", "pe", "low_52w", "high_52w", "payouts", "fetched")}
-            prog.step(s)
+            failed.pop(s, None)
+            done += 1
         except Exception as e:  # noqa: BLE001
-            prog.step(s, ok=False)
-            errors.append({"source": "psx company %s" % s, "error": repr(e)[:120]})
+            failed[s] = today.isoformat()
+            bad += 1
+            if bad <= 5:
+                errors.append({"source": "psx company %s" % s, "error": repr(e)[:120]})
+    print("company pages: %d refreshed, %d failed (skipped for %d days), %d left for later runs" % (
+        done, bad, COMPANY_RETRY_DAYS, max(0, len(todo) - done - bad)), file=sys.stderr)
 
 
 def fetch_payouts(meta, errors):
@@ -521,17 +536,29 @@ def main(argv=None):
             os.remove(path("psx", name))   # older than a year: dropped
             store.prints.pop("psx/" + name, None)
     snap = None
+
+    def checkpoint():
+        """Save what's in hand, so a run cut short by the time limit still commits it."""
+        for m, obj in sorted(months.items()):
+            if m in keep:
+                store.save("psx/%s.enc.json" % m, obj)
+        store.save("meta.enc.json", meta)
+        store.close()
+
     if not a.mufap_only:
-        snap = fetch_market(store, months, meta, errors, backfill=a.backfill or not months)
+        snap = fetch_market(store, months, meta, errors, backfill=a.backfill or not months, save_every=checkpoint)
+        if snap:   # only shares that trade: drop the bonds and other instruments earlier runs may have listed
+            for s in [s for s in meta.get("shares", {}) if s not in snap["quotes"] and s != INDEX]:
+                meta["shares"].pop(s, None)
         if a.backfill or not meta.get("shares") or not any(v.get("name") for v in meta.get("shares", {}).values()):
             fetch_names(meta, errors)
         fetch_payouts(meta, errors)
-        fetch_companies(meta, errors, everything=a.backfill)
+        checkpoint()
+        if snap:
+            fetch_companies(meta, errors, sorted(snap["quotes"]), COMPANY_BUDGET_BACKFILL if a.backfill else COMPANY_BUDGET)
     fetch_mufap(meta, errors)
     months = {m: v for m, v in months.items() if m in keep}   # history older than a year is dropped
-    for m, obj in sorted(months.items()):
-        store.save("psx/%s.enc.json" % m, obj)
-    store.save("meta.enc.json", meta)
+    checkpoint()
     if snap:   # today's prices in PK Wealth's format, for PK Wealth on the same site
         items = {}
         for s, q in snap["quotes"].items():
