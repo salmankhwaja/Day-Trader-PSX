@@ -1312,7 +1312,9 @@ class TestWebFeed(unittest.TestCase):
         import web_feed
         self.W = web_feed
         self.feed = tempfile.mkdtemp()
-        self.patches = [unittest.mock.patch.object(web_feed, "FEED", self.feed), unittest.mock.patch.object(web_feed, "MIN_QUOTES", 5),
+        fake = _fake_portal(time.time())
+        self.patches = [unittest.mock.patch.object(web_feed, "mufap_get", lambda u, timeout=60: fake(pkdata.MUFAP_URL)),
+                        unittest.mock.patch.object(web_feed, "FEED", self.feed), unittest.mock.patch.object(web_feed, "MIN_QUOTES", 5),
                         unittest.mock.patch.object(web_feed, "MIN_FUNDS", 5), unittest.mock.patch.object(C, "http_get", _fake_portal(time.time())),
                         unittest.mock.patch.dict(os.environ, {"PSX_DATA_KEY": "test passphrase"})]
         for x in self.patches:

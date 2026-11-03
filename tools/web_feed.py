@@ -311,10 +311,48 @@ def fetch_payouts(meta, errors):
         errors.append({"source": "psx payouts", "error": repr(e)[:160]})
 
 
+# MUFAP answers GitHub's runners only when the request looks like a browser's (a plain client gets 403),
+# and its other host names are fallbacks; the same as PK Wealth's fetcher, which works from there.
+MUFAP_URLS = [pkdata.MUFAP_URL] + [pkdata.MUFAP_URL.replace("www.mufap.com.pk", h)
+                                   for h in ("mufap.com.pk", "beta.mufap.com.pk", "mail.mufap.com.pk")]
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9", "Accept-Encoding": "gzip", "Cache-Control": "no-cache", "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "none", "Sec-Fetch-User": "?1",
+}
+
+
+def mufap_get(url, timeout=60):
+    import urllib.request
+    with urllib.request.urlopen(urllib.request.Request(url, headers=BROWSER_HEADERS), timeout=timeout) as r:
+        raw = r.read()
+        if (r.headers.get("Content-Encoding") or "").lower() == "gzip":
+            raw = gzip.decompress(raw)
+        return raw.decode("utf-8", "replace")
+
+
+def mufap_page(errors=None):
+    """The MUFAP performance table (tab=1): browser-like request, then the plain client, on each host."""
+    last = None
+    for url in MUFAP_URLS:
+        for get in (mufap_get, lambda u: C.http_get(u, timeout=getattr(pkdata, "MUFAP_TIMEOUT", 60))):
+            try:
+                text = get(url)
+                if "Report Date" in text or "Fund Name" in text:
+                    return text
+                last = ValueError("no fund table at " + url)
+            except Exception as e:  # noqa: BLE001
+                last = e
+    if errors is not None:
+        errors.append({"source": "mufap", "error": repr(last)[:200]})
+    raise last or ValueError("MUFAP unreachable")
+
+
 def fetch_mufap(meta, errors):
     for url in (pkdata.MUFAP_URL,):
         try:
-            date, funds = pkdata.parse_mufap(C.http_get(url, timeout=getattr(pkdata, "MUFAP_TIMEOUT", 60)))
+            date, funds = pkdata.parse_mufap(mufap_page())
             if len(funds) < MIN_FUNDS:
                 raise ValueError("only %d funds parsed" % len(funds))
             meta["mufap"] = {"date": date, "funds": funds}
@@ -419,12 +457,13 @@ def probe():
         ok = False
     try:
         rows = pkdata.parse_psx(C.http_get(pkdata.PSX_EOD % INDEX))
-        print("PSX history (KSE-100): %d sessions, last %s" % (len(rows), rows[-1]["date"] if rows else "-"))
+        print("PSX history (KSE-100): %d sessions, %s to %s" % (len(rows), min(r["date"] for r in rows) if rows else "-",
+                                                                max(r["date"] for r in rows) if rows else "-"))
     except Exception as e:  # noqa: BLE001
         print("PSX history FAILED: %r" % e)
         ok = False
     try:
-        date, funds = pkdata.parse_mufap(C.http_get(pkdata.MUFAP_URL, timeout=getattr(pkdata, "MUFAP_TIMEOUT", 60)))
+        date, funds = pkdata.parse_mufap(mufap_page())
         print("MUFAP: %d funds, report %s" % (len(funds), date))
     except Exception as e:  # noqa: BLE001
         print("MUFAP FAILED: %r" % e)
