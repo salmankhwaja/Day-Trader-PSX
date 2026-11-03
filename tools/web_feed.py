@@ -33,6 +33,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -463,8 +464,19 @@ def probe():
         print("PSX history FAILED: %r" % e)
         ok = False
     try:
-        date, funds = pkdata.parse_mufap(mufap_page())
+        text = mufap_page()
+        date, funds = pkdata.parse_mufap(text)
         print("MUFAP: %d funds, report %s" % (len(funds), date))
+        if not funds:   # what the page looks like, to fix the parser (structure only, no fund data)
+            rows = pkdata._rows_from_text(text)
+            print("  page: %d chars, %d <tr>, %d rows parsed; cell counts %s" % (
+                len(text), text.lower().count("<tr"), len(rows), sorted({len(r) for r in rows})[:12]))
+            for r in rows[:4]:
+                print("  row:", [c[:28] for c in r][:8])
+            heads = [r[0] for r in rows if r and "return" in " ".join(r).lower()][:5]
+            print("  headings with 'return':", heads)
+            i = text.find("Money Market")
+            print("  near 'Money Market':", re.sub(r"\s+", " ", text[max(0, i - 300):i + 300]) if i >= 0 else "not found")
     except Exception as e:  # noqa: BLE001
         print("MUFAP FAILED: %r" % e)
     print("probe: %s. Nothing was written. %s" % ("PSX answers from here" if ok else "PSX did NOT answer properly",
