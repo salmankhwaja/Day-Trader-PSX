@@ -3,22 +3,24 @@ name: feed
 # KSE-100, dividends, a fifth of the company pages and MUFAP, published ENCRYPTED in feed/ with the
 # PSX_DATA_KEY secret. PK Wealth on the same GitHub Pages site reads feed/latest.enc.json too.
 #
-# Cost: nothing on a public repo (standard runners are free there). Kept lean anyway: about 16
+# Cost: nothing on a public repo (standard runners are free there). Kept lean anyway: about 30
 # short runs a week (1-3 minutes each), a commit only when a price actually changed, a 10-minute
 # cap per run (40 for the one-time backfill), and a newer run waits rather than piling up.
 on:
-  schedule:
-    - cron: "15 7 * * 1-5"    # Mon-Fri 12:15 PKT: a midday price for both sites
-    - cron: "45 11 * * 1-5"   # Mon-Fri 16:45 PKT: after the close (Friday's closes at 16:30)
-    - cron: "45 17 * * 1-5"   # Mon-Fri 22:45 PKT: MUFAP NAVs, published in the evening
-    - cron: "45 17 * * 6"     # Saturday: Friday's late NAVs
+  schedule:                   # Pakistan time = UTC+5. Odd minutes: GitHub delays (and sometimes drops) runs at busy :00/:15/:30/:45
+    - cron: "37 5 * * 1-5"    # 10:37 PKT  morning prices
+    - cron: "7 8 * * 1-5"     # 13:07 PKT  midday
+    - cron: "52 10 * * 1-4"   # 15:52 PKT  after the close, Mon-Thu
+    - cron: "52 11 * * 5"     # 16:52 PKT  after Friday's close
+    - cron: "23 17 * * 1-6"   # 22:23 PKT  MUFAP NAVs (published in the evening), and Saturday for Friday's late ones
+    - cron: "23 1 * * 2-6"    # 06:23 PKT  next morning: catches the last close if a run above was dropped
   workflow_dispatch:          # the website's "Refresh prices now" opens this workflow's Run button
     inputs:
       mode:
-        description: "normal, mufap-only, or backfill (first run: a year of history, ~20 minutes)"
+        description: "normal, mufap-only, backfill (first run: a year of history, ~20 minutes), or probe (check PSX answers; writes nothing, no secret needed)"
         default: normal
         type: choice
-        options: [normal, mufap-only, backfill]
+        options: [normal, mufap-only, backfill, probe]
 permissions:
   contents: write
 concurrency:
@@ -41,7 +43,8 @@ jobs:
         run: |
           ARGS=""
           if [ "$MODE" = "backfill" ]; then ARGS="--backfill"; fi
-          if [ "$MODE" = "mufap-only" ] || [ "$SCHEDULE" = "45 17 * * 1-5" ] || [ "$SCHEDULE" = "45 17 * * 6" ]; then ARGS="--mufap-only"; fi
+          if [ "$MODE" = "mufap-only" ] || [ "$SCHEDULE" = "23 17 * * 1-6" ]; then ARGS="--mufap-only"; fi
+          if [ "$MODE" = "probe" ]; then ARGS="--probe"; fi
           python3 tools/web_feed.py $ARGS
       - name: Commit if changed
         run: |

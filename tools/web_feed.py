@@ -405,11 +405,42 @@ def build_summary(months, meta, errors):
         shutil.rmtree(h, ignore_errors=True)
 
 
+def probe():
+    """Fetch every share's price, the KSE-100 history and the MUFAP table, print what came back, and
+    write nothing. Needs no secret, so it shows whether GitHub's runners can reach PSX at all."""
+    ok = True
+    try:
+        quotes = FR.parse_market_watch(C.http_get(FR.MARKET_WATCH))
+        syms = sorted(quotes)
+        print("PSX market watch: %d shares priced (%s ... %s); session %s" % (len(quotes), ", ".join(syms[:5]), ", ".join(syms[-3:]), FR.last_session()))
+        ok = len(quotes) >= MIN_QUOTES
+    except Exception as e:  # noqa: BLE001
+        print("PSX market watch FAILED: %r" % e)
+        ok = False
+    try:
+        rows = pkdata.parse_psx(C.http_get(pkdata.PSX_EOD % INDEX))
+        print("PSX history (KSE-100): %d sessions, last %s" % (len(rows), rows[-1]["date"] if rows else "-"))
+    except Exception as e:  # noqa: BLE001
+        print("PSX history FAILED: %r" % e)
+        ok = False
+    try:
+        date, funds = pkdata.parse_mufap(C.http_get(pkdata.MUFAP_URL, timeout=getattr(pkdata, "MUFAP_TIMEOUT", 60)))
+        print("MUFAP: %d funds, report %s" % (len(funds), date))
+    except Exception as e:  # noqa: BLE001
+        print("MUFAP FAILED: %r" % e)
+    print("probe: %s. Nothing was written. %s" % ("PSX answers from here" if ok else "PSX did NOT answer properly",
+          "PSX_DATA_KEY is set." if os.environ.get("PSX_DATA_KEY") else "PSX_DATA_KEY is NOT set: normal runs fetch nothing until you add it."))
+    return 0 if ok else 1
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backfill", action="store_true", help="also a year of history and every company page (~20 min)")
     ap.add_argument("--mufap-only", action="store_true", help="fund NAVs only (the evening run)")
+    ap.add_argument("--probe", action="store_true", help="check that PSX and MUFAP answer from here: fetch, count, write nothing")
     a = ap.parse_args(argv)
+    if a.probe:
+        return probe()
     old_status = read_json(path("status.json"), {}) or {}
     status = dict(old_status)
     status.update({"format": "psx-desk-feed", "v": 1, "updated": now_iso(), "errors": []})
