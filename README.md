@@ -270,11 +270,12 @@ MUFAP prices for you, and you add your holdings on the website. Live copy:
 5. Open the page, enter the passphrase, then **My portfolio › Start: pick your broker**, and add
    your buys and sells, funds and cash.
 
-**Prices:** every weekday at 12:15, after the close at 16:45, and MUFAP NAVs at 22:45 (and
-Saturday). **Refresh prices now** (top of the page, or Data) opens the workflow on GitHub: tap
-*Run workflow* and the new prices land in 1-3 minutes. No token is kept on the site. Cost: nothing
-(standard runners are free on public repos); each run takes 1-3 minutes and commits only when a
-price changed.
+**Prices:** on weekdays at 10:37, 13:07, after the close and 06:23 the next morning, plus MUFAP NAVs
+at 22:23 (and Saturday), all Pakistan time. Change any of it, and the timeouts, in
+[`feed-settings.json`](feed-settings.json): edit it on GitHub and the next half-hourly check follows it.
+**Refresh prices now** (top of the page, or Data) opens the workflow on GitHub: tap *Run workflow*
+and new prices land in 1-3 minutes. No token is kept on the site. Cost: nothing (standard runners
+are free on public repos); a fetch commits only when a price changed.
 
 **No data file yet?** Tap **Start my portfolio** on the start page: a clean slate where you add your
 shares and funds straight away; load market data later and nothing is lost.

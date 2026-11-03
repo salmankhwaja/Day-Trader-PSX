@@ -41,6 +41,7 @@ import traceback
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "psx-mufap", "scripts"))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import common as C  # noqa: E402
 import freshness as FR  # noqa: E402
@@ -49,10 +50,13 @@ import psxinfo as P  # noqa: E402
 
 FEED = os.path.join(ROOT, "feed")
 ITER = 310000                 # PBKDF2 iterations (same as PK Wealth)
-KEEP_MONTHS = 13              # history kept: a year and a month
-COMPANY_BUDGET = 240          # seconds per run for company pages (P/E, 52-week range, dividends): the least
-COMPANY_BUDGET_BACKFILL = 600  # recently fetched first, so all ~500 are refreshed over a few runs, then weekly
-COMPANY_RETRY_DAYS = 7        # a page PSX can't serve (it answers 500) is skipped for a week
+# These five come from feed-settings.json (edit it on GitHub); the numbers here are the fallbacks.
+import feed_plan as _FP  # noqa: E402
+_S = _FP.load()
+KEEP_MONTHS = int(_S["history_months"])                      # history kept: a year and a month
+COMPANY_BUDGET = int(_S["company_pages_seconds"])            # seconds per run for company pages (P/E, 52-week
+COMPANY_BUDGET_BACKFILL = int(_S["company_pages_seconds_backfill"])  # range, dividends), least recently fetched first
+COMPANY_RETRY_DAYS = int(_S["company_retry_days"])           # a page PSX can't serve (it answers 500) is skipped this long
 CHECK_TEXT = b"psx-feed-ok"
 INDEX = "KSE100"
 MIN_FUNDS = 20               # same for the MUFAP table

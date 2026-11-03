@@ -1,0 +1,23 @@
+{
+  "about": "Settings for the price feed (.github/workflows/feed.yml, tools/web_feed.py). Edit on GitHub: open this file, the pencil icon, change, Commit changes. Takes effect at the next half-hour check; nothing else to touch. Times are Pakistan time (24-hour). See docs/REFERENCE.md, 'Change when and how the feed runs'.",
+
+  "enabled": true,
+  "utc_offset_hours": 5,
+
+  "runs": [
+    { "days": "mon-fri", "at": ["10:37", "13:07"],  "fetch": "psx+mufap", "why": "morning and midday prices" },
+    { "days": "mon-thu", "at": ["15:52"],           "fetch": "psx+mufap", "why": "after the close" },
+    { "days": "fri",     "at": ["16:52"],           "fetch": "psx+mufap", "why": "after Friday's later close" },
+    { "days": "mon-sat", "at": ["22:23"],           "fetch": "mufap",     "why": "fund NAVs, published in the evening" },
+    { "days": "tue-sat", "at": ["06:23"],           "fetch": "psx+mufap", "why": "next morning: catches the close if a run was missed" }
+  ],
+  "catch_up_hours": 6,
+
+  "fetch_timeout_minutes": 11,
+  "backfill_timeout_minutes": 38,
+
+  "company_pages_seconds": 240,
+  "company_pages_seconds_backfill": 600,
+  "company_retry_days": 7,
+  "history_months": 13
+}

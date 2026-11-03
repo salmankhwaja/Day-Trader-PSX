@@ -1088,10 +1088,34 @@ commit nothing.
 5. Open `https://<you>.github.io/Day-Trader-PSX/`, enter the passphrase, **My portfolio › Start:
    pick your broker**, then add trades, funds, cash and dividends.
 
-**Schedule** (Pakistan time): 12:15 and 16:45 Monday to Friday (a midday price, then the close),
-22:45 Monday to Friday and Saturday for MUFAP NAVs. On a public repo standard runners are free;
-each run is capped at 10 minutes (40 for a backfill) and a newer run waits for the older one. A
-holiday is spotted (every price and volume unchanged) and not recorded as a session.
+**Schedule** (Pakistan time, as shipped): psx+mufap at 10:37 and 13:07 Monday to Friday, after the
+close (15:52 Monday to Thursday, 16:52 Friday) and 06:23 the next morning as a catch-up; MUFAP only
+at 22:23 Monday to Saturday. Every time, day, timeout and budget is yours to change: see below.
+
+### Change when and how the feed runs
+
+Everything is in **`feed-settings.json`** at the top of the repo. On GitHub: open it, tap the pencil,
+change, *Commit changes*. The next half-hourly check uses it; nothing else needs touching.
+
+| Setting | Meaning |
+|---|---|
+| `enabled` | `false` stops every scheduled fetch (manual *Run workflow* still works) |
+| `runs` | the schedule: each entry has `days` (`mon-fri`, `sat`, `mon,wed,fri`, `daily`), `at` (Pakistan times, `HH:MM` 24-hour) and `fetch` (`psx+mufap`, or `mufap` for NAVs only). Add, remove or move entries freely |
+| `catch_up_hours` | a scheduled time GitHub delayed or dropped still runs if a check comes within this many hours |
+| `utc_offset_hours` | 5 for Pakistan |
+| `fetch_timeout_minutes`, `backfill_timeout_minutes` | how long a fetch may take before it stops and commits what it has (the job gets 4 minutes more) |
+| `company_pages_seconds`, `company_pages_seconds_backfill` | time per run for company pages (P/E, 52-week range, dividends); the rest follow on the next runs |
+| `company_retry_days` | how long a company page PSX can't serve is skipped |
+| `history_months` | months of price history kept and published |
+
+How it works: GitHub can't read schedule times from a file, so the workflow's small **plan** job
+wakes every 30 minutes (at :07 and :37), runs `tools/feed_plan.py`, and starts the **fetch** job only
+when one of your times has come. Each time runs once (the Actions cache remembers it); a check that
+finds nothing due ends in seconds and commits nothing. So a time runs within half an hour of what you
+set. For checks more often, change the one `cron:` line in `.github/workflows/feed.yml` (its comment
+shows every 15 minutes). Check your edit before committing: `python3 tools/feed_plan.py --list` shows
+every run in the coming week, and `--now 2026-11-04T13:20` what a check at that moment would do; a
+mistake in the file stops the checks with a message saying what's wrong.
 
 **Refresh prices now** (the bar at the top, or Data) opens the workflow's page on GitHub: tap
 *Run workflow* while signed in. The site keeps no GitHub token, so nobody else can start runs
@@ -1432,6 +1456,8 @@ psx-scanner/ … psx-insiders/   the 11 desk skills: SKILL.md + scripts/ (a sync
 tools/sync_skills.py            copies the shared code into each desk skill (and checks it)
 tools/make_sample.py            builds dashboard/sample-data.json: PSX and MUFAP names, made-up prices and portfolio
 tools/web_feed.py               the website's price feed: fetch PSX + MUFAP, publish feed/ encrypted
+tools/feed_plan.py              reads feed-settings.json: whether the feed runs now, and how
+feed-settings.json              the feed's schedule, timeouts and budgets (edit on GitHub)
 feed/                           written by the feed workflow (encrypted; status.json is public)
 tests/                          offline tests on synthetic data and trimmed page samples
 zips/                           one zip per skill, to add in the Claude app (built by tools/sync_skills.py)

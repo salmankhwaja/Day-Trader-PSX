@@ -1902,7 +1902,7 @@
       '<div class="row-actions"><a class="btn" href="' + runUrl() + '" target="_blank" rel="noopener">Refresh prices now</a>' +
       '<button class="btn ghost" id="fd-lock">Lock this device</button></div>' +
       '<p class="note">Refresh opens the price workflow on GitHub: tap <b>Run workflow</b> (you need to be signed in as the repo owner). ' +
-      "New prices arrive in 1–3 minutes; then reload this page. It also runs by itself at 12:15, 16:45 and 22:45 on weekdays. No token is ever stored on this site.</p>" +
+      "New prices arrive in 1–3 minutes; then reload this page. It also runs by itself on the schedule in <code>feed-settings.json</code> (weekdays through the day, and MUFAP NAVs in the evening). No token is ever stored on this site.</p>" +
       holdingsIOHTML() +
       '<p class="note">PSX market data is for personal use: don\'t republish it.</p>';
     wireHoldingsIO();

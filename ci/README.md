@@ -4,7 +4,7 @@
 you press *Run workflow*) and commits them, encrypted with the `PSX_DATA_KEY` secret, to `feed/`.
 See [the website](../docs/REFERENCE.md#the-website-prices-by-github-action-holdings-in-your-browser).
 It is already enabled, in `.github/workflows/feed.yml` (this folder keeps a copy); add the secret to
-switch it on.
+switch it on. Its schedule, timeouts and budgets are in `feed-settings.json`, not in the workflow.
 
 `tests.yml` runs the test suite on Python 3.8 and 3.12 on every push to `main` and on pull requests
 (not for docs-only changes; a newer push cancels the older run). `release.yml` publishes

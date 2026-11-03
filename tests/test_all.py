@@ -1,5 +1,6 @@
 """Offline tests: python3 -m unittest discover tests"""
 import contextlib
+import datetime as dt
 import io
 import json
 import os
@@ -1446,6 +1447,38 @@ class TestBrowserLedger(Market):
             self.assertEqual({k: a.get(k) for k in ("symbol", "action", "stop", "target", "why")},
                              {k: b.get(k) for k in ("symbol", "action", "stop", "target", "why")})
         self.assertGreater(len({r["action"] for r in rv}), 1)
+
+
+class TestFeedPlan(unittest.TestCase):
+    """tools/feed_plan.py: feed-settings.json decides when the feed runs."""
+
+    def setUp(self):
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import feed_plan
+        self.F = feed_plan
+        self.tz = dt.timezone(dt.timedelta(hours=5))
+
+    def at(self, cfg, when, **kw):
+        return self.F.plan(cfg, dt.datetime.fromisoformat(when).replace(tzinfo=self.tz), **kw)
+
+    def test_shipped_settings_are_valid(self):
+        cfg = self.F.load()
+        self.assertEqual(self.F.check(cfg), [])
+        self.assertTrue(cfg["runs"])
+
+    def test_slots_modes_and_switch(self):
+        cfg = dict(self.F.DEFAULTS, runs=[{"days": "mon-fri", "at": ["10:37", "15:52"], "fetch": "psx+mufap"},
+                                          {"days": "mon-sat", "at": ["22:23"], "fetch": "mufap"}], catch_up_hours=6)
+        p = self.at(cfg, "2026-11-03T16:07")            # Tuesday, after the 15:52 run is due
+        self.assertEqual((p["run"], p["mode"], p["slot"]), ("true", "normal", "2026-11-03T15:52+05:00"))
+        self.assertEqual(self.at(cfg, "2026-11-03T19:00")["slot"], "2026-11-03T15:52+05:00")   # same slot: the cache skips it
+        self.assertEqual(self.at(cfg, "2026-11-03T22:37")["mode"], "mufap-only")
+        self.assertEqual(self.at(cfg, "2026-11-08T12:00")["run"], "false")   # Sunday: nothing due
+        self.assertEqual(self.at(dict(cfg, enabled=False), "2026-11-03T16:07")["run"], "false")
+        m = self.at(cfg, "2026-11-08T12:00", event="workflow_dispatch", manual_mode="backfill")
+        self.assertEqual((m["run"], m["mode"], m["fetch_timeout"]), ("true", "backfill", str(cfg["backfill_timeout_minutes"])))
+        self.assertEqual(self.F.days_of("fri-mon"), {4, 5, 6, 0})
+        self.assertTrue(self.F.check(dict(cfg, runs=[{"days": "mon", "at": ["25:00"]}])))
 
 
 class TestWorkflows(unittest.TestCase):
