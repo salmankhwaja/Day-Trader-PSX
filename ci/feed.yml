@@ -17,10 +17,10 @@ on:
   workflow_dispatch:          # the website's "Refresh prices now" opens this workflow's Run button
     inputs:
       mode:
-        description: "normal (PSX + MUFAP), mufap-only, backfill (first run: a year of history, ~25 minutes), or probe (check PSX answers; writes nothing, no secret needed)"
+        description: "normal (PSX + MUFAP), mufap-only, backfill (first run: a year of history, ~25 minutes), probe (check PSX answers; writes nothing, no secret needed), or check (do what a scheduled check would: run only if one of the times in feed-settings.json is due; for an outside timer)"
         default: normal
         type: choice
-        options: [normal, mufap-only, backfill, probe]
+        options: [normal, mufap-only, backfill, probe, check]
 permissions:
   contents: write
 jobs:
@@ -33,6 +33,7 @@ jobs:
       slot: ${{ steps.p.outputs.slot }}
       fetch_timeout: ${{ steps.p.outputs.fetch_timeout }}
       job_timeout: ${{ steps.p.outputs.job_timeout }}
+      scheduled: ${{ steps.p.outputs.scheduled }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,7 +46,7 @@ jobs:
           MANUAL_MODE: ${{ inputs.mode || '' }}
         run: python3 tools/feed_plan.py
       - id: done                # has this scheduled time already run?
-        if: steps.p.outputs.run == 'true' && github.event_name == 'schedule'
+        if: steps.p.outputs.run == 'true' && steps.p.outputs.scheduled == 'true'
         uses: actions/cache/restore@v4
         with:
           path: .feed-slot
@@ -88,9 +89,9 @@ jobs:
           for i in 1 2 3; do git pull --rebase --autostash -q origin main && git push -q && exit 0; sleep 5; done
           exit 1
       - name: Remember that this scheduled time ran
-        if: steps.fetch.outcome == 'success' && github.event_name == 'schedule'
+        if: steps.fetch.outcome == 'success' && needs.plan.outputs.scheduled == 'true'
         run: mkdir -p .feed-slot && echo "${{ needs.plan.outputs.slot }}" > .feed-slot/ran
-      - if: steps.fetch.outcome == 'success' && github.event_name == 'schedule'
+      - if: steps.fetch.outcome == 'success' && needs.plan.outputs.scheduled == 'true'
         uses: actions/cache/save@v4
         with:
           path: .feed-slot

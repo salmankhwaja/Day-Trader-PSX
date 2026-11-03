@@ -1492,6 +1492,10 @@ class TestFeedPlan(unittest.TestCase):
         self.assertEqual(self.at(dict(cfg, enabled=False), "2026-11-03T16:07")["run"], "false")
         m = self.at(cfg, "2026-11-08T12:00", event="workflow_dispatch", manual_mode="backfill")
         self.assertEqual((m["run"], m["mode"], m["fetch_timeout"]), ("true", "backfill", str(cfg["backfill_timeout_minutes"])))
+        self.assertEqual(m["scheduled"], "false")              # a manual run isn't remembered as a slot
+        c = self.at(cfg, "2026-11-03T16:07", event="workflow_dispatch", manual_mode="check")   # outside timer
+        self.assertEqual((c["run"], c["slot"], c["scheduled"]), ("true", "2026-11-03T15:52+05:00", "true"))
+        self.assertEqual(self.at(cfg, "2026-11-08T12:00", event="workflow_dispatch", manual_mode="check")["run"], "false")
         self.assertEqual(self.F.days_of("fri-mon"), {4, 5, 6, 0})
         self.assertTrue(self.F.check(dict(cfg, runs=[{"days": "mon", "at": ["25:00"]}])))
 

@@ -11,7 +11,9 @@ run GitHub delayed or dropped still happens) and prints, for the workflow:
   run=true | false
   fetch_timeout=11  job_timeout=15
 
-A manual run (Run workflow) always runs, with the mode chosen there.
+A manual run (Run workflow) always runs, with the mode chosen there, except mode "check": that one
+decides exactly like a scheduled check. It is for an outside timer (cron-job.org and the like, see
+docs/REFERENCE.md) when GitHub's own schedule is late or skips runs.
 
   python3 tools/feed_plan.py                       # what a check would do now
   python3 tools/feed_plan.py --now 2026-11-03T13:20 # ... at that Pakistan time
@@ -104,7 +106,10 @@ def slots(cfg, start, end):
 
 def plan(cfg, now, event="schedule", manual_mode=None, run_id="0"):
     fetch_t = int(cfg["fetch_timeout_minutes"])
-    out = {"run": "false", "mode": "", "slot": "", "fetch_timeout": str(fetch_t), "job_timeout": str(fetch_t + 4), "why": ""}
+    out = {"run": "false", "mode": "", "slot": "", "fetch_timeout": str(fetch_t), "job_timeout": str(fetch_t + 4), "why": "",
+           "scheduled": "false"}
+    if event == "workflow_dispatch" and manual_mode == "check":
+        event = "schedule"
     if event == "workflow_dispatch":
         mode = manual_mode or "normal"
         if mode == "backfill":
@@ -112,6 +117,7 @@ def plan(cfg, now, event="schedule", manual_mode=None, run_id="0"):
         out.update(run="true", mode=mode, slot="manual-" + str(run_id), fetch_timeout=str(fetch_t),
                    job_timeout=str(fetch_t + 4), why="started by hand")
         return out
+    out["scheduled"] = "true"
     if not cfg["enabled"]:
         out["why"] = "feed-settings.json has enabled: false"
         return out

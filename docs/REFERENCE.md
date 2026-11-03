@@ -1117,6 +1117,23 @@ shows every 15 minutes). Check your edit before committing: `python3 tools/feed_
 every run in the coming week, and `--now 2026-11-04T13:20` what a check at that moment would do; a
 mistake in the file stops the checks with a message saying what's wrong.
 
+**When GitHub's schedule is late or silent.** GitHub runs scheduled workflows on a best-effort
+basis: busy hours delay them by hours or skip them, and a schedule that has just changed can stay
+quiet for a while. Missed times are caught up by the next check that does come (`catch_up_hours`).
+For checks you can rely on, let a free outside timer start them: *Run workflow* has a mode
+**check** that decides exactly like a scheduled check (it runs only when one of your times is due,
+and each time still runs once), so a timer can call it every 30 minutes without wasting runs.
+
+1. GitHub: *Settings › Developer settings › Fine-grained tokens › Generate*: repository access
+   *Only* `Day-Trader-PSX`, permission **Actions: Read and write**, nothing else. It can start this
+   repo's workflows and do nothing more.
+2. On [cron-job.org](https://cron-job.org) (free) make a job: every 30 minutes, method **POST**, URL
+   `https://api.github.com/repos/<you>/Day-Trader-PSX/actions/workflows/feed.yml/dispatches`,
+   headers `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`, body
+   `{"ref":"main","inputs":{"mode":"check"}}`. A good call answers **204**.
+
+Keep the token in the timer only (never in the repo or the site). Delete it on GitHub to stop.
+
 **Refresh prices now** (the bar at the top, or Data) opens the workflow's page on GitHub: tap
 *Run workflow* while signed in. The site keeps no GitHub token, so nobody else can start runs
 from it. Reload the page when the run is done.
