@@ -238,6 +238,13 @@ def parse_mufap(text):
             if cm:  # a category heading row (the summary list carries a count after it; skip those)
                 category, rtype = cm.group(1).strip(), cm.group(2).lower()
             continue
+        # The live page (Nov 2026) carries the category in its own column on every row: sector,
+        # "Money Market (Annualized Return )", fund, rating, ... 18 cells. Older pages (and the
+        # Markdown copy) had it as a heading row above the funds, then 17 cells per fund.
+        cm = CAT_RE.match(cells[1]) if len(cells) >= 18 else None
+        if cm:
+            category, rtype = cm.group(1).strip(), cm.group(2).lower()
+            cells = [cells[0]] + cells[2:]
         if len(cells) < 17 or cells[0].lower() in ("sector", "") or category is None:
             continue
         c = cells[-17:]  # sector, fund, rating, benchmark, validity, nav, 11 return columns

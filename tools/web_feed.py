@@ -171,7 +171,8 @@ class Store:
             return False
         write_json(path(rel), seal(obj, self.key))
         self.prints[rel] = fp
-        self.changed.append(rel)
+        if rel not in self.changed:
+            self.changed.append(rel)
         return True
 
     def save_pk_wealth(self, rel, obj):
@@ -180,7 +181,8 @@ class Store:
             return False
         write_json(path(rel), pk_wealth_doc(obj, self.passphrase))
         self.prints[rel] = fp
-        self.changed.append(rel)
+        if rel not in self.changed:
+            self.changed.append(rel)
         return True
 
     def close(self):

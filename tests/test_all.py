@@ -1449,6 +1449,21 @@ class TestBrowserLedger(Market):
         self.assertGreater(len({r["action"] for r in rv}), 1)
 
 
+class TestMufapLiveLayout(unittest.TestCase):
+    """MUFAP's live page has the category in a column on every row (made-up sample, same layout)."""
+
+    def test_parse(self):
+        with open(os.path.join(FIX, "mufap-live-layout.html")) as f:
+            date, funds = pkdata.parse_mufap(f.read())
+        self.assertEqual(date, "2026-11-03")
+        self.assertEqual([(x["category"], x["return_type"], x["fund"]) for x in funds],
+                         [("Money Market", "annualized", "Sample Cash Fund"), ("Money Market", "annualized", "Sample Money Market Fund"),
+                          ("Equity", "absolute", "Sample Stock Fund")])
+        self.assertEqual((funds[0]["nav"], funds[0]["ytd"], funds[2]["d30"], funds[1]["y3"]), (10.6417, 10.8, -6.8, None))
+        with open(os.path.join(FIX, "mufap-2026-10-26.md")) as f:   # the older layout still parses
+            self.assertTrue(pkdata.parse_mufap(f.read())[1])
+
+
 class TestFeedPlan(unittest.TestCase):
     """tools/feed_plan.py: feed-settings.json decides when the feed runs."""
 
