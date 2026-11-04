@@ -35,6 +35,7 @@ Every command, setting and detail behind the skills. New here? Start with the
 8. [Run it on a schedule](#run-it-on-a-schedule)
 9. [Run it on your Android phone](#run-it-on-your-android-phone)
 10. [The website: prices by GitHub Action, holdings in your browser](#the-website-prices-by-github-action-holdings-in-your-browser)
+    - [Every pkm.py tool on the website: Tools and Paper](#every-pkmpy-tool-on-the-website-tools-and-paper)
 11. [Settings](#settings)
 12. [Brokers and their charges](#brokers-and-their-charges)
 13. [Troubleshooting](#troubleshooting)
@@ -430,7 +431,11 @@ python3 propose.py run --all           # screen, backtest, show the proposal (bo
 python3 propose.py run --all --apply   # buy the picks in the paper account
 python3 propose.py review              # HOLD or SELL each paper holding
 python3 paper.py status
+python3 paper.py log                   # trade history as a table (--json: as stored)
 ```
+
+On the website it's the **Paper** tab: the same account, run by the same scripts in your browser
+([how](#every-pkmpy-tool-on-the-website-tools-and-paper)).
 
 ### 10. Know your risk
 
@@ -1190,16 +1195,43 @@ appetite. The choice is saved in that browser. Rule-based suggestions, not inves
 
 | Button | Does |
 |---|---|
-| Save backup | everything, encrypted with the passphrase you type (AES-256-GCM, PBKDF2 310,000 rounds); empty passphrase = a plain file |
+| Save backup | everything (holdings, paper account, tool files), encrypted with the passphrase you type (AES-256-GCM, PBKDF2 310,000 rounds); empty passphrase = a plain file |
 | Restore or import… | a backup (replaces), a `ledger.json` from `portfolio.py` (replaces), or a trades CSV (adds; duplicates skipped) |
 | Export trades CSV | `date,side,symbol,qty,price,broker,commission,taxes,other,note,stop,time`, the same as `portfolio.py export` |
 | Export ledger.json | drop it into `pkmarket/portfolio/` and the Python tools see the same holdings |
-| Erase holdings on this device | starts over (save a backup first) |
+| Erase my data on this device | your holdings, the paper account and the tools' files: starts over (save a backup first) |
 | Lock this device | forgets the stored key; the passphrase is asked again |
 
-What the website does differently from the CLI: no live intraday prices (the feed's last run is
-the price), no paper account, no PakistaniBulls second opinion, and buy ideas come from the feed's
-market-wide backtest, sized to your cash in the browser.
+### Every pkm.py tool on the website: Tools and Paper
+
+**Tools** is `pkm.py`'s menu, item for item: rank stocks, stock and fund advice, record trades,
+your portfolio, brokers, the daily update, watchlist and settings, risk (quiz, profiles, every
+setting, change one, size a position, your portfolio's risk), SIP, check one share, the PakistaniBulls
+second opinion (import a page you saved) and the whole day-trading desk (scan, news, entry, exit
+plan, time machine, budget, risk check, tickets and fills, alerts, analyst, insiders). Each item asks
+what `pkm.py` asks, then runs the **same Python scripts** with the same arguments, in your browser:
+the first run downloads Python itself (Pyodide 0.26.4 from cdn.jsdelivr.net, about 6 MB, cached
+after that), copies this site's `psx-mufap/scripts/` into it and builds a data folder from the prices
+you already decrypted (`webhome.py`, `webrun.py`; it runs in a Web Worker, `pyworker.js`, so the page
+stays responsive). Nothing is sent anywhere.
+
+**Paper** is the paper account: *Start a paper account* (pick the starting cash), then buy and sell
+shares, invest in and redeem funds, *Propose a portfolio* (screen your watchlist or every liquid
+share, backtest, show it or buy the picks), *Review* (sell or hold each holding), *Strategy signals*
+(sma, breakout, RSI, momentum on your watchlist), *Dividends* (credit what's due), *Trade history*,
+*Update now* and *Start over*. Its value is recorded once a day when you open the tab, so the chart
+against the KSE-100 grows.
+
+The files the tools write for you (the paper account, `config.json` with your watchlist and any
+setting you changed, proposals, the desk's plan, orders and tickets, alerts, signals) are kept in
+this browser with your holdings; **Save backup** includes them, and **Erase my data** clears them.
+A setting you change in Tools (`risk set`, a profile switch, the watchlist) applies across the site.
+Trades the tools record (a broker fill, a broker you add) land in your holdings.
+
+What the website still can't do: anything that needs PSX or MUFAP live from the page (live and
+intraday prices, opening-range breakouts, the movers right now, downloading a company page or the
+PakistaniBulls list). PSX and MUFAP don't let a web page fetch from them, so those tools say so; the
+prices are the feed's last run. Alerts are listed and kept, but only ring when a tool checks them.
 
 ## Settings
 
@@ -1457,6 +1489,8 @@ psx-mufap/                      the skill and the tools
 │   ├── risk.py                 risk quiz, profiles, settings, position sizing, portfolio risk
 │   ├── sip.py                  SIP calculator: plan, goal, step-up, inflation
 │   ├── dashboard.py            build and serve the dashboard
+│   ├── webhome.py              a data folder built from the website's feed (the feed and the browser use it)
+│   ├── webrun.py               the website's bridge: runs any tool in the browser and keeps your files
 │   ├── daily.py                the daily pipeline, pure Python (Linux, macOS, Windows, Android)
 │   ├── install_windows.bat     Windows: data folder + the weekday update in Task Scheduler
 │   ├── daily_sync.sh           shell wrapper for cron and systemd
@@ -1467,7 +1501,8 @@ psx-mufap/                      the skill and the tools
 │                               and offline when served from GitHub Pages), sample-data.json (real
 │                               PSX and MUFAP names, made-up prices: behind "Try sample data")
 │                               ledger.js (your holdings in the browser, same maths as portfolio.py),
-│                               webfeed.js (unlocks and reads feed/)
+│                               webfeed.js (unlocks and reads feed/), pyworker.js (runs the
+│                               scripts below in the browser: the Tools and Paper tabs)
 └── references/                 strategy and data-source notes
 psx-scanner/ … psx-insiders/   the 11 desk skills: SKILL.md + scripts/ (a synced copy of the code
                                 each needs) + brokers.json

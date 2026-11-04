@@ -7,7 +7,7 @@
   paper.py invest "FUND NAME" AMOUNT             buy fund units at the latest MUFAP NAV
   paper.py redeem "FUND NAME" AMOUNT|all
   paper.py status                                holdings, value, profit/loss, vs KSE100
-  paper.py log [--last 20]                       trade history
+  paper.py log [--last 20] [--json]              trade history
   paper.py mark                                  record today's account value (the daily service
                                                  does this; the dashboard charts it)
   paper.py dividends [--apply]                   credit cash dividends and bonus shares whose
@@ -341,8 +341,26 @@ def cmd_mark(a, h, cfg):
 
 def cmd_log(a, h, cfg):
     pf = load(h)
+    if a.json:
+        for t in pf["trades"][-a.last:]:
+            print(json.dumps(t))
+        return 0
+    rows = []
     for t in pf["trades"][-a.last:]:
-        print(json.dumps(t))
+        what = t.get("symbol") or t.get("fund") or ""
+        qty = t.get("qty") if t.get("qty") is not None else t.get("units", t.get("bonus_shares", ""))
+        price = t.get("price", t.get("nav", ""))
+        amount = t.get("amount") if t.get("amount") is not None else (
+            t["qty"] * t["price"] if t.get("qty") is not None and t.get("price") is not None else t.get("net"))
+        rows.append([t.get("time", ""), t.get("side", ""), what, qty if qty != "" else "",
+                     "%.4f" % price if isinstance(price, float) and t.get("nav") is not None else price,
+                     C.fmt_pkr(amount) if amount is not None else "", C.fmt_pkr(t.get("fee")) if t.get("fee") else "",
+                     C.fmt_pkr(t["realized"]) if t.get("realized") is not None else "",
+                     t.get("note") or t.get("details") or ""])
+    if not rows:
+        print("no trades yet")
+        return 0
+    print(C.md_table(["Time", "Side", "Holding", "Qty / units", "Price / NAV", "Amount", "Fee", "Realised", "Note"], rows))
     return 0
 
 
@@ -442,6 +460,7 @@ def main(argv=None):
     p.add_argument("--apply", action="store_true")
     p = sub.add_parser("log")
     p.add_argument("--last", type=int, default=20)
+    p.add_argument("--json", action="store_true", help="one JSON object per trade, as stored")
     p = sub.add_parser("signals")
     p.add_argument("--strategy", default="sma", choices=["sma", "breakout", "rsi", "momentum"])
     p.add_argument("--symbols", nargs="*")

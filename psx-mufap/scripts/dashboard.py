@@ -75,6 +75,61 @@ def r4(x):
     return None if x is None else round(x, 4)
 
 
+def latest_proposal(h):
+    """The newest propose.py run on file, or None."""
+    pdir = os.path.join(h, "proposals")
+    if os.path.isdir(pdir):
+        files = sorted(f for f in os.listdir(pdir) if f.endswith(".json"))
+        if files:
+            with open(os.path.join(pdir, files[-1]), encoding="utf-8") as f:
+                return json.load(f)
+    return None
+
+
+def paper_section(h, cfg, pf, stocks):
+    """The Portfolio (paper account) tab's data: value, holdings with review actions, marks, dividends."""
+    if not pf:
+        return None
+    _, total = paper.valuation(h, cfg, pf)
+    _, review = propose.review(h, cfg, 0.15)
+    rv = {r["symbol"]: r for r in review}
+    hold = []
+    for k, pos in sorted(pf["positions"].items()):
+        if pos["kind"] == "stock":
+            px, asof = paper.stock_price(h, k)
+            value = pos["qty"] * px if px else pos["cost"]
+            info = next((s for s in stocks if s["symbol"] == k), {})
+            hold.append({"kind": "stock", "symbol": k, "qty": pos["qty"], "cost": round(pos["cost"], 2),
+                         "price": px, "asof": asof, "value": round(value, 2),
+                         "pl": r4(value / pos["cost"] - 1) if pos["cost"] else None,
+                         "sector": info.get("sector"), "shariah": info.get("shariah"),
+                         "strategy": (pos.get("meta") or {}).get("strategy"),
+                         "params": (pos.get("meta") or {}).get("params"), "opened": pos.get("opened"),
+                         "action": rv.get(k, {}).get("action"), "why": rv.get(k, {}).get("why")})
+        else:
+            hold.append({"kind": "fund", "symbol": pos["fund"], "category": pos.get("category"),
+                         "units": pos["units"], "cost": round(pos["cost"], 2)})
+    fund_navs = {}
+    try:
+        _, funds = rank.fund_rows(h)
+        fund_navs = {f["fund"]: f for f in funds}
+    except SystemExit:
+        pass
+    for hh in hold:
+        if hh["kind"] == "fund":
+            f = fund_navs.get(hh["symbol"])
+            hh["price"] = f["nav"] if f else None
+            hh["value"] = round(hh["units"] * f["nav"], 2) if f else hh["cost"]
+            hh["pl"] = r4(hh["value"] / hh["cost"] - 1) if hh["cost"] else None
+    divs = [t for t in pf["trades"] if t.get("side") == "dividend"]
+    portfolio = {"created": pf["created"], "starting_cash": pf["starting_cash"], "cash": round(pf["cash"], 2),
+                 "total": round(total, 2), "return": r4(total / pf["starting_cash"] - 1),
+                 "benchmark": pf.get("benchmark"), "holdings": hold, "marks": pf.get("marks", [])[-500:],
+                 "dividends": divs[-50:], "trades": pf["trades"][-100:],
+                 "realized": round(sum(t.get("realized", 0) for t in pf["trades"]), 2)}
+    return portfolio
+
+
 def build_data(h, cfg, all_=None, days=500):
     if all_ is None:
         all_ = bool(P.load_universe(h))
@@ -146,45 +201,7 @@ def build_data(h, cfg, all_=None, days=500):
                              "shariah": s["shariah"]})
     calendar.sort(key=lambda x: x["date"] or "")
 
-    portfolio = None
-    if pf:
-        _, total = paper.valuation(h, cfg, pf)
-        _, review = propose.review(h, cfg, 0.15)
-        rv = {r["symbol"]: r for r in review}
-        hold = []
-        for k, pos in sorted(pf["positions"].items()):
-            if pos["kind"] == "stock":
-                px, asof = paper.stock_price(h, k)
-                value = pos["qty"] * px if px else pos["cost"]
-                info = next((s for s in stocks if s["symbol"] == k), {})
-                hold.append({"kind": "stock", "symbol": k, "qty": pos["qty"], "cost": round(pos["cost"], 2),
-                             "price": px, "asof": asof, "value": round(value, 2),
-                             "pl": r4(value / pos["cost"] - 1) if pos["cost"] else None,
-                             "sector": info.get("sector"), "shariah": info.get("shariah"),
-                             "strategy": (pos.get("meta") or {}).get("strategy"),
-                             "params": (pos.get("meta") or {}).get("params"), "opened": pos.get("opened"),
-                             "action": rv.get(k, {}).get("action"), "why": rv.get(k, {}).get("why")})
-            else:
-                hold.append({"kind": "fund", "symbol": pos["fund"], "category": pos.get("category"),
-                             "units": pos["units"], "cost": round(pos["cost"], 2)})
-        fund_navs = {}
-        try:
-            _, funds = rank.fund_rows(h)
-            fund_navs = {f["fund"]: f for f in funds}
-        except SystemExit:
-            pass
-        for hh in hold:
-            if hh["kind"] == "fund":
-                f = fund_navs.get(hh["symbol"])
-                hh["price"] = f["nav"] if f else None
-                hh["value"] = round(hh["units"] * f["nav"], 2) if f else hh["cost"]
-                hh["pl"] = r4(hh["value"] / hh["cost"] - 1) if hh["cost"] else None
-        divs = [t for t in pf["trades"] if t.get("side") == "dividend"]
-        portfolio = {"created": pf["created"], "starting_cash": pf["starting_cash"], "cash": round(pf["cash"], 2),
-                     "total": round(total, 2), "return": r4(total / pf["starting_cash"] - 1),
-                     "benchmark": pf.get("benchmark"), "holdings": hold, "marks": pf.get("marks", [])[-500:],
-                     "dividends": divs[-50:], "trades": pf["trades"][-100:],
-                     "realized": round(sum(t.get("realized", 0) for t in pf["trades"]), 2)}
+    portfolio = paper_section(h, cfg, pf, stocks)
 
     mine = None
     if os.path.exists(PF.lpath(h)):
@@ -241,13 +258,7 @@ def build_data(h, cfg, all_=None, days=500):
                 "buy_ideas": (adv or {}).get("buy") or [], "advice_date": (adv or {}).get("generated"),
                 "settings": {k: A.setting(cfg, k) for k in A.DEFAULTS}}
 
-    proposal = None
-    pdir = os.path.join(h, "proposals")
-    if os.path.isdir(pdir):
-        files = sorted(f for f in os.listdir(pdir) if f.endswith(".json"))
-        if files:
-            with open(os.path.join(pdir, files[-1]), encoding="utf-8") as f:
-                proposal = json.load(f)
+    proposal = latest_proposal(h)
 
     funds = None
     try:

@@ -65,6 +65,9 @@
     });
   }
 
+  /** The feed's meta.enc.json (shares, company pages, payouts, MUFAP and its NAV history): the in-browser tools' data. */
+  function loadMeta(key) { return getJSON("meta.enc.json").then(function (d) { return open(d, key); }); }
+
   // ------------------------------------------------------------- building the dashboard's data
   function history(months) {
     var dates = [], rows = {};
@@ -104,12 +107,12 @@
     D.mine = null;
     var rowsOf = function (s) { return H.rows[s] || []; };
     var owned = applyLedger(D, lg, L, {
-      S: settingsFor(S0, opts && opts.profile), rowsOf: rowsOf, ideas: S0.ideas || [], fundIndex: S0.fund_index || (S0.web || {}).fund_index || {},
+      S: Object.assign(settingsFor(S0, opts && opts.profile), (opts && opts.overrides) || {}), rowsOf: rowsOf, ideas: S0.ideas || [], fundIndex: S0.fund_index || (S0.web || {}).fund_index || {},
       categories: (S0.funds || {}).categories, bench3m: ((S0.benchmark || {}).metrics || {})["3m"], today: today, advice_date: S0.generated,
       profile: (opts && opts.profile) || ((S0.web || {}).profile)
     });
     var watch = {};
-    (lg.watchlist || []).forEach(function (s) { watch[s] = 1; });
+    ((opts && opts.watchlist) || lg.watchlist || []).forEach(function (s) { watch[s] = 1; });
     var bySym = {};
     (D.stocks || []).forEach(function (s) { bySym[s.symbol] = s; });
     (D.stocks || []).forEach(function (x) { x.owned = !!owned[x.symbol]; x.held = false; x.watch = !!watch[x.symbol]; });
@@ -225,7 +228,7 @@
     return null;
   }
 
-  var api = { BASE: BASE, closeOn: closeOn, status: status, unlock: unlock, stillValid: stillValid, load: load, open: open, history: history, build: build, applyLedger: applyLedger, settingsFor: settingsFor, rowsFromSeries: rowsFromSeries };
+  var api = { BASE: BASE, closeOn: closeOn, loadMeta: loadMeta, status: status, unlock: unlock, stillValid: stillValid, load: load, open: open, history: history, build: build, applyLedger: applyLedger, settingsFor: settingsFor, rowsFromSeries: rowsFromSeries };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.WebFeed = api;
 })(typeof self !== "undefined" ? self : this);

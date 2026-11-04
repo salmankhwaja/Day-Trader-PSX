@@ -114,7 +114,8 @@
 
   // ---------------------------------------------------------------- tabs
   var views = { overview: renderOverview, screener: renderScreener, compare: renderCompare,
-                mine: renderMine, portfolio: renderPortfolio, dividends: renderDividends, funds: renderFunds, risk: renderRisk, data: renderData };
+                mine: renderMine, portfolio: renderPortfolio, dividends: renderDividends, funds: renderFunds, risk: renderRisk, data: renderData,
+                tools: function () { renderTools(); } };
   function show(v) {
     if (!views[v]) v = "overview";
     Array.prototype.forEach.call($("tabs").children, function (b) { b.classList.toggle("on", b.getAttribute("data-v") === v); });
@@ -210,7 +211,7 @@
       ["KSE-100, 1 month", pct(b["1m"]), "1 year " + pct(b["1y"]), sgn(b["1m"])],
       ["Market breadth", up + " / " + st.length, "shares up over 1 month", ""],
       ["Shariah-compliant", st.filter(function (s) { return s.shariah; }).length, "of " + st.length + " ranked", ""],
-      ["Paper account", pf ? pkr(pf.total) : "not started", pf ? "return " + pct(pf["return"]) : "paper.py init", pf ? sgn(pf["return"]) : ""]
+      ["Paper account", pf ? pkr(pf.total) : "not started", pf ? "return " + pct(pf["return"]) : toolsOn() ? "start it on the Paper tab" : "paper.py init", pf ? sgn(pf["return"]) : ""]
     ];
     $("ov-kpis").innerHTML = k.map(function (x) {
       return '<div class="kpi"><div class="l">' + esc(x[0]) + '</div><div class="v ' + x[3] + '">' + esc(x[1]) +
@@ -530,9 +531,25 @@
   }
 
   // ---------------------------------------------------------------- portfolio
+  var PF_HTML = null;   // the Paper tab's layout, put back once an account exists
   function renderPortfolio() {
-    var p = D.portfolio;
-    if (!p) { $("v-portfolio").innerHTML = '<div class="empty">No paper account yet. Run <code>paper.py init</code>, then <code>propose.py run</code>.</div>'; return; }
+    var p = D.portfolio, el = $("v-portfolio");
+    if (PF_HTML == null) PF_HTML = el.innerHTML;
+    if (!p) {
+      el.innerHTML = toolsOn() ? paperActions(false) : '<div class="empty">No paper account yet. Run <code>paper.py init</code>, then <code>propose.py run</code>.</div>';
+      if (toolsOn()) wirePaper();
+      return;
+    }
+    if (!$("pf-kpis")) el.innerHTML = PF_HTML;
+    $("pf-actions").innerHTML = paperActions(!!PAPERVIEW);
+    if (SOURCE === "sample" && !PAPERVIEW && toolsOn()) $("pf-actions").innerHTML = '<p class="note">Below: the sample\'s paper account (made-up). Start your own practice account to trade.</p>' + paperActions(false);
+    if (toolsOn()) wirePaper();
+    // Once a day, the paper account records its value (what the daily service does on a computer), so the chart grows.
+    var lastMark = ((p.marks || []).slice(-1)[0] || {}).date;
+    if (toolsOn() && PAPERVIEW && !PY.marked && lastMark !== todayISO()) {
+      PY.marked = true;
+      pyRun("paper", ["mark"]).then(pyPaper).then(function () { if ($("v-portfolio").classList.contains("on")) renderPortfolio(); }, function () {});
+    }
     var marks = p.marks || [], bench = null;
     if (marks.length > 1 && marks[0].benchmark && marks[marks.length - 1].benchmark) bench = marks[marks.length - 1].benchmark / marks[0].benchmark - 1;
     var k = [["Account value", pkr(p.total), "started " + pkr(p.starting_cash), ""],
@@ -550,9 +567,9 @@
         borderColor: css("--muted"), backgroundColor: css("--muted"), borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0, spanGaps: true });
       chart("pf-equity", { type: "line", data: { labels: marks.map(function (m) { return m.date; }), datasets: sets },
         options: baseOpts({ interaction: { mode: "index", intersect: false } }) });
-      $("pf-eqnote").textContent = "Both rebased to 100 on the first day recorded. The daily service records one point per day.";
+      $("pf-eqnote").textContent = "Both rebased to 100 on the first day recorded. One point a day: " + (toolsOn() ? "recorded when you open this tab." : "the daily service records it.");
     } else {
-      if ($("pf-equity")) $("pf-equity").parentNode.innerHTML = '<div class="empty">The value chart starts once the daily service has recorded two days (paper.py mark).</div>';
+      if ($("pf-equity")) $("pf-equity").parentNode.innerHTML = '<div class="empty">The value chart starts once two days are recorded' + (toolsOn() ? " (one a day, when you open this tab)." : " (paper.py mark).") + '</div>';
     }
     var alloc = {};
     p.holdings.forEach(function (h) {
@@ -593,6 +610,413 @@
       return "<li><span><b>" + esc(d.symbol) + "</b> " + esc(d.details) + (d.bonus_shares ? " +" + esc(d.bonus_shares) + " bonus" : "") +
         "</span><span>" + pkr(d.net) + " <span class='muted small'>" + esc(d.book_closure) + "</span></span></li>";
     }).join("") : "<li class='muted'>None yet.</li>";
+  }
+
+  // ---------------------------------------------------------------- the command-line tools, in this browser
+  // Every pkm.py menu item runs here: pyworker.js loads Python (Pyodide) once, copies this site's
+  // scripts into it and builds a data folder from the prices already decrypted. Your files (paper
+  // account, config, desk plans and orders, alerts) are kept in this browser like your holdings.
+  var PY = { worker: null, seq: 0, wait: {}, setup: null, files: null, busy: 0 };
+  var PAPERVIEW = null;   // the Paper tab's data from the last run (kept, so the tab shows without loading Python)
+  var DEFAULT_WATCH = ["OGDC", "PPL", "MARI", "POL", "HUBC", "LUCK", "DGKC", "MLCF", "MCB", "UBL", "HBL", "MEBL", "BAHL", "NBP",
+    "ENGRO", "FFC", "EFERT", "PSO", "SYS", "TRG"];
+  function toolsOn() { return /^https?:$/.test(location.protocol) && typeof Worker !== "undefined" && (SOURCE === "feed" || SOURCE === "sample" || SOURCE === "blank"); }
+  function pyKey(k) { return SOURCE === "sample" ? "pkm_sample_" + k : k; }
+  function pyGet(k) {
+    if (SOURCE === "sample") { try { return Promise.resolve(JSON.parse(sessionStorage.getItem(pyKey(k)) || "null")); } catch (e) { return Promise.resolve(null); } }
+    return IDB.get(k).catch(function () { return null; });
+  }
+  function pySet(k, v) {
+    if (SOURCE === "sample") { try { sessionStorage.setItem(pyKey(k), JSON.stringify(v)); } catch (e) {} return Promise.resolve(); }
+    return IDB.set(k, v);
+  }
+  function pyPost(msg) {
+    if (!PY.worker) {
+      PY.worker = new Worker("pyworker.js");
+      PY.worker.onmessage = function (ev) { var m = ev.data, w = PY.wait[m.id]; if (!w) return; delete PY.wait[m.id]; m.ok ? w[0](m.result) : w[1](new Error(m.error)); };
+      PY.worker.onerror = function (e) { Object.keys(PY.wait).forEach(function (k) { PY.wait[k][1](new Error(e.message || "Python stopped")); }); PY.wait = {}; PY.worker = null; PY.setup = null; };
+    }
+    msg.id = ++PY.seq; msg.base = new URL(".", location.href).href;
+    return new Promise(function (res, rej) { PY.wait[msg.id] = [res, rej]; PY.worker.postMessage(msg); });
+  }
+  // The market the tools see: the feed's months and meta, or the sample's prices.
+  function pyMarket() {
+    if (SOURCE === "feed") return WebFeed.loadMeta(FEED_KEY).catch(function () { return {}; }).then(function (meta) { return { months: FEED.months, meta: meta }; });
+    var B = BASE || D || {}, cal = B.calendar || [], months = {}, meta = { shares: {}, companies: {}, payouts: [] };
+    Object.keys(B.series || {}).forEach(function (s) {
+      (B.series[s] || []).forEach(function (c, i) {
+        if (c == null || !cal[i]) return;
+        var m = cal[i].slice(0, 7), M = months[m] = months[m] || { month: m, syms: [], days: {} }, k = M.syms.indexOf(s);
+        if (k < 0) { k = M.syms.push(s) - 1; Object.keys(M.days).forEach(function (d) { M.days[d].c.push(null); M.days[d].v.push(null); }); }
+        var day = M.days[cal[i]] = M.days[cal[i]] || { c: M.syms.map(function () { return null; }), v: M.syms.map(function () { return null; }) };
+        while (day.c.length < M.syms.length) { day.c.push(null); day.v.push(null); }
+        day.c[k] = c; day.v[k] = 100000;
+      });
+    });
+    (B.stocks || []).forEach(function (x) {
+      meta.shares[x.symbol] = { name: x.name, sector: x.sector, shariah: !!x.shariah };
+      meta.companies[x.symbol] = { name: x.name, sector: x.sector, pe: x.pe, low_52w: x.low_52w, high_52w: x.high_52w, payouts: x.payouts || [] };
+    });
+    return Promise.resolve({ months: months, meta: meta });
+  }
+  function pyStart() {
+    if (PY.setup) return PY.setup;
+    PY.setup = Promise.all([pyMarket(), pyGet("pyfiles")]).then(function (x) {
+      PY.files = x[1] || {};
+      var cfg = { watchlist: DEFAULT_WATCH.slice(), risk_profile: chosenProfile() };
+      return pyPost({ cmd: "setup", months: JSON.stringify(x[0].months || {}), meta: JSON.stringify(x[0].meta || {}), files: JSON.stringify(PY.files), config: JSON.stringify(cfg) });
+    });
+    PY.setup.catch(function () { PY.setup = null; });
+    return PY.setup;
+  }
+  function pyBusy(on, el, what) {
+    PY.busy += on ? 1 : -1;
+    if (el) el.innerHTML = on ? '<p class="muted"><span class="spin"></span> ' + esc(what || "Working") + "… " +
+      (PY.worker && PY.setup ? "" : "The first run downloads Python (about 6 MB, once) and takes a few seconds.") + "</p>" : el.innerHTML;
+  }
+  // Run one tool: [tool, args]. Keeps the files it wrote; brings ledger and settings changes back to the page.
+  function pyRun(tool, args, put) {
+    return pyStart().then(function () {
+      return pyPost({ cmd: "run", tool: tool, args: args || [], ledger: LEDGER, profile: chosenProfile(), put: put || null });
+    }).then(function (r) { return pyKeep(r.files).then(function () { return r; }); });
+  }
+  function pyKeep(files) {
+    if (!files) return Promise.resolve();
+    var before = PY.files || {};
+    PY.files = files;
+    var keep = {};
+    Object.keys(files).forEach(function (k) { if (k !== "portfolio/ledger.json") keep[k] = files[k]; });   // your ledger has its own store
+    var jobs = [pySet("pyfiles", keep)], again = false;
+    var lg = files["portfolio/ledger.json"];
+    if (lg && lg !== before["portfolio/ledger.json"]) {
+      try {
+        var nl = Ledger.importLedger(JSON.parse(lg));
+        if (JSON.stringify(nl.entries) !== JSON.stringify(LEDGER.entries) || JSON.stringify(nl.brokers) !== JSON.stringify(LEDGER.brokers) ||
+            nl.default_broker !== LEDGER.default_broker) {
+          LEDGER = nl;
+          jobs.push(SOURCE === "sample" ? Promise.resolve(sessionStorage.setItem("pkm_sample_ledger", JSON.stringify(LEDGER))) : IDB.set("ledger", LEDGER));
+          again = true;
+        }
+      } catch (e) {}
+    }
+    var cf = files["config.json"];
+    if (cf && cf !== before["config.json"]) {
+      try {
+        var c = JSON.parse(cf), W = webOf() || {};
+        if (c.risk_profile && (W.profiles || {})[c.risk_profile] && c.risk_profile !== chosenProfile()) store("risk_profile", c.risk_profile);
+        USERCFG = c; again = true;
+      } catch (e) {}
+    }
+    return Promise.all(jobs).then(function () { if (again) rebuild(true); });
+  }
+  var USERCFG = null;   // config.json as the tools last left it: watchlist and your own setting overrides
+  function userWatch() { return (USERCFG && USERCFG.watchlist) || null; }
+  function userOverrides() {
+    var o = {}, c = USERCFG || {}, S = (webOf() || {}).settings || {};
+    Object.keys(c).forEach(function (k) { if (k in S && k !== "risk_profile") o[k] = c[k]; });
+    return o;
+  }
+  // The Paper tab's data, from Python; kept so the next visit shows it straight away.
+  function pyPaper() {
+    return pyStart().then(function () { return pyPost({ cmd: "paper", ledger: LEDGER, profile: chosenProfile() }); }).then(function (r) {
+      PAPERVIEW = r && r.portfolio ? r : null;
+      return pySet("paperview", PAPERVIEW).then(function () { applyPaper(); return r; });
+    });
+  }
+  function applyPaper() {
+    if (!D) return;
+    if (PAPERVIEW) { D.portfolio = PAPERVIEW.portfolio; D.proposal = PAPERVIEW.proposal; }
+    else if (SOURCE !== "sample") { D.portfolio = null; D.proposal = null; }
+    var held = {};
+    ((D.portfolio || {}).holdings || []).forEach(function (h) { if (h.kind === "stock") held[h.symbol] = 1; });
+    (D.stocks || []).forEach(function (x) { if (held[x.symbol]) x.held = true; });
+  }
+  // Markdown-ish tool output -> HTML: tables become tables, the rest stays as lines.
+  function mdOut(text) {
+    var lines = String(text || "").replace(/\x1b\[[0-9;]*m/g, "").split("\n"), out = [], i = 0;
+    while (i < lines.length) {
+      var l = lines[i];
+      if (/^\s*\|.*\|\s*$/.test(l)) {
+        var rows = [];
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(lines[i]); i++; }
+        var cells = function (r) { return r.trim().replace(/^\||\|$/g, "").split("|").map(function (c) { return c.trim(); }); };
+        var head = cells(rows[0]), body = rows.slice(1).filter(function (r) { return !/^\s*\|[\s|:-]+\|\s*$/.test(r); });
+        out.push('<div class="tablewrap"><table><tr>' + head.map(function (h, j) { return "<th" + (j ? "" : " class='l'") + ">" + esc(h) + "</th>"; }).join("") + "</tr>" +
+          body.map(function (r) {
+            return "<tr>" + cells(r).map(function (c, j) {
+              var cls = (j ? "" : "l") + (/^[+]\d/.test(c) ? " pos" : /^-\d/.test(c) ? " neg" : "") + (/^[A-Za-z]/.test(c) && j ? " l" : "");
+              return "<td class='" + cls.trim() + "'>" + esc(c) + "</td>";
+            }).join("") + "</tr>";
+          }).join("") + "</table></div>");
+        continue;
+      }
+      out.push(l.trim() === "" ? '<div class="gap"></div>' : '<div class="ln">' + esc(l).replace(/^( +)/, function (s) { return s.replace(/ /g, "&nbsp;"); }) + "</div>");
+      i++;
+    }
+    return '<div class="pyout">' + out.join("") + "</div>";
+  }
+  function pyShow(el, jobs, what) {
+    // jobs: [[tool, args], ...] run one after another; their output stacked.
+    if (!toolsOn()) { el.innerHTML = '<p class="neg">The tools need this page opened from its website (not a saved file).</p>'; return Promise.resolve(); }
+    pyBusy(true, el, what);
+    var html = [], k = 0;
+    var next = function () {
+      if (k >= jobs.length) return Promise.resolve();
+      var j = jobs[k++];
+      if (typeof j === "function") return Promise.resolve(j()).then(next);
+      return pyRun(j[0], j[1], j[2]).then(function (r) {
+        html.push((jobs.length > 1 ? '<div class="small muted">' + esc(j[0] + " " + (j[1] || []).join(" ")) + "</div>" : "") + mdOut(r.out || (r.code ? "(failed)" : "(done)")));
+        el.innerHTML = html.join("");
+      }).then(next);
+    };
+    return next().then(function () { PY.busy--; if (!html.length) el.innerHTML = ""; }, function (e) {
+      PY.busy--; el.innerHTML = html.join("") + '<p class="neg">Couldn\'t run Python here: ' + esc(e.message) +
+        ". It downloads from cdn.jsdelivr.net; check the connection and try again.</p>";
+    });
+  }
+
+  // ---------------------------------------------------------------- paper trading (the Paper tab)
+  function paperActions(has) {
+    if (!toolsOn()) return "";
+    if (!has) {
+      return '<div class="card" style="margin-bottom:12px"><h2>Start a paper account</h2>' +
+        "<p>Practise with pretend money: buy and sell PSX shares and MUFAP funds at the latest prices, let a backtested proposal pick shares for you, " +
+        "and see how you'd have done against the KSE-100. Never real orders. Kept in this browser" + (SOURCE === "sample" ? " tab (practice)" : "") + ".</p>" +
+        '<form id="pp-init" class="edform"><label>Starting cash (PKR) <input id="pp-cash" type="number" value="1000000" required></label>' +
+        '<div class="row-actions"><button class="btn" type="submit">Start paper trading</button></div></form><div id="pp-out"></div></div>';
+    }
+    var t = function (id, label) { return '<button class="btn ghost" data-pa="' + id + '">' + label + "</button>"; };
+    return '<div class="card" style="margin-bottom:12px"><h2>Paper trading <span class="muted" style="text-transform:none;letter-spacing:0">· pretend money, never real orders</span></h2>' +
+      '<div class="row-actions">' + t("buy", "Buy shares") + t("sell", "Sell shares") + t("invest", "Invest in a fund") + t("redeem", "Redeem a fund") +
+      t("propose", "Propose a portfolio") + t("review", "Review: sell or hold") + t("signals", "Strategy signals") + t("divs", "Dividends") +
+      t("log", "Trade history") + t("update", "Update now") + t("reset", "Start over") + '</div><div id="pp-form"></div><div id="pp-out"></div></div>';
+  }
+  function paperForm(kind) {
+    var syms = (D.stocks || []).map(function (x) { return '<option value="' + esc(x.symbol) + '">' + esc(x.name || "") + "</option>"; }).join("");
+    var held = ((D.portfolio || {}).holdings || []);
+    var funds = Object.keys(fundIndex()).sort().map(function (k) { return '<option value="' + esc(k) + '">'; }).join("");
+    var go = function (label) { return '<div class="row-actions"><button class="btn" type="submit">' + label + '</button><button class="btn ghost" type="button" data-pa="close">Cancel</button></div>'; };
+    var f = {
+      buy: '<label>Symbol <input id="pa-sym" list="pa-syms" required autocapitalize="characters"></label><label>Shares <input id="pa-qty" type="number" required></label>' +
+        '<label>Price (blank = last close) <input id="pa-px" type="number" step="any"></label>' + go("Buy") + '<datalist id="pa-syms">' + syms + "</datalist>",
+      sell: '<label>Holding <select id="pa-sym">' + held.filter(function (h) { return h.kind === "stock"; }).map(function (h) { return '<option value="' + esc(h.symbol) + '">' + esc(h.symbol) + " (" + num(h.qty) + ")</option>"; }).join("") + "</select></label>" +
+        '<label>Shares (blank = all) <input id="pa-qty" type="number"></label><label>Price (blank = last close) <input id="pa-px" type="number" step="any"></label>' + go("Sell"),
+      invest: '<label>Fund <input id="pa-fund" list="pa-funds" required></label><label>Amount (PKR) <input id="pa-amt" type="number" required></label>' +
+        '<label>Load % <input id="pa-fee" type="number" step="any" placeholder="0"></label>' + go("Invest") + '<datalist id="pa-funds">' + funds + "</datalist>",
+      redeem: '<label>Fund <select id="pa-fund">' + held.filter(function (h) { return h.kind === "fund"; }).map(function (h) { return '<option value="' + esc(h.symbol) + '">' + esc(h.symbol) + "</option>"; }).join("") + "</select></label>" +
+        '<label>Amount (blank = all) <input id="pa-amt" type="number"></label>' + go("Redeem"),
+      propose: '<label>Shares to pick <input id="pa-pick" type="number" value="5" min="1"></label><label>Screen <select id="pa-all"><option value="">my watchlist</option><option value="1">every liquid share</option></select></label>' +
+        '<label class="ck"><input type="checkbox" id="pa-sh"> Shariah only</label><label>Sector contains <input id="pa-sector" placeholder="any"></label>' +
+        '<p class="small muted">Backtests each candidate (three strategies, tuned on the first 70% of its history, tested on the last 30%) and proposes those that passed. Every liquid share takes a minute or two.</p>' +
+        '<div class="row-actions"><button class="btn" type="submit" data-apply="0">Show the proposal</button><button class="btn ghost" type="submit" data-apply="1">Propose and buy</button><button class="btn ghost" type="button" data-pa="close">Cancel</button></div>',
+      review: '<label>Sell if down more than % <input id="pa-sl" type="number" value="15"></label>' +
+        '<div class="row-actions"><button class="btn" type="submit" data-apply="0">Review</button><button class="btn ghost" type="submit" data-apply="1">Review and sell what it says</button><button class="btn ghost" type="button" data-pa="close">Cancel</button></div>',
+      signals: '<label>Strategy <select id="pa-strat"><option value="sma">moving-average trend (sma)</option><option value="breakout">breakout</option><option value="rsi">RSI bounce</option><option value="momentum">momentum: top 3</option></select></label>' +
+        '<label>Invest % of the account <input id="pa-inv" type="number" value="90"></label><p class="small muted">On your watchlist: what the strategy wants to hold today, as orders.</p>' +
+        '<div class="row-actions"><button class="btn" type="submit" data-apply="0">Show the orders</button><button class="btn ghost" type="submit" data-apply="1">Book them</button><button class="btn ghost" type="button" data-pa="close">Cancel</button></div>',
+      divs: '<p class="small muted">Cash dividends and bonus shares whose book closure passed while you held the shares.</p>' +
+        '<div class="row-actions"><button class="btn" type="submit" data-apply="0">Check</button><button class="btn ghost" type="submit" data-apply="1">Credit them</button><button class="btn ghost" type="button" data-pa="close">Cancel</button></div>',
+      reset: '<label>Starting cash (PKR) <input id="pa-cash" type="number" value="' + ((D.portfolio || {}).starting_cash || 1000000) + '"></label>' +
+        '<p class="neg small">This wipes the paper account (its trades and history) and starts again.</p>' + go("Start over")
+    }[kind];
+    return f ? '<form id="pa-form" class="edform" data-kind="' + kind + '">' + f + "</form>" : "";
+  }
+  function paperRun(jobs, what) {
+    var out = $("pp-out");
+    return pyShow(out, jobs, what).then(function () { return pyPaper(); }).then(function () {
+      var keep = out ? out.innerHTML : "";
+      renderPortfolio();
+      if ($("pp-out")) $("pp-out").innerHTML = keep;
+      if (rendered.overview) rendered.overview = false;
+    }, function (e) { if ($("pp-out")) $("pp-out").innerHTML = '<p class="neg">' + esc(e.message) + "</p>"; });
+  }
+  function wirePaper() {
+    if ($("pp-init")) $("pp-init").onsubmit = function (e) {
+      e.preventDefault();
+      paperRun([["paper", ["init", "--cash", String(nv("pp-cash") || 1000000), "--force"]], ["paper", ["mark"]]], "Opening the paper account");
+    };
+    var box = $("pp-form");
+    Array.prototype.forEach.call(document.querySelectorAll("[data-pa]"), function (b) {
+      b.onclick = function () {
+        var k = b.getAttribute("data-pa");
+        if (k === "close") { box.innerHTML = ""; return; }
+        if (k === "log") { box.innerHTML = ""; paperRun([["paper", ["log", "--last", "50"]]], "Reading the history"); return; }
+        if (k === "update") { box.innerHTML = ""; paperRun([["paper", ["dividends", "--apply"]], ["paper", ["mark"]], ["propose", ["review", "--no-fetch"]]], "Updating"); return; }
+        box.innerHTML = paperForm(k); enhanceNumbers(box); wirePaperForm();
+      };
+    });
+  }
+  function wirePaperForm() {
+    var f = $("pa-form"); if (!f) return;
+    var val = function (id) { var el = $(id); return el ? String(el.value).replace(/,/g, "").trim() : ""; };
+    var apply = "0";
+    Array.prototype.forEach.call(f.querySelectorAll("button[data-apply]"), function (b) { b.onclick = function () { apply = b.getAttribute("data-apply"); }; });
+    Array.prototype.forEach.call(f.querySelectorAll("[data-pa=close]"), function (b) { b.onclick = function () { $("pp-form").innerHTML = ""; }; });
+    f.onsubmit = function (e) {
+      e.preventDefault();
+      var k = f.getAttribute("data-kind"), a = apply === "1", j;
+      if (k === "buy") j = [["paper", ["buy", val("pa-sym").toUpperCase(), val("pa-qty")].concat(val("pa-px") ? ["--price", val("pa-px")] : [])]];
+      else if (k === "sell") j = [["paper", ["sell", val("pa-sym"), val("pa-qty") || "all"].concat(val("pa-px") ? ["--price", val("pa-px")] : [])]];
+      else if (k === "invest") j = [["paper", ["invest", val("pa-fund"), val("pa-amt")].concat(val("pa-fee") ? ["--fee-pct", val("pa-fee")] : [])]];
+      else if (k === "redeem") j = [["paper", ["redeem", val("pa-fund"), val("pa-amt") || "all"]]];
+      else if (k === "propose") j = [["propose", ["run", "--pick", val("pa-pick") || "5", "--no-fetch"].concat(val("pa-all") ? ["--all"] : [], $("pa-sh").checked ? ["--shariah"] : [],
+        val("pa-sector") ? ["--sector", val("pa-sector")] : [], a ? ["--apply"] : [])]];
+      else if (k === "review") j = [["propose", ["review", "--stop-loss", val("pa-sl") || "15", "--no-fetch"].concat(a ? ["--apply"] : [])]];
+      else if (k === "signals") j = [["paper", ["signals", "--strategy", val("pa-strat"), "--invest-pct", val("pa-inv") || "90"].concat(a ? ["--apply"] : [])]];
+      else if (k === "divs") j = [["paper", ["dividends"].concat(a ? ["--apply"] : [])]];
+      else if (k === "reset") { if (!confirm("Wipe the paper account and start again?")) return; j = [["paper", ["init", "--cash", val("pa-cash") || "1000000", "--force"]], ["paper", ["mark"]]]; }
+      if (!j) return;
+      if (k !== "propose" && k !== "review" && k !== "signals" && k !== "divs") $("pp-form").innerHTML = "";
+      else if (a) $("pp-form").innerHTML = "";
+      paperRun(j, k === "propose" ? "Backtesting the candidates" : "Working");
+    };
+  }
+
+  // ---------------------------------------------------------------- the Tools tab: pkm.py's menu
+  // Each item asks what pkm.py asks, then runs the same tools with the same arguments.
+  function fld(id, label, type, extra) {
+    extra = extra || {};
+    if (type === "select") return '<label>' + label + ' <select id="tf-' + id + '">' + extra.options.map(function (o) {
+      return '<option value="' + esc(o[0]) + '"' + (o[0] === extra.value ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select></label>";
+    if (type === "check") return '<label class="ck"><input type="checkbox" id="tf-' + id + '"' + (extra.value ? " checked" : "") + "> " + label + "</label>";
+    if (type === "file") return '<label>' + label + ' <input type="file" id="tf-' + id + '" accept=".html,.htm,text/html"></label>';
+    return '<label>' + label + ' <input id="tf-' + id + '"' + (type === "number" ? ' type="number" step="any"' : "") + (extra.list ? ' list="' + extra.list + '"' : "") +
+      (extra.value != null ? ' value="' + esc(extra.value) + '"' : "") + (extra.ph ? ' placeholder="' + esc(extra.ph) + '"' : "") + (extra.req ? " required" : "") + "></label>";
+  }
+  function tv(id) { var el = $("tf-" + id); if (!el) return ""; if (el.type === "checkbox") return el.checked; return String(el.value).replace(/,/g, "").trim(); }
+  function opt(flag, v) { return v === "" || v == null || v === false ? [] : v === true ? [flag] : [flag, String(v)]; }
+  function syms(v) { return String(v || "").toUpperCase().replace(/,/g, " ").split(/\s+/).filter(Boolean); }
+  var SORTS = [["score", "score"], ["1m", "1 month"], ["3m", "3 months"], ["1y", "1 year"], ["div_yield", "dividend yield"]];
+  var PROFILES = [["conservative", "conservative"], ["moderate", "moderate"], ["aggressive", "aggressive"], ["very_aggressive", "very aggressive"]];
+  var MENU = [
+    { t: "Fetch data: my watchlist + funds", info: function () {
+      return "<p>On this website prices come from the feed: a GitHub Action fetches every PSX share and every MUFAP fund on the schedule in <code>feed-settings.json</code>. " +
+        '<a class="btn" href="' + runUrl() + '" target="_blank" rel="noopener">Refresh prices now</a> (tap <b>Run workflow</b> on GitHub, then reload this page in 1–3 minutes).</p>'; } },
+    { t: "Fetch data: the whole market", info: function () { return "<p>The feed already covers the whole market: every share on the PSX market watch with a year of history, and all MUFAP funds. " +
+        '<a class="btn ghost" href="' + runUrl() + '" target="_blank" rel="noopener">Run the feed now</a></p>'; } },
+    { t: "Rank stocks", f: function () { return fld("scope", "Watchlist or all shares", "select", { options: [["w", "my watchlist"], ["a", "all shares"]] }) + fld("top", "How many", "number", { value: 15 }) +
+        fld("sh", "Shariah-compliant only", "check") + fld("sector", "Sector contains", "text", { ph: "blank = all" }) + fld("sort", "Sort by", "select", { options: SORTS }); },
+      run: function () { var all = tv("scope") === "a"; return [["rank", ["stocks", "--top", tv("top") || "15"].concat(all ? ["--all"] : [], all && tv("sh") ? ["--shariah"] : [], all ? opt("--sector", tv("sector")) : [], ["--sort", tv("sort"), "--no-fetch"])]]; } },
+    { t: "Stock advice: what to sell, hold, buy (with stop-losses)", f: function () { return fld("buy", "How many buy ideas", "number", { value: 3 }) +
+        fld("all", "Look for buys across all shares", "check") + fld("sh", "Shariah-compliant buys only", "check"); },
+      run: function () { return [["portfolio", ["advise", "--buy", tv("buy") || "3"].concat(opt("--all", tv("all")), opt("--shariah", tv("sh")), ["--no-fetch"])]]; } },
+    { t: "Fund advice: which MUFAP funds", f: function () { return fld("risk", "Risk", "select", { options: [["low", "low"], ["medium", "medium"], ["high", "high"]] }) +
+        fld("top", "Funds per category", "number", { value: 3 }) + fld("sh", "Shariah-compliant only", "check") + fld("held", "Check the funds I hold too", "check", { value: true }); },
+      run: function () { return [["funds", ["advise", "--risk", tv("risk"), "--top", tv("top") || "3"].concat(opt("--shariah", tv("sh")), ["--no-fetch"])]].concat(tv("held") ? [["funds", ["review", "--no-fetch"]]] : []); } },
+    { t: "Record a BUY", go: function () { show("mine"); EDIT.form = "trade"; EDIT.prefill = { side: "buy" }; renderEditor(); } },
+    { t: "Record a SELL", go: function () { show("mine"); EDIT.form = "trade"; EDIT.prefill = { side: "sell" }; renderEditor(); } },
+    { t: "Record a mutual fund buy / sell", go: function () { show("mine"); EDIT.form = "fund"; EDIT.prefill = {}; renderEditor(); } },
+    { t: "My portfolio: holdings, profit and loss, fees", f: function () { return fld("pnl", "Realised profit and loss", "check", { value: true }) + fld("fees", "Costs by broker", "check", { value: true }); },
+      run: function () { return [["portfolio", ["holdings"]]].concat(tv("pnl") ? [["portfolio", ["pnl"]]] : [], tv("fees") ? [["portfolio", ["fees"]]] : []); } },
+    { t: "Brokers: presets and charges", f: function () {
+        var P = (PRESETS && PRESETS.brokers) || {};
+        return fld("add", "Add a broker", "check") + fld("name", "Your name for it", "text", { ph: "e.g. AKD" }) +
+          fld("preset", "Preset", "select", { options: [["", "type my own rates"]].concat(Object.keys(P).map(function (k) { return [k, (P[k].name || k)]; })) }) +
+          fld("cpct", "Commission % of value", "number", { value: "0.15" }) + fld("ps", "Or Rs per share, whichever is higher", "number", { value: "0.03" }) +
+          fld("min", "Minimum per trade", "number") + fld("st", "Sales tax % on commission", "number", { value: "13" }) + fld("def", "Make it my default broker", "check", { value: true }); },
+      run: function () {
+        var j = [["portfolio", ["broker", "presets"]], ["portfolio", ["broker", "list"]]];
+        if (tv("add") && tv("name")) j.push(["portfolio", ["broker", "add", tv("name")].concat(tv("preset") ? ["--preset", tv("preset")] :
+          opt("--commission-pct", tv("cpct")).concat(opt("--per-share", tv("ps")), opt("--min-commission", tv("min")), opt("--sales-tax-pct", tv("st"))), opt("--default", tv("def")))], ["portfolio", ["broker", "list"]]);
+        return j; } },
+    { t: "Run the whole daily update now", f: function () { return "<p class='small muted'>On the website the feed fetches prices on its schedule. This updates your side: your holdings' advice, the paper account's value, dividends due, and the review.</p>"; },
+      run: function () { return [["portfolio", ["advise", "--no-fetch"]]].concat(PAPERVIEW ? [["paper", ["dividends", "--apply"]], ["paper", ["mark"]], ["propose", ["review", "--no-fetch"]], function () { return pyPaper(); }] : []); } },
+    { t: "Dashboard: build the one-file version", info: function () { return "<p>This website <i>is</i> the dashboard, and it works offline once opened. For a single file you can keep anywhere, use the command-line tools: <code>dashboard.py build --standalone</code>. Your holdings move between devices with <b>Data › Save backup</b>.</p>"; } },
+    { t: "Watchlist and settings", f: function () { return fld("do", "Change", "select", { options: [["", "just show it"], ["a", "add shares"], ["b", "remove shares"], ["c", "replace the list"], ["d", "add the top N of a sector"], ["e", "add my holdings"]] }) +
+        fld("syms", "Symbols", "text", { ph: "e.g. OGDC, MARI" }) + fld("top", "Top N", "number", { value: 5 }) + fld("sector", "Sector contains", "text", { ph: "blank = any" }) + fld("sh", "Shariah-compliant only", "check"); },
+      run: function () { var c = tv("do"), j = [];
+        if (c === "a") j.push(["watchlist", ["add"].concat(syms(tv("syms")))]);
+        else if (c === "b") j.push(["watchlist", ["remove"].concat(syms(tv("syms")))]);
+        else if (c === "c") j.push(["watchlist", ["set"].concat(syms(tv("syms")))]);
+        else if (c === "d") j.push(["watchlist", ["add", "--top", tv("top") || "5"].concat(opt("--sector", tv("sector")), opt("--shariah", tv("sh")))]);
+        else if (c === "e") j.push(["watchlist", ["add", "--holdings"]]);
+        return j.concat([["watchlist", ["list"]], ["risk", ["settings"]]]); } },
+    { t: "Risk: quiz, profiles, settings, my portfolio's risk", f: function () {
+        return fld("do", "What", "select", { options: [["d", "my portfolio's risk"], ["a", "take the risk quiz"], ["b", "compare the profiles / switch"], ["c", "every setting"], ["e", "size a position"], ["f", "change one setting"], ["g", "put one setting back to my profile's"]] }) +
+          fld("prof", "Switch to (compare)", "select", { options: [["", "keep mine"]].concat(PROFILES) }) + fld("entry", "Entry price (size)", "number") + fld("stop", "Stop-loss price (size)", "number") +
+          fld("cap", "Capital (blank = your portfolio)", "number") + fld("rp", "Risk % of capital (blank = your profile's)", "number") +
+          fld("key", "Setting name (change)", "text", { ph: "e.g. max_holdings" }) + fld("val", "New value", "text"); },
+      run: function () { var c = tv("do");
+        if (c === "a") return [function () { show("risk"); var b = Array.prototype.find.call(document.querySelectorAll("#v-risk button"), function (x) { return /quiz/i.test(x.textContent); }); if (b) b.click(); }];
+        if (c === "b") return [["risk", ["profile"]]].concat(tv("prof") ? [["risk", ["profile", tv("prof")]]] : []);
+        if (c === "c") return [["risk", ["settings"]]];
+        if (c === "e") return [["risk", ["position", "--entry", tv("entry"), "--stop", tv("stop")].concat(opt("--capital", tv("cap")), opt("--risk-pct", tv("rp")))]];
+        if (c === "f") return [["risk", ["set", tv("key"), tv("val")]]];
+        if (c === "g") return [["risk", ["unset", tv("key")]]];
+        return [["risk", ["portfolio", "--no-fetch"]]]; } },
+    { t: "SIP calculator: plan or goal", f: function () {
+        return fld("mode", "Plan a monthly SIP, or find the SIP for a goal", "select", { options: [["p", "plan"], ["g", "goal"]] }) + fld("years", "Years", "number", { value: 10 }) +
+          fld("monthly", "Monthly amount (plan)", "number", { value: 25000 }) + fld("target", "Target amount (goal)", "number") +
+          fld("src", "Return from", "select", { options: [["p", "my profile's mix"], ["r", "my own rate"], ["f", "a fund's record"], ["s", "a share's record"]] }) +
+          fld("rate", "Yearly return % (own rate)", "number", { value: 14 }) + fld("fund", "Fund name", "text", { list: "tf-funds" }) + fld("sym", "Symbol", "text") +
+          fld("step", "Raise it by % each year", "number") + fld("lump", "Starting amount", "number") + fld("infl", "Inflation % (today's rupees)", "number") +
+          '<datalist id="tf-funds">' + Object.keys(fundIndex()).sort().map(function (k) { return '<option value="' + esc(k) + '">'; }).join("") + "</datalist>"; },
+      run: function () {
+        var a = tv("mode") === "g" ? ["goal", "--target", tv("target"), "--years", tv("years") || "10"] : ["plan", "--monthly", tv("monthly") || "25000", "--years", tv("years") || "10"];
+        var s = tv("src");
+        if (s === "r") a = a.concat(["--rate", tv("rate") || "14"]); else if (s === "f") a = a.concat(["--fund", tv("fund")]); else if (s === "s") a = a.concat(["--symbol", tv("sym").toUpperCase()]);
+        return [["sip", a.concat(opt("--step-up", tv("step")), opt("--lump", tv("lump")), opt("--inflation", tv("infl")))]]; } },
+    { t: "Check one share: verdict + price calculator", f: function () { return fld("sym", "Symbol", "text", { req: true, list: "tf-syms" }) + fld("entry", "Price you'd pay (blank = last close)", "number") + fld("stop", "Your own stop (blank = computed)", "number"); },
+      run: function () { return [["portfolio", ["check", tv("sym").toUpperCase()].concat(opt("--entry", tv("entry")), opt("--stop", tv("stop")), ["--no-fetch"])]]; } },
+    { t: "Second opinion: PakistaniBulls buy/sell signals", f: function () {
+        return "<p class='small muted'>PakistaniBulls publishes candlestick-pattern signals; their terms allow one copy for your own use. A web page can't download it for you: open their signal list in your browser, save the page (Share › Save, or Ctrl+S), and import it here.</p>" +
+          fld("page", "Saved page", "file"); },
+      run: function () {
+        var el = $("tf-page"), file = el && el.files && el.files[0];
+        if (!file) return [["signals", ["show"]]];
+        return file.text().then(function (t) { return [["signals", ["pakistanibulls", "--from-file", "/pkm/upload.html"], { "/pkm/upload.html": t }], ["signals", ["show"]]]; }); } },
+    { t: "Day-trading desk: scan, entry, exit, odds, size, risk, tickets, alerts", f: function () {
+        return "<p class='small neg'>Most people who day trade lose money. Everything here is rule-based and runs on end-of-day prices from the feed: no live or intraday data reaches a web page.</p>" +
+          fld("do", "Step", "select", { options: [["a", "a) scan for setups"], ["b", "b) news on them"], ["c", "c) entry: has it triggered?"], ["d", "d) exit plan: stop, target"], ["e", "e) time machine: odds"],
+            ["f", "f) budget: how many"], ["g", "g) risk check: PASS/BLOCK"], ["h", "h) tickets / record a fill"], ["i", "i) alerts"], ["j", "j) results (analyst)"], ["k", "k) insiders' dealings"]] }) +
+          fld("all", "Scan every liquid share (a)", "check") + fld("sym", "Symbol(s)", "text", { list: "tf-syms" }) + fld("stop", "Stop (d): blank, vol, 5%, or a price", "text") + fld("target", "Target (d): blank, 2R or a price", "text") +
+          fld("style", "Style (d)", "select", { options: [["", "from the setup"], ["swing", "swing"], ["day", "day"]] }) + fld("level", "Level (c, or alert price)", "number") + fld("ml", "Max loss in rupees (f)", "number") + fld("acct", "Capital for this trade (f; blank = your cash and holdings)", "number") +
+          fld("oid", "Order that filled (h), e.g. E1", "text") + fld("fill", "Fill price (h)", "number") + fld("below", "Alert at or below (i)", "number") + fld("days", "Days back (b, k)", "number", { value: 30 }); },
+      run: function () { var c = tv("do"), s = syms(tv("sym"));
+        if (c === "a") return [["scanner", ["daily", "--no-fetch"].concat(opt("--all", tv("all")))]];
+        if (c === "b") return [["news", ["--cached", "--days", tv("days") || "14"].concat(s.length ? s : ["--setups"])]];
+        if (c === "c") return [["entry", ["check", s[0] || ""].concat(opt("--level", tv("level")))]];
+        if (c === "d") return [["exitplan", ["plan", s[0] || "", "--write"].concat(opt("--stop", tv("stop")), opt("--target", tv("target")), opt("--style", tv("style") || (tv("stop") || tv("target") ? "swing" : "")))]];
+        if (c === "e") return [["timemachine", ["run", "--write"]]];
+        if (c === "f") return [["budget", ["--write"].concat(opt("--max-loss", tv("ml")), opt("--account", tv("acct")))]];
+        if (c === "g") return [["risk", ["check"]]];
+        if (c === "h") return tv("oid") ? [["broker", ["filled", tv("oid"), "--price", tv("fill")]], ["broker", ["show"]]] : [["broker", ["show"]]];
+        if (c === "i") {
+          if (s.length && (tv("level") || tv("below"))) return [["alerts", ["add", s[0]].concat(opt("--above", tv("level")), opt("--below", tv("below")))], ["alerts", ["list"]]];
+          return [["alerts", ["add", "--from-holdings"]], ["alerts", ["list"]]];
+        }
+        if (c === "j") return [["analyst", s.concat(["--cached"])]];
+        if (c === "k") return [["insiders", ["--cached", "--days", tv("days") || "30"].concat(s)]];
+        return []; } }
+  ];
+  function renderTools() {
+    var el = $("v-tools");
+    if (!toolsOn()) { el.innerHTML = '<div class="empty">The tools run on this site\'s prices in your browser: open the website (not a saved file), and unlock the prices or try the sample.</div>'; return; }
+    var cur = store("tool") || 0;
+    el.innerHTML = '<div class="card"><h2>Everything pkm.py does, here</h2><p class="small muted">The same tools as the command line, running in this browser on the prices you unlocked' +
+      (SOURCE === "sample" ? " (the sample's made-up market)" : SOURCE === "blank" ? " (none yet: unlock the prices for most tools)" : "") +
+      ". Your answers and results stay on this device. Rule-based suggestions, not investment advice; nothing places a real order.</p>" +
+      '<div class="toolgrid">' + MENU.map(function (m, i) { return '<button class="btn ' + (i === cur ? "" : "ghost") + '" data-tool="' + i + '"><span class="muted small">' + (i + 1) + ".</span> " + esc(m.t) + "</button>"; }).join("") + "</div></div>" +
+      '<div class="card" style="margin-top:12px" id="tl-card"></div>' +
+      '<datalist id="tf-syms">' + (D.stocks || []).map(function (x) { return '<option value="' + esc(x.symbol) + '">' + esc(x.name || "") + "</option>"; }).join("") + "</datalist>";
+    Array.prototype.forEach.call(el.querySelectorAll("[data-tool]"), function (b) {
+      b.onclick = function () { store("tool", +b.getAttribute("data-tool")); renderTools(); $("tl-card").scrollIntoView({ block: "start", behavior: "smooth" }); };
+    });
+    toolCard(MENU[cur] ? cur : 0);
+  }
+  function toolCard(i) {
+    var m = MENU[i], c = $("tl-card");
+    if (m.go) { c.innerHTML = "<h2>" + esc(m.t) + "</h2><p>Your holdings are recorded on <b>My portfolio</b>, with charges estimated and the price filled from the date.</p>" +
+      '<button class="btn" id="tl-go">Open the form</button>'; $("tl-go").onclick = m.go; return; }
+    if (m.info) { c.innerHTML = "<h2>" + esc(m.t) + "</h2>" + m.info(); return; }
+    c.innerHTML = "<h2>" + esc(m.t) + '</h2><form id="tl-form" class="edform">' + m.f() + '<div class="row-actions"><button class="btn" type="submit">Run</button></div></form><div id="tl-out"></div>';
+    enhanceNumbers(c);
+    $("tl-form").onsubmit = function (e) {
+      e.preventDefault();
+      Promise.resolve(m.run()).then(function (jobs) { return pyShow($("tl-out"), jobs, "Running"); }).then(function () {
+        if (/^(Brokers|Watchlist|Risk|Run the whole)/.test(m.t)) rendered = {};
+      });
+    };
   }
 
   // ---------------------------------------------------------------- my (real) portfolio
@@ -700,10 +1124,10 @@
           cell(num(i.target, 2)) + cell(i.qty ? num(i.qty) : "–") + cell(i.qty ? pkr(i.cost) : "–") + calcCells(i.calc, false) + theirsCell(i.theirs) +
           "<td class='l' style='white-space:normal;min-width:220px'>" + esc(i.strategy) + " " + esc(JSON.stringify(i.params || {})) +
           ": out-of-sample " + pct(i.oos_cagr) + " a year vs buy-and-hold " + pct(i.oos_buyhold_cagr) + "</td></tr>";
-      }).join("") : "<tr><td class='l muted' colspan='11'>No buy ideas: nothing passed every check, or portfolio.py advise has not run yet.</td></tr>");
+      }).join("") : "<tr><td class='l muted' colspan='11'>No buy ideas: nothing passed every check" + (toolsOn() ? " (Tools › Stock advice runs the full check)" : ", or portfolio.py advise has not run yet") + ".</td></tr>");
     $("mi-buynote").textContent = (M.buy_note ? "No new buys: " + M.buy_note + ". " : "") + (M.advice_date ? (SOURCE === "feed" ? "Backtested by the site's feed run of " : "From the run of ") + M.advice_date + ". " : "") +
       (SOURCE === "feed" ? "" : M.second_opinion ? "PakistaniBulls: their candlestick-pattern signals (read " + M.second_opinion + "), a different method shown for comparison, for your own use only. " :
-        "Add a second opinion: signals.py pakistanibulls --from-file PAGE.html. ") +
+        (toolsOn() ? "Add a second opinion: Tools › Second opinion. " : "Add a second opinion: signals.py pakistanibulls --from-file PAGE.html. ")) +
       "Size risks " + (st.risk_per_trade * 100).toFixed(1) + "% of your capital between entry and stop, at most " + Math.round(st.max_position_pct * 100) +
       "% in one stock. Rule-based suggestions from past prices, not investment advice; nothing is ordered for you.";
     var alloc = {};
@@ -1095,8 +1519,19 @@
 
   // ---------------------------------------------------------------- boot
   var BLANK_TABS = ["mine", "risk", "data"];
+  var HYDRATED = false;
+  function pyHydrate() {   // your paper account's last view and config.json, kept from earlier visits
+    if (HYDRATED || !toolsOn()) return;
+    HYDRATED = true;
+    Promise.all([pyGet("paperview"), pyGet("pyfiles")]).then(function (x) {
+      PAPERVIEW = x[0] || null;
+      try { USERCFG = x[1] && x[1]["config.json"] ? JSON.parse(x[1]["config.json"]) : null; } catch (e) { USERCFG = null; }
+      if (PAPERVIEW || USERCFG) rebuild();
+    });
+  }
   function boot(data) {
     D = data;
+    setTimeout(pyHydrate, 0);
     D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
     $("meta").textContent = SOURCE === "blank" ? "Your portfolio · no market data loaded" :
       (SOURCE === "sample" ? "Sample data · " : "Built " + D.generated + " · ") + D.stocks.length +
@@ -1321,14 +1756,16 @@
       FEED = x[0]; LEDGER = Ledger.normalise(x[1] || Ledger.empty()); PRESETS = x[2];
       SOURCE = "feed";
       $("loader").hidden = true; $("tabs").hidden = false; document.querySelector("main").hidden = false;
-      boot(WebFeed.build(FEED, LEDGER, Ledger));
+      boot(riskView(WebFeed.build(FEED, LEDGER, Ledger, null, buildOpts()), FEED.summary));
     }).catch(function (e) { showUnlock("Couldn't load the prices: " + e.message); });
   }
-  function rebuild() {
-    D = SOURCE === "feed" ? WebFeed.build(FEED, LEDGER, Ledger, null, { profile: chosenProfile() }) : recompute(BASE);
+  function rebuild(keepView) {
+    D = SOURCE === "feed" ? riskView(WebFeed.build(FEED, LEDGER, Ledger, null, buildOpts()), FEED.summary) : recompute(BASE);
+    applyPaper();
     bySym = {}; D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
     var on = Object.keys(views).filter(function (k) { return $("v-" + k).classList.contains("on"); })[0] || "mine";
-    rendered = {}; show(on);
+    rendered = {};
+    if (keepView !== true) show(on);   // the tools keep their page (and its output) when they change your files
   }
   function saveLedger() {
     if (SOURCE === "sample") {   // the sample's practice portfolio lives in this tab only
@@ -1385,7 +1822,7 @@
       var today = base.sample ? base.sample.as_of : todayISO();
       var blank = SOURCE === "blank";
       var owned = WebFeed.applyLedger(d, LEDGER, Ledger, {
-        S: WebFeed.settingsFor(base, prof), rowsOf: blank ? blankRows() : WebFeed.rowsFromSeries(base),
+        S: Object.assign(WebFeed.settingsFor(base, prof), userOverrides()), rowsOf: blank ? blankRows() : WebFeed.rowsFromSeries(base),
         ideas: base.ideas || ((base.mine || {}).buy_ideas) || [], fundIndex: blank ? blankNavs(W.fund_index) : W.fund_index || {}, categories: (base.funds || {}).categories,
         bench3m: ((base.benchmark || {}).metrics || {})["3m"], today: today, advice_date: base.generated, profile: prof });
       d.stocks.forEach(function (x) { x.owned = !!owned[x.symbol]; });
@@ -1394,12 +1831,20 @@
       });
       (d.dividend_calendar || []).forEach(function (x) { x.held = !!owned[x.symbol]; });
     } else if (canEdit()) d.mine = null;   // an empty browser portfolio: nothing to show yet
-    var P = (W.profiles || {})[prof] || {}, S = WebFeed.settingsFor(base, prof);
+    var uw = userWatch();
+    if (uw) d.stocks.forEach(function (x) { x.watch = uw.indexOf(x.symbol) >= 0; });
+    return riskView(d, base);
+  }
+  // The risk tab's profile and settings: your chosen profile, with any value you set yourself (Tools › Risk).
+  function riskView(d, base) {
+    var W = (base && base.web) || d.web || {}, prof = chosenProfile(), P = (W.profiles || {})[prof] || {}, S = Object.assign(WebFeed.settingsFor(base || d, prof), userOverrides());
+    d.risk = Object.assign({}, d.risk || {});
     d.risk.profile = prof;
     d.risk.settings = RISK_SHOWN.map(function (k) { return { key: k, value: fmtSetting(k, S[k] != null ? S[k] : P[k]), about: (W.about || {})[k] || "" }; });
     if (P.allocation) d.risk.allocation_target = P.allocation;
     return d;
   }
+  function buildOpts() { return { profile: chosenProfile(), overrides: userOverrides(), watchlist: userWatch() }; }
   function loadLedger(data) {
     var W = data.web || {}, clone = function (x) { return x ? JSON.parse(JSON.stringify(x)) : null; };
     PRESETS = W.brokers || PRESETS;
@@ -1424,10 +1869,8 @@
   }
   function setProfile(p) {
     store("risk_profile", p);
-    var on = Object.keys(views).filter(function (k) { return $("v-" + k).classList.contains("on"); })[0] || "mine";
-    D = SOURCE === "feed" ? WebFeed.build(FEED, LEDGER, Ledger, null, { profile: p }) : recompute(BASE);
-    bySym = {}; D.stocks.forEach(function (s) { bySym[s.symbol] = s; });
-    rendered = {}; show(on);
+    if (USERCFG) USERCFG.risk_profile = p;
+    rebuild();   // same profile everywhere: holdings advice, the Risk tab, and the tools (they get it before each run)
   }
   var QUIZ = { open: false, answers: [] };
   function profileLine(S) {
@@ -1456,7 +1899,7 @@
       }).join("") + "</div>" +
       '<p class="small" style="margin:10px 0 4px">' + esc(profileLine(S)) + "</p>" +
       '<p class="note">Sell, trim or hold, stop-losses, targets, buy-idea sizes and order tickets on this page follow this choice' +
-      (prof === W.profile && SOURCE !== "sample" ? " (with any values you set yourself in config.json)" : "") + ". Saved in this browser. " +
+      (Object.keys(userOverrides()).length ? " (with the values you set yourself in Tools › Risk)" : prof === W.profile && SOURCE !== "sample" && !toolsOn() ? " (with any values you set yourself in config.json)" : "") + ". Saved in this browser. " +
       '<button class="linkbtn" data-quiz="1">' + (QUIZ.open ? "Close the quiz" : "Not sure? Take the 8-question quiz") + "</button></p>";
     if (QUIZ.open) {
       html += '<form class="quiz" id="' + id + '-quiz">' + W.quiz.map(function (q, i) {
@@ -1883,15 +2326,31 @@
       return crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: iterations, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, [use]);
     });
   }
+  // A backup holds your holdings and, since v2, the tools' files: the paper account, config.json (watchlist,
+  // settings you changed), desk plans and orders, alerts and signals.
   function backup(pass) {
     var stamp = todayISO();
-    if (!pass) return Promise.resolve(download("psx-holdings-backup-" + stamp + ".json", JSON.stringify({ format: "psx-desk-backup", v: 1, enc: "none", ledger: LEDGER }), "application/json"));
-    var salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), it = 310000;
-    return passKey(pass, salt, it, "encrypt").then(function (k) {
-      return crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, k, new TextEncoder().encode(JSON.stringify(LEDGER)));
-    }).then(function (ct) {
-      download("psx-holdings-backup-" + stamp + ".json", JSON.stringify({ format: "psx-desk-backup", v: 1, enc: "AES-256-GCM/PBKDF2-SHA256", iterations: it,
-        salt: b64(salt), iv: b64(iv), data: b64(new Uint8Array(ct)) }), "application/json");
+    return Promise.all([pyGet("pyfiles"), pyGet("paperview")]).then(function (x) {
+      var body = { ledger: LEDGER, files: x[0] || {}, paperview: x[1] || null };
+      if (!pass) return download("psx-holdings-backup-" + stamp + ".json", JSON.stringify(Object.assign({ format: "psx-desk-backup", v: 2, enc: "none" }, body)), "application/json");
+      var salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), it = 310000;
+      return passKey(pass, salt, it, "encrypt").then(function (k) {
+        return crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, k, new TextEncoder().encode(JSON.stringify(body)));
+      }).then(function (ct) {
+        download("psx-holdings-backup-" + stamp + ".json", JSON.stringify({ format: "psx-desk-backup", v: 2, enc: "AES-256-GCM/PBKDF2-SHA256", iterations: it,
+          salt: b64(salt), iv: b64(iv), data: b64(new Uint8Array(ct)) }), "application/json");
+      });
+    });
+  }
+  // The tools' files from a v2 backup: replace what this browser has.
+  function restoreFiles(body) {
+    if (!body || !body.files) return Promise.resolve("");
+    PY.files = null; PY.setup = null; if (PY.worker) { PY.worker.terminate(); PY.worker = null; }
+    PAPERVIEW = body.paperview || null;
+    try { USERCFG = body.files["config.json"] ? JSON.parse(body.files["config.json"]) : null; } catch (e) { USERCFG = null; }
+    return Promise.all([pySet("pyfiles", body.files), pySet("paperview", PAPERVIEW)]).then(function () {
+      var n = Object.keys(body.files).length;
+      return n ? " Plus " + n + " tool file" + (n > 1 ? "s" : "") + (PAPERVIEW ? " (your paper account among them)" : "") + "." : "";
     });
   }
   /** A backup, a ledger.json from portfolio.py, or a trades CSV. Backups and ledgers replace; CSV rows are added. */
@@ -1904,21 +2363,21 @@
       });
     }
     var o = JSON.parse(t);
-    var take = function (lg) {
+    var take = function (lg, body) {
       if (LEDGER.entries.length && !confirm("Replace the " + LEDGER.entries.length + " entries on this device with the " + lg.entries.length + " in the file?")) return "Nothing changed.";
       LEDGER = Ledger.importLedger(lg);
-      return saveLedger().then(function () { return "Loaded " + LEDGER.entries.length + " entries."; });
+      return restoreFiles(body).then(function (more) { return saveLedger().then(function () { return "Loaded " + LEDGER.entries.length + " entries." + more; }); });
     };
     if (o.format === "psx-desk-backup" && o.enc !== "none") {
       if (!pass) return Promise.reject(new Error("this backup is encrypted: type its passphrase in the box first"));
       return passKey(pass, unb64(o.salt), o.iterations, "decrypt").then(function (k) {
         return crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(o.iv) }, k, unb64(o.data));
-      }).then(function (pt) { return take(JSON.parse(new TextDecoder().decode(pt))); }, function (e) {
+      }).then(function (pt) { var b = JSON.parse(new TextDecoder().decode(pt)); return b.ledger ? take(b.ledger, b) : take(b); }, function (e) {
         if (e && /entries/.test(e.message || "")) throw e;
         throw new Error("that passphrase didn't open the backup");
       });
     }
-    return Promise.resolve(take(o.format === "psx-desk-backup" ? o.ledger : o));
+    return Promise.resolve(take(o.format === "psx-desk-backup" ? o.ledger : o, o.format === "psx-desk-backup" ? o : null));
   }
   var PASSBOX = "";   // the backup passphrase box keeps its text when the tab redraws (not stored anywhere)
   function holdingsIOHTML() {
@@ -1931,7 +2390,7 @@
       '<label class="small">Backup passphrase <input type="password" id="fd-pass" autocomplete="new-password" placeholder="for encrypted backups" style="width:100%;max-width:320px"></label>' +
       '<div class="row-actions"><button class="btn" id="fd-backup">Save backup</button><button class="btn ghost" id="fd-import">Restore or import…</button></div>' +
       '<div class="row-actions"><button class="btn ghost" id="fd-csv">Export trades CSV</button><button class="btn ghost" id="fd-ledger">Export ledger.json</button>' +
-      '<button class="btn danger" id="fd-erase">Erase holdings on this device</button></div><p id="fd-msg"></p>' +
+      '<button class="btn danger" id="fd-erase">Erase my data on this device</button></div><p id="fd-msg"></p>' +
       '<p class="note"><b>Save backup</b>: everything, encrypted with the passphrase above (leave it empty for a plain file). <b>Restore or import</b> takes a backup, ' +
       "a <code>ledger.json</code> from <code>portfolio.py</code> (Termux or computer) or a trades CSV (<code>" + Ledger.FIELDS.join(",") + "</code>). " +
       "<b>ledger.json</b> goes the other way: put it in your <code>pkmarket/portfolio/</code> folder and the Python tools see the same holdings.</p>" +
@@ -1954,8 +2413,9 @@
       inp.click();
     };
     $("fd-erase").onclick = function () {
-      if (!confirm("Erase every holding and entry on this device? Save a backup first if unsure.")) return;
-      LEDGER = Ledger.empty(); saveLedger().then(function () { fmsg("fd-msg", "Erased.", true); });
+      if (!confirm("Erase every holding and entry on this device, and the paper account and tool files? Save a backup first if unsure.")) return;
+      LEDGER = Ledger.empty();
+      restoreFiles({ files: {}, paperview: null }).then(saveLedger).then(function () { fmsg("fd-msg", "Erased.", true); });
     };
   }
   function renderFeedData() {

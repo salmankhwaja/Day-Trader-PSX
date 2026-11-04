@@ -1389,6 +1389,88 @@ class TestWebFeed(unittest.TestCase):
         self.assertEqual(files["2026-10"]["days"]["2026-10-30"]["c"], [101.0])
 
 
+class TestWebRun(unittest.TestCase):
+    """webrun.py: the website runs pkm.py's tools in the browser (Pyodide) on the feed's prices. Here the same
+    calls run in normal Python: build the data folder from a feed, trade on paper, propose, run the menu."""
+
+    def setUp(self):
+        import time
+        try:
+            import cryptography  # noqa: F401
+        except ImportError:
+            self.skipTest("pip install cryptography")
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import web_feed
+        import webrun
+        self.R = webrun
+        self.feed, self.home = tempfile.mkdtemp(), tempfile.mkdtemp()
+        fake = _fake_portal(time.time())
+        self.patches = [unittest.mock.patch.object(web_feed, "mufap_get", lambda u, timeout=60: fake(pkdata.MUFAP_URL)),
+                        unittest.mock.patch.object(C, "_fetch", lambda url, timeout, data, headers: fake(url)),
+                        unittest.mock.patch.object(web_feed, "FEED", self.feed), unittest.mock.patch.object(web_feed, "MIN_QUOTES", 5),
+                        unittest.mock.patch.object(web_feed, "MIN_FUNDS", 5), unittest.mock.patch.object(C, "http_get", fake),
+                        unittest.mock.patch.dict(os.environ, {"PSX_DATA_KEY": "test passphrase"})]
+        for x in self.patches:
+            x.start()
+        run(web_feed.main, [])
+        st = web_feed.Store("test passphrase")
+        self.months = {n[:-9]: st.load("psx/" + n) for n in os.listdir(os.path.join(self.feed, "psx"))}
+        self.meta = st.load("meta.enc.json")
+
+    def tearDown(self):
+        for x in self.patches:
+            x.stop()
+        shutil.rmtree(self.feed)
+        shutil.rmtree(self.home)
+
+    def test_menu_and_paper_trading(self):
+        R = self.R
+        R.setup(self.home, json.dumps(self.months), json.dumps(self.meta), {},
+                {"watchlist": ["SYN07", "SYN10", "SYN11", "SYN03"], "risk_profile": "moderate"})
+        self.assertTrue(os.path.exists(C.price_path(self.home, "SYN07")))
+        self.assertEqual(R.run("paper", ["init", "--cash", "500000"])["code"], 0)
+        r = R.run("paper", ["buy", "SYN07", "100"])
+        self.assertIn("BUY  SYN07 100", r["out"])
+        self.assertIn("not enough cash", R.run("paper", ["buy", "SYN11", "100000"])["out"])
+        self.assertEqual(R.run("propose", ["run", "--pick", "2", "--no-fetch"])["code"], 0)
+        self.assertIn("| Time | Side |", R.run("paper", ["log"])["out"])          # a readable table, not JSON lines
+        view = json.loads(R.paper_data())
+        self.assertEqual(view["portfolio"]["starting_cash"], 500000)
+        self.assertEqual([h["symbol"] for h in view["portfolio"]["holdings"]], ["SYN07"])
+        self.assertIsNotNone(view["proposal"])
+        # the rest of the menu, on the feed's prices
+        for tool, args, want in [("rank", ["stocks", "--top", "3", "--no-fetch"], "PSX ranking"), ("portfolio", ["check", "SYN07", "--no-fetch"], "VERDICT"),
+                                 ("scanner", ["daily", "--no-fetch"], "Daily setups"), ("risk", ["set", "max_holdings", "6"], "max_holdings = 6"),
+                                 ("sip", ["plan", "--monthly", "25000", "--years", "5"], "SIP of PKR 25,000"),
+                                 ("exitplan", ["plan", "SYN07", "--stop", "vol", "--target", "2R", "--style", "swing", "--write"], "PLAN SYN07"),
+                                 ("budget", ["--write", "--account", "500000"], "BUDGET SYN07"), ("broker", ["show"], "TICKETS")]:
+            self.assertIn(want, R.run(tool, args)["out"], tool)
+        files = R.user_files()
+        self.assertIn("paper/portfolio.json", files)
+        self.assertIn("trader/orders.json", files)
+        self.assertEqual(json.loads(files["config.json"])["max_holdings"], 6)
+        self.assertFalse([k for k in files if k.startswith(("psx/", "companies/", "mufap/"))])   # market data isn't yours to keep
+        # a later visit: the same files come back and the account is still there
+        home2 = tempfile.mkdtemp()
+        try:
+            R.setup(home2, json.dumps(self.months), json.dumps(self.meta), files)
+            self.assertIn("SYN07", R.run("paper", ["status"])["out"])
+        finally:
+            shutil.rmtree(home2)
+        # tools that need PSX live can't reach it from a page: a message, never an exception
+        with unittest.mock.patch.object(C, "http_get", side_effect=OSError("no network")):
+            r = R.run("scanner", ["movers"])
+        self.assertNotEqual(r["code"], 0)
+        self.assertTrue(r["out"].strip())
+
+    def test_worker_loads_every_script(self):
+        import re
+        js = open(os.path.join(ROOT, "psx-mufap", "dashboard", "pyworker.js"), encoding="utf-8").read()
+        listed = re.findall(r'"([a-z_]+)"', js[js.index("var SCRIPTS"):js.index("];", js.index("var SCRIPTS"))])
+        have = sorted(f[:-3] for f in os.listdir(os.path.join(ROOT, "psx-mufap", "scripts")) if f.endswith(".py"))
+        self.assertEqual(sorted(listed), have, "update SCRIPTS in pyworker.js")
+
+
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
 class TestPriceOnDate(unittest.TestCase):
     """The trade form fills the price from the date: that day's close, else the last trading day before."""

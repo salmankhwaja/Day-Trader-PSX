@@ -271,6 +271,11 @@ MUFAP prices for you, and you add your holdings on the website. Live copy:
    your buys and sells, funds and cash. Old trades are easy: pick the date and the price fills in
    with that day's close (fix it to your actual fill if it differs). Funds do the same with that
    day's MUFAP NAV, from the day the feed started keeping them.
+6. **Everything else is there too.** *Tools* is the whole `pkm.py` menu (rankings, advice, risk,
+   SIP, check a share, the day-trading desk...) and *Paper* is a paper account to practise with.
+   They run the same Python scripts, in your browser; the first use downloads Python (about 6 MB,
+   once). Your paper trades stay on your device, like your holdings
+   ([details](docs/REFERENCE.md#every-pkmpy-tool-on-the-website-tools-and-paper)).
 
 **Prices:** on weekdays at 10:37, 13:07, after the close and 06:23 the next morning, plus MUFAP NAVs
 at 22:23 (and Saturday), all Pakistan time. Change any of it, and the timeouts, in

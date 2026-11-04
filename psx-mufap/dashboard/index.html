@@ -262,6 +262,14 @@ input.numeric { font-variant-numeric: tabular-nums; }
 .loader ol { padding-left: 20px; color: var(--text-2); }
 .loader code, .data-card code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 12px; }
 .btn.big { padding: 11px 16px; font-weight: 600; font-size: 15px; }
+.toolgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; margin-top: 8px; }
+.toolgrid .btn { text-align: left; padding: 8px 10px; }
+.pyout { margin-top: 12px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.pyout .ln { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+.pyout .gap { height: 8px; }
+.pyout .tablewrap { margin: 6px 0; }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .btn.danger { background: transparent; color: var(--bad-text); border: 1px solid var(--bad); }
 .privacy { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
   border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--text-2); margin: 10px 0; }
@@ -299,6 +307,7 @@ input.numeric { font-variant-numeric: tabular-nums; }
     <button data-v="dividends"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v12"/></svg></span>Dividends</button>
     <button data-v="funds"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10l7-5 7 5v11"/><path d="M9 21v-6h6v6"/></svg></span>Funds</button>
     <button data-v="risk"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></span>Risk &amp; SIP</button>
+    <button data-v="tools"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>Tools</button>
     <button data-v="data"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg></span>Data</button>
   </nav>
 </header>
@@ -363,10 +372,10 @@ input.numeric { font-variant-numeric: tabular-nums; }
     <div class="card"><h2>What to do now: your holdings</h2><div class="tablewrap"><table id="mi-hold"></table></div>
       <div class="note" id="mi-note"></div></div>
     <div class="card" style="margin-top:12px" id="mi-fundcard"><h2>Your mutual funds</h2><div class="tablewrap"><table id="mi-funds"></table></div>
-      <div class="note">Ranked against their own MUFAP category on 30-day, 90-day and 1-year returns. Fund ideas by risk profile: funds.py advise --risk low|medium|high.</div></div>
+      <div class="note">Ranked against their own MUFAP category on 30-day, 90-day and 1-year returns. Fund ideas by risk profile: <b>Tools › Fund advice</b> (or funds.py advise --risk low|medium|high).</div></div>
     <div class="card" style="margin-top:12px" id="mi-ticketcard"><h2>Order tickets for your broker's app</h2><div class="tablewrap"><table id="mi-tickets"></table></div>
       <div class="note">Type these into your broker's app yourself: nothing is sent from here. A stop-loss order waits for its trigger, then becomes a limit order at its limit price.
-        Some apps (Finqalab, for one) keep a stop-loss for one day only, so it has to be placed again each morning. From the last <code>portfolio.py advise</code> run.</div></div>
+        Some apps (Finqalab, for one) keep a stop-loss for one day only, so it has to be placed again each morning. Plan a new trade and get its tickets in <b>Tools › Day-trading desk</b>.</div></div>
     <div class="card" style="margin-top:12px"><h2>Buy ideas, with stop-loss</h2><div class="tablewrap"><table id="mi-buy"></table></div>
       <div class="note" id="mi-buynote"></div></div>
     <div class="grid" style="margin-top:12px">
@@ -380,6 +389,7 @@ input.numeric { font-variant-numeric: tabular-nums; }
   </section>
 
   <section class="view" id="v-portfolio">
+    <div id="pf-actions"></div>
     <div class="kpis" id="pf-kpis"></div>
     <div class="grid">
       <div class="card"><h2>Account value vs KSE-100</h2><div class="chart"><canvas id="pf-equity"></canvas></div><div class="note" id="pf-eqnote"></div></div>
@@ -410,7 +420,7 @@ input.numeric { font-variant-numeric: tabular-nums; }
     <div class="grid">
       <div class="card"><h2>Allocation vs your target</h2><div class="chart"><canvas id="rk-alloc"></canvas></div><ul class="list" id="rk-flags"></ul></div>
       <div class="card"><h2>Your risk profile</h2><div class="tablewrap"><table id="rk-settings"></table></div>
-        <div class="note">Change it: risk.py quiz (8 questions) or risk.py profile NAME; fine-tune one value: risk.py set KEY VALUE.</div></div>
+        <div class="note">Change it with the buttons above or the 8-question quiz; fine-tune one value in <b>Tools › Risk › change one setting</b> (command line: risk.py set KEY VALUE).</div></div>
     </div>
     <div class="card" style="margin-top:12px"><h2>SIP calculator</h2>
       <div class="filters">
@@ -436,6 +446,7 @@ input.numeric { font-variant-numeric: tabular-nums; }
       <div class="card"><h2>Ranking</h2><div class="tablewrap"><table id="fu-table"></table></div></div>
     </div>
   </section>
+  <section class="view" id="v-tools"></section>
   <section class="view" id="v-data">
     <div class="card data-card" id="dt-card"></div>
   </section>

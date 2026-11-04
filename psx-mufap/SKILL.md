@@ -264,7 +264,10 @@ Rules:
 `portfolio.py` is a ledger of what the user actually bought and sold, at which broker, and
 what it cost. It never contacts a broker. Keep it separate from the paper account.
 The website (GitHub Pages) keeps the same ledger in the browser: its **Data › Export ledger.json**
-goes into `<home>/portfolio/ledger.json`, and the user can import yours there; the format is identical.
+goes into `<home>/portfolio/ledger.json`, and the user can import yours there; the format is identical. The website's **Tools** tab runs these same scripts in the browser (Pyodide, via `webrun.py`) on
+the feed's prices, and its **Paper** tab is `paper.py`/`propose.py`; when a user on the website asks how
+to do something, point them to the matching Tools item rather than a command. `paper.py log` prints a
+table (`--json` for the stored lines).
 
 Recording trades the user tells you about ("I bought 500 OGDC at 298 through AKD yesterday"):
 - Ask for anything missing that matters: the date, the broker, and the actual charges from the

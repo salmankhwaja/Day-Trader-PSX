@@ -47,6 +47,7 @@ import common as C  # noqa: E402
 import freshness as FR  # noqa: E402
 import pkdata  # noqa: E402
 import psxinfo as P  # noqa: E402
+import webhome  # noqa: E402
 
 FEED = os.path.join(ROOT, "feed")
 ITER = 310000                 # PBKDF2 iterations (same as PK Wealth)
@@ -212,16 +213,7 @@ def put_rows(months, sym, rows):
         d["v"][i] = int(r.get("volume") or 0)
 
 
-def rows_by_symbol(months):
-    out = {}
-    for m in sorted(months.values(), key=lambda m: m["month"]):
-        for day in sorted(m["days"]):
-            d = m["days"][day]
-            for i, s in enumerate(m["syms"]):
-                if i < len(d["c"]) and d["c"][i] is not None:
-                    out.setdefault(s, []).append({"date": day, "open": d["c"][i], "close": d["c"][i],
-                                                  "volume": d["v"][i] or 0})
-    return out
+rows_by_symbol = webhome.rows_by_symbol
 
 
 def wanted_months(today):
@@ -337,7 +329,8 @@ def fetch_companies(meta, errors, traded, budget):
         try:
             page = C._fetch(C.PSX_HOST + "/company/" + s, 30, None, {"Accept": "text/html"})
             c = P.parse_company(page, s)
-            comps[s] = {k: c.get(k) for k in ("name", "sector", "tags", "pe", "low_52w", "high_52w", "payouts", "fetched")}
+            comps[s] = {k: c.get(k) for k in ("name", "sector", "tags", "pe", "low_52w", "high_52w", "payouts", "fetched",
+                                              "announcements", "financials")}   # news, analyst, insiders on the website
             failed.pop(s, None)
             done += 1
         except Exception as e:  # noqa: BLE001
@@ -419,37 +412,7 @@ def build_summary(months, meta, errors):
     import portfolio as PF
     h = tempfile.mkdtemp(prefix="pkm-feed-")
     try:
-        cfg_user = {"watchlist": [], "benchmark": INDEX, "risk_profile": "moderate"}
-        with open(os.path.join(h, "config.json"), "w") as f:
-            json.dump(cfg_user, f)
-        for s, rows in rows_by_symbol(months).items():
-            C.write_prices(C.price_path(h, s), rows)
-        shares, comps = meta.get("shares", {}), meta.get("companies", {})
-        uni = {s: {"name": (comps.get(s) or {}).get("name") or v.get("name"), "price": None, "shares_m": None,
-                   "mcap_m": None, "tags": (comps.get(s) or {}).get("tags") or [], "shariah": bool(v.get("shariah"))}
-               for s, v in shares.items() if s != INDEX}
-        with open(os.path.join(h, "universe.json"), "w") as f:
-            json.dump(uni, f)
-        for s, v in shares.items():
-            c = dict(comps.get(s) or {})
-            c.update(symbol=s, name=c.get("name") or v.get("name"), sector=c.get("sector") or v.get("sector"))
-            c.setdefault("payouts", [])
-            P.save_company(h, c)
-        with open(os.path.join(h, "payouts.json"), "w") as f:
-            json.dump(meta.get("payouts") or [], f)
-        mf = meta.get("mufap")
-        if mf:
-            pkdata.save_mufap(h, mf["date"], mf["funds"])
-            hist = os.path.join(h, "mufap", "nav_history.csv")   # the NAV history save_mufap keeps
-            cat = {f["fund"]: f["category"] for f in mf["funds"]}
-            rows = [(d, name, cat.get(name, ""), nav) for name, hh in meta.get("navs", {}).items() for d, nav in hh.items()]
-            if rows:
-                import csv
-                with open(hist, "w", newline="", encoding="utf-8") as f:
-                    w = csv.writer(f)
-                    w.writerow(["date", "fund", "category", "nav"])
-                    for r in sorted(rows):
-                        w.writerow(r)
+        webhome.make_home(h, months, meta, {"watchlist": [], "benchmark": INDEX, "risk_profile": "moderate"})
         cfg = C.load_config(h)
         data = dashboard.build_data(h, cfg, all_=True, days=1)
         for k in ("series", "calendar", "mine", "portfolio", "proposal"):
