@@ -332,4 +332,5 @@ CyberWatch's clock in the header.
   (US markets), rebuilt for PSX.
 - **Contributing:** issues and pull requests welcome; see [CLAUDE.md](CLAUDE.md) for the rules
   (tests pass, docs updated, no market data in the repo).
-- **Licence:** [MIT](LICENSE). By [Khwaja Muhammad Salman](https://github.com/salmankhwaja).
+- **Licence:** [MIT](LICENSE). By [Salman, Khwaja](https://github.com/salmankhwaja) (Namlas).
+
