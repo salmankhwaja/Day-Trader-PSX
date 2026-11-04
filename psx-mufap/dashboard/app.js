@@ -795,16 +795,22 @@
     var syms = (D.stocks || []).map(function (x) { return '<option value="' + esc(x.symbol) + '">' + esc(x.name || "") + "</option>"; }).join("");
     var held = ((D.portfolio || {}).holdings || []);
     var funds = Object.keys(fundIndex()).sort().map(function (k) { return '<option value="' + esc(k) + '">'; }).join("");
+    var dateBox = '<label>Date <input id="pa-date" type="date" max="' + todayISO() + '" value="' + todayISO() + '" required></label>';
     var go = function (label) { return '<div class="row-actions"><button class="btn" type="submit">' + label + '</button><button class="btn ghost" type="button" data-pa="close">Cancel</button></div>'; };
     var f = {
-      buy: '<label>Symbol <input id="pa-sym" list="pa-syms" required autocapitalize="characters"></label><label>Shares <input id="pa-qty" type="number" required></label>' +
-        '<label>Price (blank = last close) <input id="pa-px" type="number" step="any"></label>' + go("Buy") + '<datalist id="pa-syms">' + syms + "</datalist>",
-      sell: '<label>Holding <select id="pa-sym">' + held.filter(function (h) { return h.kind === "stock"; }).map(function (h) { return '<option value="' + esc(h.symbol) + '">' + esc(h.symbol) + " (" + num(h.qty) + ")</option>"; }).join("") + "</select></label>" +
-        '<label>Shares (blank = all) <input id="pa-qty" type="number"></label><label>Price (blank = last close) <input id="pa-px" type="number" step="any"></label>' + go("Sell"),
-      invest: '<label>Fund <input id="pa-fund" list="pa-funds" required></label><label>Amount (PKR) <input id="pa-amt" type="number" required></label>' +
-        '<label>Load % <input id="pa-fee" type="number" step="any" placeholder="0"></label>' + go("Invest") + '<datalist id="pa-funds">' + funds + "</datalist>",
+      buy: '<label>Symbol <input id="pa-sym" list="pa-syms" required autocapitalize="characters"></label>' + dateBox +
+        '<label>Price per share <input id="pa-px" type="number" step="any" required placeholder="filled from the date"></label>' +
+        '<label>Shares <input id="pa-qty" type="number" required></label><p class="small muted" id="pa-note"></p>' + go("Buy") + '<datalist id="pa-syms">' + syms + "</datalist>",
+      sell: '<label>Holding <select id="pa-sym">' + held.filter(function (h) { return h.kind === "stock"; }).map(function (h) { return '<option value="' + esc(h.symbol) + '">' + esc(h.symbol) + " (" + num(h.qty) + " shares)</option>"; }).join("") + "</select></label>" +
+        dateBox + '<label>Price per share <input id="pa-px" type="number" step="any" required placeholder="filled from the date"></label>' +
+        '<label>Shares (blank = all) <input id="pa-qty" type="number"></label><p class="small muted" id="pa-note"></p>' + go("Sell"),
+      invest: '<label>Fund <input id="pa-fund" list="pa-funds" required></label>' + dateBox +
+        '<label>NAV <input id="pa-nav" type="number" step="any" required placeholder="filled from the date"></label>' +
+        '<label>Amount (PKR) <input id="pa-amt" type="number" required></label><label>Load % <input id="pa-fee" type="number" step="any" placeholder="0"></label>' +
+        '<p class="small muted" id="pa-note"></p>' + go("Invest") + '<datalist id="pa-funds">' + funds + "</datalist>",
       redeem: '<label>Fund <select id="pa-fund">' + held.filter(function (h) { return h.kind === "fund"; }).map(function (h) { return '<option value="' + esc(h.symbol) + '">' + esc(h.symbol) + "</option>"; }).join("") + "</select></label>" +
-        '<label>Amount (blank = all) <input id="pa-amt" type="number"></label>' + go("Redeem"),
+        dateBox + '<label>NAV <input id="pa-nav" type="number" step="any" required placeholder="filled from the date"></label>' +
+        '<label>Amount (blank = all) <input id="pa-amt" type="number"></label><p class="small muted" id="pa-note"></p>' + go("Redeem"),
       propose: '<label>Shares to pick <input id="pa-pick" type="number" value="5" min="1"></label><label>Screen <select id="pa-all"><option value="">my watchlist</option><option value="1">every liquid share</option></select></label>' +
         '<label class="ck"><input type="checkbox" id="pa-sh"> Shariah only</label><label>Sector contains <input id="pa-sector" placeholder="any"></label>' +
         '<p class="small muted">Backtests each candidate (three strategies, tuned on the first 70% of its history, tested on the last 30%) and proposes those that passed. Every liquid share takes a minute or two.</p>' +
@@ -846,8 +852,59 @@
       };
     });
   }
+  // Paper trades on a past date: the price fills in from that day's close (shares) or NAV (funds), the last
+  // one before it for a weekend or holiday; a price you type stays. Below it, what the trade costs or brings.
+  function paperPrices(f) {
+    var kind = f.getAttribute("data-kind"), stock = kind === "buy" || kind === "sell", box = $(stock ? "pa-px" : "pa-nav"), auto = null, ask = 0;
+    var P = D.portfolio || {}, bps = ((USERCFG || {}).cost_bps_per_side != null ? USERCFG.cost_bps_per_side : 20) / 10000;
+    var held = function (name) { return (P.holdings || []).filter(function (h) { return h.symbol === name; })[0]; };
+    var calc = function (r) {
+      var px = nv("pa-" + (stock ? "px" : "nav")), note = $("pa-note"), date = $("pa-date").value, name = $(stock ? "pa-sym" : "pa-fund").value.trim();
+      var head = r ? (stock ? "Close" : "MUFAP NAV") + " on " + r.date + (r.date !== date ? " (the last before " + date + ")" : "") + ": " + r.close + (box.value && box.value !== auto ? " (your price kept)" : "") + ". " :
+        name && date ? "No " + (stock ? "close" : "NAV") + " on file for " + name + " on " + date + "; type the price. " : "";
+      var line = "";
+      if (kind === "buy" && px > 0) {
+        var q = nv("pa-qty"), most = Math.floor((P.cash || 0) / (px * (1 + bps)));
+        line = q > 0 ? groupNum(String(q)) + " × " + px + " = " + pkr(q * px) + " + fee " + pkr(q * px * bps) + " = " + pkr(q * px * (1 + bps)) +
+          ((P.cash || 0) < q * px * (1 + bps) ? " · more than your cash (" + pkr(P.cash) + ")" : " · cash left " + pkr(P.cash - q * px * (1 + bps))) :
+          "Your cash " + pkr(P.cash || 0) + " buys up to " + num(most) + " shares at this price.";
+      } else if (kind === "sell" && px > 0) {
+        var h = held(name) || {}, qs = nv("pa-qty") || h.qty || 0, avg = h.qty ? h.cost / h.qty : 0, gross = qs * px;
+        line = "You hold " + num(h.qty || 0) + " (avg cost " + num(avg, 2) + "). Selling " + num(qs) + " brings " + pkr(gross * (1 - bps)) + " after fee; profit or loss about " + pkr(gross * (1 - bps) - qs * avg) + ".";
+      } else if (kind === "invest" && px > 0) {
+        var a = nv("pa-amt"), ld = nv("pa-fee");
+        line = a > 0 ? groupNum(String(a)) + (ld ? " less " + ld + "% load" : "") + " ÷ " + px + " = " + num(a * (1 - ld / 100) / px, 4) + " units" + (a > (P.cash || 0) ? " · more than your cash (" + pkr(P.cash) + ")" : "") + "." : "Your cash: " + pkr(P.cash || 0) + ".";
+      } else if (kind === "redeem" && px > 0) {
+        var hf = held(name) || {}, val = (hf.units || 0) * px, am = nv("pa-amt") || val;
+        line = "You hold " + num(hf.units || 0, 4) + " units, worth " + pkr(val) + " at this NAV. Redeeming " + pkr(Math.min(am, val)) + " (" + num(Math.min(am, val) / px, 4) + " units).";
+      }
+      note.textContent = head + line;
+    };
+    var last = null;
+    var pick = function () {
+      var name = $(stock ? "pa-sym" : "pa-fund").value.trim(), date = $("pa-date").value, n = ++ask;
+      if (!name || !date) { calc(null); return; }
+      var got = stock ? Promise.resolve(WebFeed.closeOn(FEED && FEED.months, D, name, date)) : navOn(name, date).then(function (r) {
+        var x = fundIndex()[name]; return r || (x && x.nav && date >= x.date ? { date: x.date, close: x.nav } : null);
+      });
+      got.then(function (r) {
+        if (n !== ask) return;
+        last = r;
+        if (r && (!box.value || box.value === auto)) box.value = auto = groupNum(r.close);
+        else if (!r && box.value === auto) { box.value = ""; auto = null; }
+        f.setAttribute("data-auto", auto || "");
+        calc(r);
+      });
+    };
+    $(stock ? "pa-sym" : "pa-fund").addEventListener("change", pick);
+    $("pa-date").addEventListener("change", pick);
+    box.addEventListener("input", function () { if (box.value === "") auto = null; calc(last); });
+    ["pa-qty", "pa-amt", "pa-fee"].forEach(function (id) { if ($(id)) $(id).addEventListener("input", function () { calc(last); }); });
+    pick();
+  }
   function wirePaperForm() {
     var f = $("pa-form"); if (!f) return;
+    if (/^(buy|sell|invest|redeem)$/.test(f.getAttribute("data-kind"))) paperPrices(f);
     var val = function (id) { var el = $(id); return el ? String(el.value).replace(/,/g, "").trim() : ""; };
     var apply = "0";
     Array.prototype.forEach.call(f.querySelectorAll("button[data-apply]"), function (b) { b.onclick = function () { apply = b.getAttribute("data-apply"); }; });
@@ -855,10 +912,13 @@
     f.onsubmit = function (e) {
       e.preventDefault();
       var k = f.getAttribute("data-kind"), a = apply === "1", j;
-      if (k === "buy") j = [["paper", ["buy", val("pa-sym").toUpperCase(), val("pa-qty")].concat(val("pa-px") ? ["--price", val("pa-px")] : [])]];
-      else if (k === "sell") j = [["paper", ["sell", val("pa-sym"), val("pa-qty") || "all"].concat(val("pa-px") ? ["--price", val("pa-px")] : [])]];
-      else if (k === "invest") j = [["paper", ["invest", val("pa-fund"), val("pa-amt")].concat(val("pa-fee") ? ["--fee-pct", val("pa-fee")] : [])]];
-      else if (k === "redeem") j = [["paper", ["redeem", val("pa-fund"), val("pa-amt") || "all"]]];
+      var when = val("pa-date") && val("pa-date") !== todayISO() ? ["--date", val("pa-date")] : [];
+      // a price filled from the date is left to the tools, so the trade records the day the close is from
+      var px = val("pa-px") && !(when.length && $("pa-px").value === f.getAttribute("data-auto")) ? ["--price", val("pa-px")] : [];
+      if (k === "buy") j = [["paper", ["buy", val("pa-sym").toUpperCase(), val("pa-qty")].concat(px, when)]];
+      else if (k === "sell") j = [["paper", ["sell", val("pa-sym"), val("pa-qty") || "all"].concat(px, when)]];
+      else if (k === "invest") j = [["paper", ["invest", val("pa-fund"), val("pa-amt")].concat(val("pa-nav") ? ["--nav", val("pa-nav")] : [], val("pa-fee") ? ["--fee-pct", val("pa-fee")] : [], when)]];
+      else if (k === "redeem") j = [["paper", ["redeem", val("pa-fund"), val("pa-amt") || "all"].concat(val("pa-nav") ? ["--nav", val("pa-nav")] : [], when)]];
       else if (k === "propose") j = [["propose", ["run", "--pick", val("pa-pick") || "5", "--no-fetch"].concat(val("pa-all") ? ["--all"] : [], $("pa-sh").checked ? ["--shariah"] : [],
         val("pa-sector") ? ["--sector", val("pa-sector")] : [], a ? ["--apply"] : [])]];
       else if (k === "review") j = [["propose", ["review", "--stop-loss", val("pa-sl") || "15", "--no-fetch"].concat(a ? ["--apply"] : [])]];

@@ -2,10 +2,10 @@
 """Paper trading: a pretend PKR account for PSX stocks and MUFAP funds. No real orders, ever.
 
   paper.py init [--cash 1000000] [--force]       open (or reset) the account
-  paper.py buy SYMBOL QTY [--price P]            buy shares at P, or at the latest close
-  paper.py sell SYMBOL QTY|all [--price P]
-  paper.py invest "FUND NAME" AMOUNT             buy fund units at the latest MUFAP NAV
-  paper.py redeem "FUND NAME" AMOUNT|all
+  paper.py buy SYMBOL QTY [--price P] [--date D] buy shares at P, or at the latest close (or D's close)
+  paper.py sell SYMBOL QTY|all [--price P] [--date D]
+  paper.py invest "FUND NAME" AMOUNT [--nav N] [--date D]   fund units at the latest MUFAP NAV (or D's)
+  paper.py redeem "FUND NAME" AMOUNT|all [--nav N] [--date D]
   paper.py status                                holdings, value, profit/loss, vs KSE100
   paper.py log [--last 20] [--json]              trade history
   paper.py mark                                  record today's account value (the daily service
@@ -78,6 +78,46 @@ def staleness(asof):
     return " (STALE: %d days old, refresh with pkdata.py)" % days if days > 5 else ""
 
 
+def close_on(h, symbol, date):
+    """(close, date) on `date`, or on the last trading day before it (10 days at most), or (None, None)."""
+    p = C.price_path(h, symbol)
+    if not os.path.exists(p):
+        return None, None
+    earliest = (dt.date.fromisoformat(date) - dt.timedelta(days=10)).isoformat()
+    for r in reversed(C.read_prices(p)):
+        if r["date"] <= date:
+            return (r["close"], r["date"]) if r["date"] >= earliest else (None, None)
+    return None, None
+
+
+def nav_on(h, fund, date):
+    """(NAV, date) of a fund on `date` or the last report before it (10 days at most), from MUFAP's NAV history."""
+    import csv
+    hist = os.path.join(h, "mufap", "nav_history.csv")
+    if not os.path.exists(hist):
+        return None, None
+    earliest = (dt.date.fromisoformat(date) - dt.timedelta(days=10)).isoformat()
+    best = None
+    with open(hist, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            if r["fund"] == fund and earliest <= r["date"] <= date and (best is None or r["date"] > best[1]):
+                best = (float(r["nav"]), r["date"])
+    return best or (None, None)
+
+
+def check_date(date):
+    """A trade date: YYYY-MM-DD, not in the future."""
+    if not date:
+        return None
+    try:
+        d = dt.date.fromisoformat(date)
+    except ValueError:
+        raise ValueError("date must be YYYY-MM-DD, not %r" % date)
+    if d > dt.date.today():
+        raise ValueError("%s is in the future" % date)
+    return date
+
+
 def find_fund(h, name):
     date, funds = fund_rows(h)
     exact = [f for f in funds if f["fund"].lower() == name.lower()]
@@ -90,16 +130,19 @@ def find_fund(h, name):
     return hits[0]
 
 
-def book(pf, entry):
-    entry["time"] = now()
+def book(pf, entry, date=None):
+    entry["time"] = date or now()   # a past trade (--date) is stamped with its day
     pf["trades"].append(entry)
+    if date:   # keep the history in date order
+        pf["trades"].sort(key=lambda t: t.get("time") or "")
 
 
-def do_buy(h, cfg, pf, symbol, qty, price=None, note="", meta=None):
+def do_buy(h, cfg, pf, symbol, qty, price=None, note="", meta=None, date=None):
     symbol = symbol.upper()
-    px, asof = (price, "given") if price else stock_price(h, symbol)
+    date = check_date(date)
+    px, asof = (price, date or "given") if price else close_on(h, symbol, date) if date else stock_price(h, symbol)
     if px is None:
-        raise ValueError("no price for %s: run `pkdata.py psx %s` or pass --price" % (symbol, symbol))
+        raise ValueError("no price for %s%s: run `pkdata.py psx %s` or pass --price" % (symbol, " on " + date if date else "", symbol))
     lot = int(cfg.get("lot_size") or 1)
     qty = int(qty) // lot * lot
     if qty <= 0:
@@ -109,26 +152,31 @@ def do_buy(h, cfg, pf, symbol, qty, price=None, note="", meta=None):
     if gross + fee > pf["cash"] + 1e-6:
         raise ValueError("not enough cash: need %s, have %s" % (C.fmt_pkr(gross + fee), C.fmt_pkr(pf["cash"])))
     pos = pf["positions"].setdefault(symbol, {"kind": "stock", "qty": 0, "cost": 0.0,
-                                              "opened": dt.date.today().isoformat()})
+                                              "opened": date or dt.date.today().isoformat()})
+    if date and pos.get("opened", "9") > date:
+        pos["opened"] = date
     if meta:  # e.g. the strategy that proposed it, so `propose.py review` knows when to exit
         pos["meta"] = meta
     pos["qty"] += qty
     pos["cost"] += gross + fee
     pf["cash"] -= gross + fee
     book(pf, {"side": "buy", "symbol": symbol, "qty": qty, "price": px, "price_date": asof,
-              "fee": round(fee, 2), "note": note})
-    return "BUY  %s %d @ %.2f (%s)%s fee %s" % (symbol, qty, px, asof, staleness(asof), C.fmt_pkr(fee))
+              "fee": round(fee, 2), "note": note}, date)
+    return "BUY  %s %d @ %.2f (%s)%s fee %s" % (symbol, qty, px, asof, "" if date else staleness(asof), C.fmt_pkr(fee))
 
 
-def do_sell(h, cfg, pf, symbol, qty, price=None, note=""):
+def do_sell(h, cfg, pf, symbol, qty, price=None, note="", date=None):
     symbol = symbol.upper()
+    date = check_date(date)
     pos = pf["positions"].get(symbol)
     if not pos or pos.get("kind") != "stock" or pos["qty"] <= 0:
         raise ValueError("no %s shares to sell (no short selling in this account)" % symbol)
+    if date and pos.get("opened") and date < pos["opened"]:
+        raise ValueError("%s was bought on %s: a sale can't be dated %s" % (symbol, pos["opened"], date))
     qty = pos["qty"] if str(qty).lower() == "all" else min(int(qty), pos["qty"])
-    px, asof = (price, "given") if price else stock_price(h, symbol)
+    px, asof = (price, date or "given") if price else close_on(h, symbol, date) if date else stock_price(h, symbol)
     if px is None:
-        raise ValueError("no price for %s: pass --price" % symbol)
+        raise ValueError("no price for %s%s: pass --price" % (symbol, " on " + date if date else ""))
     gross = qty * px
     fee = gross * cfg["cost_bps_per_side"] / 10000.0
     cost_part = pos["cost"] * qty / pos["qty"]
@@ -139,8 +187,8 @@ def do_sell(h, cfg, pf, symbol, qty, price=None, note=""):
         del pf["positions"][symbol]
     pf["cash"] += gross - fee
     book(pf, {"side": "sell", "symbol": symbol, "qty": qty, "price": px, "price_date": asof,
-              "fee": round(fee, 2), "realized": round(pnl, 2), "note": note})
-    return "SELL %s %d @ %.2f (%s)%s fee %s, realised %s" % (symbol, qty, px, asof, staleness(asof),
+              "fee": round(fee, 2), "realized": round(pnl, 2), "note": note}, date)
+    return "SELL %s %d @ %.2f (%s)%s fee %s, realised %s" % (symbol, qty, px, asof, "" if date else staleness(asof),
                                                           C.fmt_pkr(fee), C.fmt_pkr(pnl))
 
 
@@ -159,7 +207,7 @@ def cmd_init(a, h, cfg):
 def cmd_buy(a, h, cfg):
     pf = load(h)
     try:
-        print(do_buy(h, cfg, pf, a.symbol, a.qty, a.price, a.note or ""))
+        print(do_buy(h, cfg, pf, a.symbol, a.qty, a.price, a.note or "", date=a.date))
     except ValueError as e:
         sys.exit(str(e))
     save(h, pf)
@@ -169,11 +217,28 @@ def cmd_buy(a, h, cfg):
 def cmd_sell(a, h, cfg):
     pf = load(h)
     try:
-        print(do_sell(h, cfg, pf, a.symbol, a.qty, a.price, a.note or ""))
+        print(do_sell(h, cfg, pf, a.symbol, a.qty, a.price, a.note or "", date=a.date))
     except ValueError as e:
         sys.exit(str(e))
     save(h, pf)
     return 0
+
+
+def fund_price(h, f, nav=None, date=None):
+    """(NAV, its date) for a fund trade: --nav, else the NAV on --date, else the latest MUFAP NAV."""
+    try:
+        date = check_date(date)
+    except ValueError as e:
+        sys.exit(str(e))
+    if nav:
+        return float(nav), date or "given"
+    if date:
+        v, d = nav_on(h, f["fund"], date)
+        if v is None:
+            sys.exit("no NAV on file for %s on or just before %s (MUFAP publishes only the day's NAVs; the history "
+                     "starts when you began fetching): pass --nav from your statement" % (f["fund"], date))
+        return v, d
+    return f["nav"], f["validity_date"]
 
 
 def cmd_invest(a, h, cfg):
@@ -182,18 +247,19 @@ def cmd_invest(a, h, cfg):
     amount = float(a.amount)
     if amount > pf["cash"] + 1e-6:
         sys.exit("not enough cash: %s available" % C.fmt_pkr(pf["cash"]))
+    nav, nav_date = fund_price(h, f, a.nav, a.date)
     fee = amount * a.fee_pct / 100.0
-    units = (amount - fee) / f["nav"]
+    units = (amount - fee) / nav
     key = "FUND:" + f["fund"]
     pos = pf["positions"].setdefault(key, {"kind": "fund", "fund": f["fund"], "category": f["category"],
                                             "units": 0.0, "cost": 0.0})
     pos["units"] += units
     pos["cost"] += amount
     pf["cash"] -= amount
-    book(pf, {"side": "invest", "fund": f["fund"], "amount": amount, "nav": f["nav"],
-              "nav_date": f["validity_date"], "units": round(units, 4), "fee": round(fee, 2)})
+    book(pf, {"side": "invest", "fund": f["fund"], "amount": amount, "nav": nav,
+              "nav_date": nav_date, "units": round(units, 4), "fee": round(fee, 2)}, a.date)
     save(h, pf)
-    print("INVEST %s in %s: %.4f units @ NAV %.4f (%s)" % (C.fmt_pkr(amount), f["fund"], units, f["nav"], f["validity_date"]))
+    print("INVEST %s in %s: %.4f units @ NAV %.4f (%s)" % (C.fmt_pkr(amount), f["fund"], units, nav, nav_date))
     return 0
 
 
@@ -204,9 +270,10 @@ def cmd_redeem(a, h, cfg):
     pos = pf["positions"].get(key)
     if not pos:
         sys.exit("you hold no units of %s" % f["fund"])
-    value = pos["units"] * f["nav"]
+    nav, nav_date = fund_price(h, f, a.nav, a.date)
+    value = pos["units"] * nav
     amount = value if str(a.amount).lower() == "all" else min(float(a.amount), value)
-    units = amount / f["nav"]
+    units = amount / nav
     fee = amount * a.fee_pct / 100.0
     cost_part = pos["cost"] * units / pos["units"]
     pnl = amount - fee - cost_part
@@ -215,11 +282,11 @@ def cmd_redeem(a, h, cfg):
     if pos["units"] < 1e-6:
         del pf["positions"][key]
     pf["cash"] += amount - fee
-    book(pf, {"side": "redeem", "fund": f["fund"], "amount": round(amount, 2), "nav": f["nav"],
-              "nav_date": f["validity_date"], "units": round(units, 4), "fee": round(fee, 2),
-              "realized": round(pnl, 2)})
+    book(pf, {"side": "redeem", "fund": f["fund"], "amount": round(amount, 2), "nav": nav,
+              "nav_date": nav_date, "units": round(units, 4), "fee": round(fee, 2),
+              "realized": round(pnl, 2)}, a.date)
     save(h, pf)
-    print("REDEEM %s from %s @ NAV %.4f, realised %s" % (C.fmt_pkr(amount), f["fund"], f["nav"], C.fmt_pkr(pnl)))
+    print("REDEEM %s from %s @ NAV %.4f (%s), realised %s" % (C.fmt_pkr(amount), f["fund"], nav, nav_date, C.fmt_pkr(pnl)))
     return 0
 
 
@@ -448,12 +515,15 @@ def main(argv=None):
         p.add_argument("symbol")
         p.add_argument("qty")
         p.add_argument("--price", type=float)
+        p.add_argument("--date", help="YYYY-MM-DD: a past trade, at that day's close unless --price")
         p.add_argument("--note")
     for n in ("invest", "redeem"):
         p = sub.add_parser(n)
         p.add_argument("fund")
         p.add_argument("amount")
         p.add_argument("--fee-pct", type=float, default=0.0)
+        p.add_argument("--nav", type=float, help="the NAV you got (default: the latest, or the one on --date)")
+        p.add_argument("--date", help="YYYY-MM-DD: a past trade, at that day's NAV unless --nav")
     sub.add_parser("status")
     sub.add_parser("mark")
     p = sub.add_parser("dividends")

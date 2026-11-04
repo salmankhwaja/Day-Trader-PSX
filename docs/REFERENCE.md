@@ -431,6 +431,8 @@ python3 propose.py run --all           # screen, backtest, show the proposal (bo
 python3 propose.py run --all --apply   # buy the picks in the paper account
 python3 propose.py review              # HOLD or SELL each paper holding
 python3 paper.py status
+python3 paper.py buy OGDC 100 --date 2026-09-15     # a past trade: that day's close (or the last before it)
+python3 paper.py invest "ABL Cash Fund" 50000 --date 2026-10-27   # ...that day's NAV (or pass --nav)
 python3 paper.py log                   # trade history as a table (--json: as stored)
 ```
 
@@ -1216,7 +1218,9 @@ you already decrypted (`webhome.py`, `webrun.py`; it runs in a Web Worker, `pywo
 stays responsive). Nothing is sent anywhere.
 
 **Paper** is the paper account: *Start a paper account* (pick the starting cash), then buy and sell
-shares, invest in and redeem funds, *Propose a portfolio* (screen your watchlist or every liquid
+shares, invest in and redeem funds (pick the symbol or fund and a date: the price fills in with that
+day's close or NAV, the last one before it for a weekend or holiday, and a price you type stays;
+below it, what the trade costs or brings, how many shares your cash buys, and the profit on a sale), *Propose a portfolio* (screen your watchlist or every liquid
 share, backtest, show it or buy the picks), *Review* (sell or hold each holding), *Strategy signals*
 (sma, breakout, RSI, momentum on your watchlist), *Dividends* (credit what's due), *Trade history*,
 *Update now* and *Start over*. Its value is recorded once a day when you open the tab, so the chart

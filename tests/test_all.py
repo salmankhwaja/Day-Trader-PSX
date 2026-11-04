@@ -1432,11 +1432,26 @@ class TestWebRun(unittest.TestCase):
         r = R.run("paper", ["buy", "SYN07", "100"])
         self.assertIn("BUY  SYN07 100", r["out"])
         self.assertIn("not enough cash", R.run("paper", ["buy", "SYN11", "100000"])["out"])
+        # a past date: that day's close (or the last before it), the position opened then, history in date order
+        rows = C.read_prices(C.price_path(self.home, "SYN10"))
+        day = rows[-30]["date"]
+        r = R.run("paper", ["buy", "SYN10", "10", "--date", day])
+        self.assertIn("@ %.2f (%s)" % (rows[-30]["close"], day), r["out"])
+        self.assertIn("can't be dated", R.run("paper", ["sell", "SYN10", "5", "--date", rows[-40]["date"]])["out"])
+        self.assertIn("SELL SYN10 5", R.run("paper", ["sell", "SYN10", "5", "--date", rows[-20]["date"]])["out"])
+        self.assertIn("in the future", R.run("paper", ["buy", "SYN10", "1", "--date", "2999-01-01"])["out"])
+        pf = json.loads(open(os.path.join(self.home, "paper", "portfolio.json")).read())
+        self.assertEqual(pf["positions"]["SYN10"]["opened"], day)
+        self.assertEqual([t["time"][:10] for t in pf["trades"]], sorted(t["time"][:10] for t in pf["trades"]))
+        fund = self.meta["mufap"]["funds"][0]
+        r = R.run("paper", ["invest", fund["fund"], "10000", "--date", fund["validity_date"]])
+        self.assertIn("@ NAV %.4f (%s)" % (fund["nav"], fund["validity_date"]), r["out"])
+        self.assertIn("no NAV on file", R.run("paper", ["invest", fund["fund"], "10000", "--date", "2020-01-01"])["out"])
         self.assertEqual(R.run("propose", ["run", "--pick", "2", "--no-fetch"])["code"], 0)
         self.assertIn("| Time | Side |", R.run("paper", ["log"])["out"])          # a readable table, not JSON lines
         view = json.loads(R.paper_data())
         self.assertEqual(view["portfolio"]["starting_cash"], 500000)
-        self.assertEqual([h["symbol"] for h in view["portfolio"]["holdings"]], ["SYN07"])
+        self.assertEqual(sorted(h["symbol"] for h in view["portfolio"]["holdings"] if h["kind"] == "stock"), ["SYN07", "SYN10"])
         self.assertIsNotNone(view["proposal"])
         # the rest of the menu, on the feed's prices
         for tool, args, want in [("rank", ["stocks", "--top", "3", "--no-fetch"], "PSX ranking"), ("portfolio", ["check", "SYN07", "--no-fetch"], "VERDICT"),
