@@ -118,13 +118,37 @@
                 tools: function () { renderTools(); } };
   function show(v) {
     if (!views[v]) v = "overview";
-    Array.prototype.forEach.call($("tabs").children, function (b) { b.classList.toggle("on", b.getAttribute("data-v") === v); });
+    Array.prototype.forEach.call($("tabs").querySelectorAll("[data-v]"), function (b) { b.classList.toggle("on", b.getAttribute("data-v") === v); });
+    var cur = $("tabs").querySelector('[data-v="' + v + '"]'), more = $("tabs").querySelector("[data-more]");
+    if (more) {   // on a phone, More stands for whichever of its tabs is open
+      var sec = cur && cur.classList.contains("sec");
+      more.classList.toggle("on", !!sec);
+      more.querySelector(".lbl").textContent = sec ? cur.textContent.trim() : "More";
+    }
+    if ($("more-sheet")) $("more-sheet").hidden = true;
     Object.keys(views).forEach(function (k) { $("v-" + k).classList.toggle("on", k === v); });
     views[v]();
     rendered[v] = true;
     store("view", v);
   }
-  $("tabs").onclick = function (e) { var b = e.target.closest && e.target.closest("[data-v]"); if (b) show(b.getAttribute("data-v")); };
+  $("tabs").onclick = function (e) {
+    if (e.target.closest && e.target.closest("[data-more]")) { toggleMore(); return; }
+    var b = e.target.closest && e.target.closest("[data-v]"); if (b) show(b.getAttribute("data-v"));
+  };
+  // Phones: the tabs that don't fit live under More, a small sheet above the bar.
+  function toggleMore(open) {
+    var sh = $("more-sheet"), on = open != null ? open : sh.hidden;
+    if (on) {
+      sh.innerHTML = Array.prototype.filter.call($("tabs").querySelectorAll("button.sec"), function (b) { return !b.hidden; }).map(function (b) {
+        return '<button data-go="' + b.getAttribute("data-v") + '"' + (b.classList.contains("on") ? ' class="on"' : "") + ">" + b.innerHTML + "</button>";
+      }).join("");
+    }
+    sh.hidden = !on;
+  }
+  $("more-sheet").onclick = function (e) { var b = e.target.closest && e.target.closest("[data-go]"); if (b) { toggleMore(false); show(b.getAttribute("data-go")); } };
+  document.addEventListener("click", function (e) {
+    if (!$("more-sheet").hidden && !(e.target.closest && (e.target.closest("#more-sheet") || e.target.closest("[data-more]")))) toggleMore(false);
+  });
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest("[data-sym]");
     if (a) { e.preventDefault(); addCompare(a.getAttribute("data-sym")); show("compare"); }
@@ -2453,7 +2477,8 @@
       '<button class="btn danger" id="fd-erase">Erase my data on this device</button></div><p id="fd-msg"></p>' +
       '<p class="note"><b>Save backup</b>: everything, encrypted with the passphrase above (leave it empty for a plain file). <b>Restore or import</b> takes a backup, ' +
       "a <code>ledger.json</code> from <code>portfolio.py</code> (Termux or computer) or a trades CSV (<code>" + Ledger.FIELDS.join(",") + "</code>). " +
-      "<b>ledger.json</b> goes the other way: put it in your <code>pkmarket/portfolio/</code> folder and the Python tools see the same holdings.</p>" +
+      "<b>ledger.json</b> goes the other way: put it in your <code>pkmarket/portfolio/</code> folder and the Python tools see the same holdings. " +
+      "<b>To PK Wealth:</b> there, <i>Data › Restore backup or import from PSX</i> takes this <code>ledger.json</code> or a backup saved here; your share and fund trades and dividends are added to it, linked to live prices (broker cash stays here).</p>" +
       "";
   }
   function wireHoldingsIO() {

@@ -284,8 +284,22 @@ input.numeric { font-variant-numeric: tabular-nums; }
     padding: 8px 6px 9px; font-size: 10.5px; border-bottom: 0; color: var(--muted); }
   nav#tabs button .ico { display: block; height: 22px; }
   nav#tabs button.on { color: var(--accent); border-bottom: 0; }
+  /* Phones: five tabs that always fit (no sideways scrolling to find your way back), the rest under More */
+  nav#tabs { overflow-x: hidden; }
+  nav#tabs button { flex: 1 1 0; min-width: 0; }
+  nav#tabs button.sec { display: none; }
+  nav#tabs button.more { display: flex; }
+  #more-sheet:not([hidden]) { position: fixed; left: 8px; right: 8px; bottom: calc(66px + env(safe-area-inset-bottom)); z-index: 21;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.25);
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 8px; }
+  #more-sheet button { background: none; border: 0; border-radius: 10px; color: var(--text-2); font: inherit; font-size: 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; cursor: pointer; }
+  #more-sheet button .ico { display: block; height: 22px; }
+  #more-sheet button.on { color: var(--accent); background: var(--surface-2, rgba(127,127,127,.12)); }
   .bar h1 { font-size: 15px; }
 }
+nav button.more { display: none; }
+.view code { overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -300,16 +314,18 @@ input.numeric { font-variant-numeric: tabular-nums; }
   </div>
   <nav id="tabs" role="tablist">
     <button data-v="overview" class="on"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg></span>Overview</button>
-    <button data-v="screener"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>Screener</button>
-    <button data-v="compare"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 8-9"/><path d="M14 6h6v6"/></svg></span>Compare</button>
+    <button class="sec" data-v="screener"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>Screener</button>
+    <button class="sec" data-v="compare"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 4 8-9"/><path d="M14 6h6v6"/></svg></span>Compare</button>
     <button data-v="mine"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>My portfolio</button>
     <button data-v="portfolio"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M6 15v-4M10 15V7M14 15v-6M18 15V5"/></svg></span>Paper</button>
-    <button data-v="dividends"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v12"/></svg></span>Dividends</button>
-    <button data-v="funds"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10l7-5 7 5v11"/><path d="M9 21v-6h6v6"/></svg></span>Funds</button>
-    <button data-v="risk"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></span>Risk &amp; SIP</button>
+    <button class="sec" data-v="dividends"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.5c-.5-1-1.6-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.7 3 2 3 .8 3 2-1.3 2-3 2c-1.4 0-2.5-.5-3-1.5M12 6v12"/></svg></span>Dividends</button>
+    <button class="sec" data-v="funds"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10l7-5 7 5v11"/><path d="M9 21v-6h6v6"/></svg></span>Funds</button>
+    <button class="sec" data-v="risk"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></span>Risk &amp; SIP</button>
     <button data-v="tools"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>Tools</button>
-    <button data-v="data"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg></span>Data</button>
+    <button class="sec" data-v="data"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg></span>Data</button>
+    <button class="more" data-more aria-haspopup="true"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></span><span class="lbl">More</span></button>
   </nav>
+  <div id="more-sheet" hidden></div>
 </header>
 <div class="loader" id="loader" hidden></div>
 <div class="fresh" id="fresh" role="status" aria-live="polite" hidden></div>

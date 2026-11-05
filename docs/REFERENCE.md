@@ -1201,6 +1201,7 @@ appetite. The choice is saved in that browser. Rule-based suggestions, not inves
 | Restore or import… | a backup (replaces), a `ledger.json` from `portfolio.py` (replaces), or a trades CSV (adds; duplicates skipped) |
 | Export trades CSV | `date,side,symbol,qty,price,broker,commission,taxes,other,note,stop,time`, the same as `portfolio.py export` |
 | Export ledger.json | drop it into `pkmarket/portfolio/` and the Python tools see the same holdings |
+| Into PK Wealth | export `ledger.json` (or save a backup), then in PK Wealth *Data › Restore backup or import from PSX*: share and fund trades and dividends are added, linked to live prices; importing again adds only what's new; broker cash entries stay here |
 | Erase my data on this device | your holdings, the paper account and the tools' files: starts over (save a backup first) |
 | Lock this device | forgets the stored key; the passphrase is asked again |
 

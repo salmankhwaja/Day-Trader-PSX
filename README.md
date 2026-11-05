@@ -301,7 +301,8 @@ your computer and the website can share one portfolio.
 
 **PK Wealth too:** [PK Wealth](https://github.com/salmankhwaja/WealthTracker) on the same Pages
 site reads this feed's `feed/latest.enc.json`, so PSX prices are fetched once for both apps,
-unlocked by the same passphrase.
+unlocked by the same passphrase. Your holdings move across too: export `ledger.json` here, then
+in PK Wealth pick *Data › Restore backup or import from PSX*.
 
 **Just looking?** Tap *Try the sample data*: real PSX companies (MEBL, PPL, SYS, HUBC…), real MUFAP
 fund names and a sample portfolio, all with made-up prices and a banner saying so. **Exit sample**
