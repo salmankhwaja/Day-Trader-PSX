@@ -47,7 +47,7 @@ jobs:
         run: python3 tools/feed_plan.py
       - id: done                # has this scheduled time already run?
         if: steps.p.outputs.run == 'true' && steps.p.outputs.scheduled == 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .feed-slot
           key: feed-slot-${{ steps.p.outputs.slot }}
@@ -92,7 +92,7 @@ jobs:
         if: steps.fetch.outcome == 'success' && needs.plan.outputs.scheduled == 'true'
         run: mkdir -p .feed-slot && echo "${{ needs.plan.outputs.slot }}" > .feed-slot/ran
       - if: steps.fetch.outcome == 'success' && needs.plan.outputs.scheduled == 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .feed-slot
           key: feed-slot-${{ needs.plan.outputs.slot }}
