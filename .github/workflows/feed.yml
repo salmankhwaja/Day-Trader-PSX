@@ -35,7 +35,7 @@ jobs:
       job_timeout: ${{ steps.p.outputs.job_timeout }}
       scheduled: ${{ steps.p.outputs.scheduled }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: |
             feed-settings.json
@@ -61,7 +61,7 @@ jobs:
       group: feed
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -q "cryptography>=42"
